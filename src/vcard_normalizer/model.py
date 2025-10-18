@@ -1,18 +1,33 @@
 from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import List, Dict, Any
+from typing import Any
+
+
+@dataclass
+class Address:
+    po_box: str | None = None
+    extended: str | None = None
+    street: str | None = None
+    locality: str | None = None
+    region: str | None = None
+    postal_code: str | None = None
+    country: str | None = None  # display country name (not ISO code)
+
 
 @dataclass
 class Card:
-    # Minimal internal normalized model; we also keep raw vobject for fidelity.
     raw: Any
     fn: str | None = None
     n: str | None = None
-    emails: List[str] = field(default_factory=list)
-    tels: List[str] = field(default_factory=list)
+    emails: list[str] = field(default_factory=list)
+    tels: list[str] = field(default_factory=list)
     org: str | None = None
     title: str | None = None
     bday: str | None = None
     uid: str | None = None
     rev: str | None = None
-    props: Dict[str, Any] = field(default_factory=dict)  # remaining props
+    addresses: list[Address] = field(default_factory=list)
+    kind: str | None = None           # vCard 4.0 KIND: individual|org
+    categories: list[str] = field(default_factory=list)
+    props: dict[str, Any] = field(default_factory=dict)  # remaining props

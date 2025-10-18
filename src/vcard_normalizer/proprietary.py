@@ -1,7 +1,9 @@
 from __future__ import annotations
+
 import re
-from typing import Iterable
+
 from .model import Card
+
 
 def fold_unfold(text: str) -> str:
     # Placeholder for explicit folding if we need it; vobject handles this on write.
