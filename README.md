@@ -1,2 +1,38 @@
-# vcard
-Python programme to normalise vcard format, removing propriertary parameters
+# vcard-normalizer
+
+A Python CLI to ingest multiple `.vcf` files, normalize to vCard 4.0, strip proprietary fields, interactively merge duplicates, and export a single consolidated VCF.
+
+## Features (Milestone 1)
+- Ingest `.vcf` files (vCard 3.0 & 4.0).
+- Normalize core fields and **strip proprietary**/non‑standard properties (configurable).
+- Detect duplicates via emails/phones/name similarity.
+- **Interactive merge** TUI in the terminal.
+- Export clean vCard 4.0, UTF‑8, folded lines, file named `{ISO_DATE}-Contacts-of-<YourName>.vcf`.
+
+## Install (recommended: pipx)
+```bash
+pipx install .
+# or using uv:
+uv venv && uv pip install -e .
+```
+
+## Usage
+```bash
+# show help
+vcard-normalize --help
+
+# ingest multiple VCFs and write a normalized, stripped, de-duplicated export (interactive merge)
+vcard-normalize ingest --input cards/**/*.vcf --owner-name "James" --interactive
+
+# non-interactive (auto-merge high-confidence only) and explicit export path
+vcard-normalize ingest --input ./cards/**/*.vcf --owner-name "James"   --output out/$(date +%F)-Contacts-of-James.vcf --no-interactive
+```
+
+## Commands
+- `ingest`: parse inputs, strip proprietary fields, normalize, dedupe (optionally interactive), export one VCF.
+
+## Configuration
+- Deny/allow lists for proprietary fields live in `proprietary.py`. By default, any property that starts with `X-` or belongs to known vendor sets (Apple `X-AB*`, `X-ADDRESSBOOK*`, old `itemN.*` groups) is removed unless whitelisted.
+
+## License
+GPL-3.0-or-later
