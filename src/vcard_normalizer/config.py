@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 try:
     import tomllib  # py3.11+
@@ -60,3 +61,41 @@ def ensure_workspace(base: Path | None = None) -> tuple[Paths, Settings]:
         Paths(root=root, raw_dir=raw, clean_dir=clean, var_dir=var, local_dir=local, conf_file=conf),
         settings,
     )
+
+
+# ── Helpers + first-run setup (single canonical definitions) ───────────────────
+def _get_setting(settings: Any, name: str, default: Any = None) -> Any:
+    """Return a setting from a dict-like or object-like container."""
+    if isinstance(settings, dict):
+        return settings.get(name, default)
+    return getattr(settings, name, default)
+
+
+def _set_setting(settings: Any, name: str, value: Any = None) -> None:
+    """Set a setting on a dict-like or object-like container."""
+    if isinstance(settings, dict):
+        settings[name] = value
+    else:
+        setattr(settings, name, value)
+
+
+def first_run_setup(settings: Any, conf_path: Path) -> None:
+    """Idempotent first-run initializer.
+
+    - Works for dict-like or object-like `settings`.
+    - Ensures local config file exists with sensible defaults.
+    - Flips `first_run` to False in memory.
+    """
+    conf_path = Path(conf_path)
+    conf_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if not conf_path.exists():
+        conf_path.write_text(
+            "# vcard_normalizer local configuration\n"
+            "first_run = false\n"
+            "default_region = GB\n"
+            "cards_raw_dir = cards-raw\n"
+            "cards_clean_dir = cards-clean\n"
+        )
+
+    _set_setting(settings, "first_run", False)

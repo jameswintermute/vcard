@@ -3,6 +3,7 @@ README.md
 pyproject.toml
 src/vcard_normalizer/__init__.py
 src/vcard_normalizer/cli.py
+src/vcard_normalizer/config.py
 src/vcard_normalizer/dedupe.py
 src/vcard_normalizer/exporter.py
 src/vcard_normalizer/formatters.py
