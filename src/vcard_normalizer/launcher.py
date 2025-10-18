@@ -59,7 +59,7 @@ def _pick_from_raw(paths) -> list[Path]:
         console.print("[red]Invalid selection[/red]. Try again.")
 
 
-def _cleanup_check(files: list[Path], settings) -> None:
+def _cleanup_check(files: list[Path], settings, paths) -> None:
     vcards = read_vcards_from_files(files)
     cards = normalize_cards(vcards)
     before = [(c.fn, list(c.tels), [getattr(a, "country", None) for a in c.addresses]) for c in cards]
@@ -80,6 +80,13 @@ def _cleanup_check(files: list[Path], settings) -> None:
         table.add_row(name or "", "\n".join(tels_before), "\n".join(tels_after), "\n".join(countries))
     console.print(table)
     console.print("[cyan]No files were written (dry run). Use merge/export flows to save changes.[/cyan]")
+
+    if Confirm.ask("Save a cleaned copy to cards-clean/?", default=False):
+        from datetime import date
+        iso = date.today().isoformat()
+        out = paths.clean_dir / f"{iso}-Cleaned-{settings.owner_name.replace(' ', '-')}.vcf"
+        n = export_vcards(cards, out, target_version="4.0")
+        console.print(f"[green]Wrote {n} contact(s) -> {out}[/green]")
 
 
 def _deps_check() -> None:
@@ -224,7 +231,7 @@ def main() -> None:
         elif choice == "4":
             files = _pick_from_raw(paths)
             if files:
-                _cleanup_check(files, settings)
+                _cleanup_check(files, settings, paths)
 
         elif choice == "5":
             _deps_check()
