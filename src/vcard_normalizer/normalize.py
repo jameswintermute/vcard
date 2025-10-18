@@ -1,9 +1,11 @@
 from __future__ import annotations
-from typing import List
+
 import re
+
 import vobject
+
 from .model import Card
-from .proprietary import fold_unfold
+
 
 def _get_text(v, default=None):
     try:
@@ -11,8 +13,8 @@ def _get_text(v, default=None):
     except Exception:
         return default
 
-def normalize_cards(vcards: List[vobject.base.Component]) -> List[Card]:
-    out: List[Card] = []
+def normalize_cards(vcards: list[vobject.base.Component]) -> list[Card]:
+    out: list[Card] = []
     for vc in vcards:
         fn = _get_text(getattr(vc, "fn", None))
         n = _get_text(getattr(vc, "n", None))

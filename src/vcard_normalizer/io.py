@@ -1,10 +1,12 @@
 from __future__ import annotations
-from typing import List
+
 from pathlib import Path
+
 import vobject
 
-def read_vcards_from_files(paths: List[Path]) -> List[vobject.base.Component]:
-    cards: List[vobject.base.Component] = []
+
+def read_vcards_from_files(paths: list[Path]) -> list[vobject.base.Component]:
+    cards: list[vobject.base.Component] = []
     for p in paths:
         with p.open("r", encoding="utf-8", errors="replace") as f:
             data = f.read()

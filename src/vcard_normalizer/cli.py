@@ -1,13 +1,15 @@
 from __future__ import annotations
+
 import glob
 from pathlib import Path
-from typing import List, Optional
+
 import typer
 from rich.console import Console
-from .io import read_vcards_from_files
-from .normalize import normalize_cards, strip_proprietary
-from .dedupe import find_duplicate_clusters, merge_cluster_interactive, merge_cluster_auto
+
+from .dedupe import find_duplicate_clusters, merge_cluster_auto, merge_cluster_interactive
 from .exporter import export_vcards
+from .io import read_vcards_from_files
+from .normalize import normalize_cards
 from .proprietary import DefaultStripper
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
@@ -15,15 +17,15 @@ console = Console()
 
 @app.command()
 def ingest(
-    input: List[str] = typer.Option(..., help="Glob(s) for .vcf files"),
+    input: list[str] = typer.Option(..., help="Glob(s) for .vcf files"),
     owner_name: str = typer.Option(..., "--owner-name", "-n", help="Owner name for output filename"),
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Explicit output .vcf path"),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Explicit output .vcf path"),
     interactive: bool = typer.Option(True, "--interactive/--no-interactive", help="Interactive merge review"),
     keep_unknown: bool = typer.Option(False, help="Keep unknown X-* fields instead of stripping"),
     prefer_v: str = typer.Option("4.0", help="Target vCard version for export (3.0 or 4.0)"),
 ):
     """Ingest one or more VCFs, strip proprietary fields, normalize, de-duplicate, and export one file."""
-    files: List[Path] = []
+    files: list[Path] = []
     for g in input:
         files.extend([Path(p) for p in glob.glob(g, recursive=True)])
     files = [f for f in files if f.is_file() and f.suffix.lower() == ".vcf"]
