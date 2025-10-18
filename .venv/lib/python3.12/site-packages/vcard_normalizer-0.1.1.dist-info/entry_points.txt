@@ -1,0 +1,3 @@
+[console_scripts]
+vcard-launcher = vcard_normalizer.launcher:main
+vcard-normalize = vcard_normalizer.cli:app
