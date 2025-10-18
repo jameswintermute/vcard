@@ -10,11 +10,24 @@ from .model import Card
 console = Console()
 
 
+
 def _format_spaced_e164(num: phonenumbers.PhoneNumber) -> str:
+    # Base international formatting first
     intl = phonenumbers.format_number(num, phonenumbers.PhoneNumberFormat.INTERNATIONAL)
-    # e.g. "+44 7980 220 220" (no brackets/hyphens, collapse spaces)
     out = intl.replace("-", " ").replace("(", "").replace(")", "")
-    return " ".join(out.split())
+    out = " ".join(out.split())  # collapse multiple spaces
+
+    # GB tweak: show mobiles as +44 7xxx xxx xxx (e.g., +44 7980 220 220)
+    try:
+        region = phonenumbers.region_code_for_number(num)
+        nsn = phonenumbers.national_significant_number(num)
+        if region == "GB" and len(nsn) == 10 and nsn.startswith("7"):
+            # +44 <4> <3> <3>
+            return f"+44 {nsn[0:4]} {nsn[4:7]} {nsn[7:]}"
+    except Exception:
+        pass
+
+    return out
 
 
 def _infer_region_from_addresses(card: Card) -> str | None:
