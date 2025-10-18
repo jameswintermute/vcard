@@ -8,6 +8,7 @@ from rich.prompt import Confirm, Prompt
 from rich.table import Table
 from rich.text import Text
 
+from .config import ensure_workspace
 from .dedupe import find_duplicate_clusters, merge_cluster_interactive
 from .exporter import export_vcards
 from .formatters import (
@@ -21,114 +22,49 @@ from .proprietary import DefaultStripper
 
 console = Console()
 
-def _banner() -> None:
-    banner = """
- .----------------.  .----------------.  .----------------.  .----------------.  .----------------. 
-| .--------------. || .--------------. || .--------------. || .--------------. || .--------------. |
-| | ____   ____  | || |     ______   | || |      __      | || |  _______     | || |  ________    | |
-| ||_  _| |_  _| | || |   .' ___  |  | || |     /  \\     | || | |_   __ \\    | || | |_   ___ `.  | |
-| |  \\ \\   / /   | || |  / .'   \\_|  | || |    / /\\ \\    | || |   | |__) |   | || |   | |   `. \\ | |
-| |   \\ \\ / /    | || |  | |         | || |   / ____ \\   | || |   |  __ /    | || |   | |    | | | |
-| |    \\ ' /     | || |  \\ `.___.'\\  | || | _/ /    \\ \\_ | || |  _| |  \\ \\_  | || |  _| |___.' / | |
-| |     \\_/      | || |   `._____.'  | || ||____|  |____|| || | |____| |___| | || | |________.'  | |
-| |              | || |              | || |              | || |              | || |              | |
-| '--------------' || '--------------' || '--------------' || '--------------' || '--------------' |
- '----------------'  '----------------'  '----------------'  '----------------'  '----------------'  
-"""
-    console.print(banner.strip("\n"), style="bold cyan")
-    console.print()
-    console.print(
-        Panel.fit(
-            " VCard Cleaner & Dedupe  •  v0.1.1  •  Python ",
-            style="magenta",
-            border_style="bright_black",
-            padding=(0, 2),
-        )
-    )
-    console.print()
-
-
-def _pick_files(prompt: str) -> list[Path]:
-    pat = Prompt.ask(prompt + "\nEnter one or more globs (comma separated)", default="*.vcf")
-    globs = [g.strip() for g in pat.split(",") if g.strip()]
-    files: list[Path] = []
-    for g in globs:
-        files.extend(Path().glob(g))
-    files = [f for f in files if f.is_file() and f.suffix.lower() == ".vcf"]
-    if not files:
-        console.print("[red]No .vcf files matched[/red]")
-    else:
-        console.print(f"[green]Matched {len(files)} file(s)[/green]")
+def _list_raw_files(paths) -> list[Path]:
+    files = sorted([p for p in paths.raw_dir.glob("*.vcf") if p.is_file()])
     return files
 
+def _pick_from_raw(paths) -> list[Path]:
+    while True:
+        files = _list_raw_files(paths)
+        if not files:
+            console.print(f"[yellow]No .vcf files found in[/] [bold]{paths.raw_dir}[/].")
+            console.print("Drop files there, then press 'r' to refresh, or 'q' to go back.")
+        else:
+            table = Table(title=f"cards-raw ({paths.raw_dir})", show_lines=True)
+            table.add_column("#", style="cyan", no_wrap=True)
+            table.add_column("File", style="bold")
+            for i, f in enumerate(files, 1):
+                table.add_row(str(i), f.name)
+            console.print(table)
+            console.print("Type numbers (e.g., 1 or 1,3,5), 'r' to refresh, or 'q' to cancel.")
 
-def _analyze(files: list[Path]) -> None:
-    cards = read_vcards_from_files(files)
-    ncards = normalize_cards(cards)
-    DefaultStripper().strip(ncards[0]) if ncards else None  # noop to ensure no crash
-
-    clusters = find_duplicate_clusters(ncards)
-    dup_groups = sum(1 for c in clusters if len(c) > 1)
-
-    # summary
-    t = Table(title="Analysis Summary", show_lines=True)
-    t.add_column("Metric", style="cyan", no_wrap=True)
-    t.add_column("Value", style="bold")
-    t.add_row("Files", str(len(files)))
-    t.add_row("Parsed cards", str(len(ncards)))
-    t.add_row("Potential duplicate groups", str(dup_groups))
-    console.print(t)
-
-
-def _merge(files: list[Path], owner_name: str) -> None:
-    vcards = read_vcards_from_files(files)
-    cards = normalize_cards(vcards)
-    stripper = DefaultStripper()
-    cards = [stripper.strip(c) for c in cards]
-
-    # Optional cleaners before merge
-    if Confirm.ask("Normalize phones & ensure country in ADR before merging?", default=True):
-        normalize_phones_in_cards(cards, default_region="GB", infer_from_adr=True)
-        ensure_country_in_addresses(cards)
-        classify_entities(cards)
-
-    clusters = find_duplicate_clusters(cards)
-    merged: list = []
-    for cluster in clusters:
-        merged.append(merge_cluster_interactive(cluster) if len(cluster) > 1 else cluster[0])
-
-    iso = __import__("datetime").date.today().isoformat()
-    out = Path(f"{iso}-Contacts-of-{owner_name.replace(' ', '-')}.vcf")
-    n = export_vcards(merged, out, target_version="4.0")
-    console.print(f"[green]Wrote {n} contact(s) -> {out}[/green]")
+        choice = Prompt.ask("Select").strip().lower()
+        if choice in {"q", "quit"}:
+            return []
+        if choice == "r":
+            console.clear()
+            continue
+        if not files:
+            continue
+        try:
+            picks = [int(x.strip()) for x in choice.split(",") if x.strip()]
+            selected = [files[i-1] for i in picks if 1 <= i <= len(files)]
+            if selected:
+                return selected
+        except Exception:
+            pass
+        console.print("[red]Invalid selection[/red]. Try again.")
 
 
-def _export_by_categories(files: list[Path], owner_name: str) -> None:
-    vcards = read_vcards_from_files(files)
-    cards = normalize_cards(vcards)
-    stripper = DefaultStripper()
-    cards = [stripper.strip(c) for c in cards]
-
-    # Prompt categories to include
-    cats = Prompt.ask("Enter comma-separated categories to include (case-sensitive)", default="")
-    wanted = {c.strip() for c in cats.split(",") if c.strip()}
-    if not wanted:
-        console.print("[yellow]No categories provided; nothing to export[/yellow]")
-        return
-
-    filtered = [c for c in cards if set(c.categories) & wanted]
-    iso = __import__("datetime").date.today().isoformat()
-    out = Path(f"{iso}-Contacts-of-{owner_name.replace(' ', '-')}-CATS.vcf")
-    n = export_vcards(filtered, out, target_version="4.0")
-    console.print(f"[green]Wrote {n} contact(s) -> {out}[/green]")
-
-
-def _cleanup_check(files: list[Path]) -> None:
+def _cleanup_check(files: list[Path], settings) -> None:
     vcards = read_vcards_from_files(files)
     cards = normalize_cards(vcards)
     before = [(c.fn, list(c.tels), [getattr(a, "country", None) for a in c.addresses]) for c in cards]
 
-    normalize_phones_in_cards(cards, default_region="GB", infer_from_adr=True)
+    normalize_phones_in_cards(cards, default_region=settings.default_region, infer_from_adr=True)
     ensure_country_in_addresses(cards)
     classify_entities(cards)
 
@@ -163,7 +99,91 @@ def _deps_check() -> None:
     console.print(t)
 
 
+
+def _banner() -> None:
+    banner = r"""
+ .----------------.  .----------------.  .----------------.  .----------------.  .----------------.
+| .--------------. || .--------------. || .--------------. || .--------------. || .--------------. |
+| | ____   ____  | || |     ______   | || |      __      | || |  _______     | || |  ________    | |
+| ||_  _| |_  _| | || |   .' ___  |  | || |     /  \     | || | |_   __ \    | || | |_   ___ `.  | |
+| |  \ \   / /   | || |  / .'   \_|  | || |    / /\ \    | || |   | |__) |   | || |   | |   `. \ | |
+| |   \ \ / /    | || |  | |         | || |   / ____ \   | || |   |  __ /    | || |   | |    | | | |
+| |    \ ' /     | || |  \ `.___.'\  | || | _/ /    \ \_ | || |  _| |  \ \_  | || |  _| |___.' / | |
+| |     \_/      | || |   `._____.'  | || ||____|  |____|| || | |____| |___| | || | |________.'  | |
+| |              | || |              | || |              | || |              | || |              | |
+| '--------------' || '--------------' || '--------------' || '--------------' || '--------------' |
+ '----------------'  '----------------'  '----------------'  '----------------'  '----------------'
+"""
+    console.print(banner.strip("\n"), style="bold cyan")
+    console.print()
+    console.print(Panel.fit(" VCard Cleaner & Dedupe  •  v0.1.1  •  Python ", style="magenta", border_style="bright_black", padding=(0, 2)))
+    console.print()
+
+
+
+def _analyze(files: list[Path]) -> None:
+    vcards = read_vcards_from_files(files)
+    cards = normalize_cards(vcards)
+    clusters = find_duplicate_clusters(cards)
+    dup_groups = sum(1 for c in clusters if len(c) > 1)
+
+    t = Table(title="Analysis Summary", show_lines=True)
+    t.add_column("Metric", style="cyan", no_wrap=True)
+    t.add_column("Value", style="bold")
+    t.add_row("Files", str(len(files)))
+    t.add_row("Parsed cards", str(len(cards)))
+    t.add_row("Potential duplicate groups", str(dup_groups))
+    console.print(t)
+
+
+
+def _merge(files: list[Path], owner_name: str, paths) -> None:
+    vcards = read_vcards_from_files(files)
+    cards = normalize_cards(vcards)
+    stripper = DefaultStripper()
+    cards = [stripper.strip(c) for c in cards]
+
+    if Confirm.ask("Normalize phones & ensure country in ADR before merging?", default=True):
+        normalize_phones_in_cards(cards, default_region="GB", infer_from_adr=True)
+        ensure_country_in_addresses(cards)
+        classify_entities(cards)
+
+    clusters = find_duplicate_clusters(cards)
+    merged: list = []
+    for cluster in clusters:
+        merged.append(merge_cluster_interactive(cluster) if len(cluster) > 1 else cluster[0])
+
+    from datetime import date
+    iso = date.today().isoformat()
+    out = (paths.clean_dir / f"{iso}-Contacts-of-{owner_name.replace(' ', '-')}.vcf")
+    n = export_vcards(merged, out, target_version="4.0")
+    console.print(f"[green]Wrote {n} contact(s) -> {out}[/green]")
+
+
+
+def _export_by_categories(files: list[Path], owner_name: str, paths) -> None:
+    vcards = read_vcards_from_files(files)
+    cards = normalize_cards(vcards)
+    stripper = DefaultStripper()
+    cards = [stripper.strip(c) for c in cards]
+
+    cats = Prompt.ask("Enter comma-separated categories to include (case-sensitive)", default="")
+    wanted = {c.strip() for c in cats.split(",") if c.strip()}
+    if not wanted:
+        console.print("[yellow]No categories provided; nothing to export[/yellow]")
+        return
+
+    filtered = [c for c in cards if set(c.categories) & wanted]
+
+    from datetime import date
+    iso = date.today().isoformat()
+    out = (paths.clean_dir / f"{iso}-Contacts-of-{owner_name.replace(' ', '-')}-CATS.vcf")
+    n = export_vcards(filtered, out, target_version="4.0")
+    console.print(f"[green]Wrote {n} contact(s) -> {out}[/green]")
+
+
 def main() -> None:
+    paths, settings = ensure_workspace()
     while True:
         console.clear()
         _banner()
@@ -185,26 +205,26 @@ def main() -> None:
             break
 
         if choice == "1":
-            files = _pick_files("Analyze which vCard file(s)?")
+            files = _pick_from_raw(paths)
             if files:
                 _analyze(files)
 
         elif choice == "2":
-            files = _pick_files("Select vCard files to merge")
+            files = _pick_from_raw(paths)
             if files:
-                owner = Prompt.ask("Owner name for output filename", default="James")
-                _merge(files, owner)
+                owner = Prompt.ask("Owner name for output filename", default=settings.owner_name)
+                _merge(files, owner, paths)
 
         elif choice == "3":
-            files = _pick_files("Select vCard files to filter by category")
+            files = _pick_from_raw(paths)
             if files:
-                owner = Prompt.ask("Owner name for output filename", default="James")
-                _export_by_categories(files, owner)
+                owner = Prompt.ask("Owner name for output filename", default=settings.owner_name)
+                _export_by_categories(files, owner, paths)
 
         elif choice == "4":
-            files = _pick_files("Select vCard files to cleanup-check")
+            files = _pick_from_raw(paths)
             if files:
-                _cleanup_check(files)
+                _cleanup_check(files, settings)
 
         elif choice == "5":
             _deps_check()

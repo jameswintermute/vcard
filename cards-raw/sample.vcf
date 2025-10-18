@@ -1,0 +1,8 @@
+BEGIN:VCARD
+VERSION:3.0
+FN:Alice Example
+N:Example;Alice;;;
+EMAIL;TYPE=INTERNET:alice@example.com
+TEL:+447980220220
+ADR;TYPE=HOME:;;1 Market Street;London;;SW1A 1AA;United Kingdom
+END:VCARD
