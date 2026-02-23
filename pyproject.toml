@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vcard-normalizer"
+version = "0.1.1"
+description = "Normalize, dedupe, and export vCards (strip proprietary fields, phone/country formatting)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "GPL-3.0-or-later"}
+authors = [{name = "James", email = "jameswinter@protonmail.ch"}]
+dependencies = [
+  "typer>=0.12",
+  "rich>=13.7",
+  "vobject>=0.9.7",
+  "rapidfuzz>=3.9",
+  "phonenumberslite>=8.13",
+]
+
+# installable CLI
+[project.scripts]
+vcard-launcher = "vcard_normalizer.launcher:main"
+vcard-normalize = "vcard_normalizer.cli:app"
+
+# dev extras for `-e .[dev]`
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "mypy>=1.11", "ruff>=0.6"]
+
+# Ruff config (new location)
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E","F","I","UP","B","W"]
+ignore = ["E501","B008"]
+
+# Tell setuptools we use the src/ layout
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
