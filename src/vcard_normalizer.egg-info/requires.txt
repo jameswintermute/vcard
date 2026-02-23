@@ -1,0 +1,10 @@
+typer>=0.12
+rich>=13.7
+vobject>=0.9.7
+rapidfuzz>=3.9
+phonenumberslite>=8.13
+
+[dev]
+pytest>=8.0
+mypy>=1.11
+ruff>=0.6
