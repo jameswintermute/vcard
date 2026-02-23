@@ -31,3 +31,11 @@ class Card:
     kind: str | None = None           # vCard 4.0 KIND: individual|org
     categories: list[str] = field(default_factory=list)
     props: dict[str, Any] = field(default_factory=dict)  # remaining props
+
+    # ── Audit / reporting ─────────────────────────────────────────────────────
+    # Populated during processing so the final report can show what changed.
+    _changes: list[str] = field(default_factory=list, repr=False)
+    _source_files: list[str] = field(default_factory=list, repr=False)
+
+    def log_change(self, msg: str) -> None:
+        self._changes.append(msg)

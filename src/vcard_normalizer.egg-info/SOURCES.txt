@@ -20,3 +20,4 @@ src/vcard_normalizer.egg-info/entry_points.txt
 src/vcard_normalizer.egg-info/requires.txt
 src/vcard_normalizer.egg-info/top_level.txt
 tests/test_basic.py
+tests/test_first_run.py

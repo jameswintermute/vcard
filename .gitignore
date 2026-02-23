@@ -34,3 +34,7 @@ dist/
 .mypy_cache/
 .tox/
 .cache/
+-e 
+# Source contact exports (private)
+cards-merge/*.vcf
+cards-merge/*.VCF

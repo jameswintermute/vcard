@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vcard-normalizer"
-version = "0.1.1"
+version = "0.2.0"
 description = "Normalize, dedupe, and export vCards (strip proprietary fields, phone/country formatting)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -15,7 +15,7 @@ dependencies = [
   "rich>=13.7",
   "vobject>=0.9.7",
   "rapidfuzz>=3.9",
-  "phonenumberslite>=8.13",
+  "phonenumbers>=8.13",
 ]
 
 # installable CLI

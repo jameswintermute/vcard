@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 try:
     import tomllib  # py3.11+
-except Exception:  # pragma: no cover
-    tomllib = None  # not expected on Ubuntu 24.04
+except ImportError:  # pragma: no cover
+    tomllib = None  # type: ignore[assignment]
 
 
 @dataclass
@@ -25,11 +25,29 @@ class Paths:
 class Settings:
     owner_name: str = "James"
     default_region: str = "GB"
+    # Category rules: list of (category_name, [pattern, ...])
+    # Patterns are plain substrings or "re:<regex>" strings.
+    category_rules: list[tuple[str, list[str]]] = field(default_factory=list)
 
 
-DEFAULT_CONF = """# vcard-normalizer local config (TOML)
+DEFAULT_CONF = """\
+# vcard-normalizer local config (TOML)
 owner_name = "James"
 default_region = "GB"
+
+# Category auto-tagging rules.
+# Each [[category_rules]] block defines one category.
+# 'patterns' are case-insensitive substrings matched against FN, ORG, TITLE, and emails.
+# Prefix a pattern with "re:" to use a regular expression.
+#
+# Example:
+# [[category_rules]]
+# name = "Work"
+# patterns = [" ltd", " plc", "re:@(?!gmail|yahoo)"]
+#
+# [[category_rules]]
+# name = "School"
+# patterns = ["school", "university", "college"]
 """
 
 
@@ -48,14 +66,25 @@ def ensure_workspace(base: Path | None = None) -> tuple[Paths, Settings]:
         conf.write_text(DEFAULT_CONF, encoding="utf-8")
 
     settings = Settings()
-    try:
-        if tomllib is not None:
+    if tomllib is not None:
+        try:
             data = tomllib.loads(conf.read_text(encoding="utf-8"))
             settings.owner_name = str(data.get("owner_name", settings.owner_name))
             settings.default_region = str(data.get("default_region", settings.default_region))
-    except Exception:
-        # if config is malformed, fall back to defaults silently
-        pass
+            # Parse [[category_rules]] array of tables
+            raw_rules = data.get("category_rules", [])
+            if isinstance(raw_rules, list):
+                parsed: list[tuple[str, list[str]]] = []
+                for entry in raw_rules:
+                    if isinstance(entry, dict):
+                        name = str(entry.get("name", "")).strip()
+                        patterns = [str(p) for p in entry.get("patterns", [])]
+                        if name:
+                            parsed.append((name, patterns))
+                settings.category_rules = parsed
+        except Exception:
+            # Malformed config → fall back to defaults silently
+            pass
 
     return (
         Paths(root=root, raw_dir=raw, clean_dir=clean, var_dir=var, local_dir=local, conf_file=conf),
@@ -63,16 +92,15 @@ def ensure_workspace(base: Path | None = None) -> tuple[Paths, Settings]:
     )
 
 
-# ── Helpers + first-run setup (single canonical definitions) ───────────────────
+# ── Helpers + first-run setup ──────────────────────────────────────────────────
+
 def _get_setting(settings: Any, name: str, default: Any = None) -> Any:
-    """Return a setting from a dict-like or object-like container."""
     if isinstance(settings, dict):
         return settings.get(name, default)
     return getattr(settings, name, default)
 
 
 def _set_setting(settings: Any, name: str, value: Any = None) -> None:
-    """Set a setting on a dict-like or object-like container."""
     if isinstance(settings, dict):
         settings[name] = value
     else:
@@ -80,12 +108,7 @@ def _set_setting(settings: Any, name: str, value: Any = None) -> None:
 
 
 def first_run_setup(settings: Any, conf_path: Path) -> None:
-    """Idempotent first-run initializer.
-
-    - Works for dict-like or object-like `settings`.
-    - Ensures local config file exists with sensible defaults.
-    - Flips `first_run` to False in memory.
-    """
+    """Idempotent first-run initializer."""
     conf_path = Path(conf_path)
     conf_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -99,3 +122,4 @@ def first_run_setup(settings: Any, conf_path: Path) -> None:
         )
 
     _set_setting(settings, "first_run", False)
+

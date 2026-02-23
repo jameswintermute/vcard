@@ -19,9 +19,8 @@ GOOGLE_PATTERNS: list[re.Pattern] = [
 ]
 GENERIC_X_PATTERN = re.compile(r"^X-.*", re.I)
 
-WHITELIST = {
-    # Example: keep helpful X- properties by default (empty for now)
-}
+WHITELIST: set[str] = set()
+
 
 class DefaultStripper:
     def __init__(self, keep_unknown: bool = False):
@@ -44,7 +43,10 @@ class DefaultStripper:
         for child in list(vc.getChildren()):
             name = child.name if hasattr(child, "name") else ""
             if self._should_strip(name):
-                to_remove.append(child)
-        for c in to_remove:
-            vc.remove(c)
+                to_remove.append((name, child))
+        if to_remove:
+            names = sorted({n for n, _ in to_remove})
+            card.log_change(f"Stripped proprietary field(s): {', '.join(names)}")
+            for _, c in to_remove:
+                vc.remove(c)
         return card
