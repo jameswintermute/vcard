@@ -1,0 +1,40 @@
+# Virtualenvs
+.venv/
+venv/
+env/
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Tool caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.tox/
+.cache/
+# Virtualenvs
+.venv/
+venv/
+env/
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Tool caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.tox/
+.cache/
+-e 
+# Source contact exports (private)
+cards-merge/*.vcf
+cards-merge/*.VCF

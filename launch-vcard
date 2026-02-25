@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# launch-vcard — one-command entry point.  Run: ./launch-vcard
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV="$SCRIPT_DIR/.venv"
+
+if [ ! -d "$VENV" ]; then
+    echo "First run — setting up virtual environment…"
+    if command -v uv &>/dev/null; then
+        uv venv "$VENV" --quiet
+    else
+        python3 -m venv "$VENV"
+    fi
+fi
+
+MARKER="$VENV/.installed"
+if [ ! -f "$MARKER" ] || [ "$SCRIPT_DIR/pyproject.toml" -nt "$MARKER" ]; then
+    echo "Installing dependencies…"
+    if command -v uv &>/dev/null; then
+        uv pip install -e "$SCRIPT_DIR" --quiet
+    else
+        "$VENV/bin/pip" install -e "$SCRIPT_DIR" --quiet
+    fi
+    touch "$MARKER"
+fi
+
+exec "$VENV/bin/python" "$SCRIPT_DIR/start.py" "$@"
