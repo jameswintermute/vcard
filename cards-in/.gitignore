@@ -1,0 +1,8 @@
+# Do not commit vCard exports to git — these may contain personal data
+*.vcf
+*.vcard
+*.csv
+
+# Keep this README and .gitignore tracked
+!README.md
+!.gitignore

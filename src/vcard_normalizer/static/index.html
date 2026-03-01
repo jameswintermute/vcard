@@ -1,0 +1,3519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>vCard Studio</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&display=swap');
+
+:root {
+  --bg:     #090d09; --bg2: #0e140e; --bg3: #141c14;
+  --border: #1a2a1a;
+  --green:  #00e040; --green2: #00a830;
+  --cyan:   #00ccc4; --amber: #e8a000;
+  --red:    #e04040; --purple: #9868e8; --blue: #4898f8;
+  --dim:    #2e4a2e; --mid: #527852; --text: #a8c8a8; --bright: #d0ead0;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg);color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px;height:100%;overflow:hidden}
+body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.06) 2px,rgba(0,0,0,.06) 4px);pointer-events:none;z-index:9999}
+
+#app{display:grid;grid-template-rows:44px 1fr;grid-template-columns:185px 1fr;height:100vh}
+
+/* Header */
+#header{grid-column:1/-1;display:flex;align-items:center;gap:14px;padding:0 14px;border-bottom:1px solid var(--border);background:var(--bg2)}
+.wordmark{font-size:14px;font-weight:700}.wordmark .v{color:var(--green)}.wordmark .rest{color:var(--bright)}
+.tagline{color:var(--dim);font-size:10px;letter-spacing:.05em}
+.hdr-spacer{flex:1}.hdr-status{font-size:10px;color:var(--mid)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 5px var(--green2);animation:pulse 2.5s ease-in-out infinite}
+.dot.idle{background:var(--dim);box-shadow:none;animation:none}
+.dot.processing{background:var(--amber);box-shadow:0 0 5px var(--amber);animation:none}
+.dot.error{background:var(--red);box-shadow:0 0 5px var(--red);animation:none}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.btn-quit{background:none;border:1px solid var(--border);color:var(--dim);padding:3px 10px;cursor:pointer;font-family:inherit;font-size:11px;transition:all .15s}
+.btn-quit:hover{border-color:var(--red);color:var(--red)}
+
+/* Sidebar */
+#sidebar{border-right:1px solid var(--border);background:var(--bg2);display:flex;flex-direction:column;overflow-y:auto}
+.nav-grp{padding:10px 0 2px}.nav-grp-lbl{padding:0 10px 5px;font-size:9px;color:var(--dim);letter-spacing:.12em}
+.nav-item{display:flex;align-items:center;gap:7px;padding:6px 10px;cursor:pointer;color:var(--mid);font-size:11px;border-left:2px solid transparent;transition:all .1s}
+.nav-item:hover{color:var(--text);background:var(--bg3)}
+.nav-item.active{color:var(--green);border-left-color:var(--green);background:rgba(0,224,64,.05)}
+.nav-step{font-size:9px;color:var(--dim);background:var(--bg3);padding:1px 4px;border-radius:2px;flex-shrink:0}
+.nav-item.active .nav-step{color:var(--green2)}
+.nav-badge{margin-left:auto;font-size:9px;color:var(--dim);background:var(--bg3);padding:1px 5px}
+.sb-footer{margin-top:auto;border-top:1px solid var(--border);padding:8px 10px}
+.sb-row{display:flex;justify-content:space-between;padding:2px 0}
+.sb-lbl{font-size:10px;color:var(--dim)}.sb-val{font-size:10px;font-weight:600}
+
+/* Main */
+#main{overflow-y:auto}
+.panel{display:none;padding:18px 20px;min-height:100%}.panel.active{display:block}
+.ph{display:flex;align-items:baseline;gap:10px;margin-bottom:18px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.ph-title{font-size:12px;font-weight:700;color:var(--bright)}.ph-sub{font-size:10px;color:var(--dim)}
+
+/* Common */
+.sec-lbl{font-size:9px;color:var(--dim);letter-spacing:.1em;margin-bottom:7px;margin-top:16px}
+.sec-lbl:first-child{margin-top:0}
+.fi{display:flex;align-items:center;gap:8px;padding:5px 10px;background:var(--bg2);border:1px solid var(--border);margin-bottom:3px;font-size:11px}
+.fi-dot{width:5px;height:5px;border-radius:50%;background:var(--green);flex-shrink:0}
+.fi-name{color:var(--text);flex:1}.fi-meta{color:var(--dim);font-size:10px}
+.dz{border:1px dashed var(--border);padding:22px 16px;text-align:center;cursor:pointer;transition:all .2s;margin-bottom:12px}
+.dz:hover{border-color:var(--green2);background:rgba(0,168,48,.03)}
+.dz-title{color:var(--mid);font-size:11px;margin-bottom:4px}.dz-hint{color:var(--dim);font-size:10px}
+.prog-wrap{background:var(--bg2);border:1px solid var(--border);height:4px;margin:10px 0;overflow:hidden}
+.prog-bar{height:100%;background:var(--green);box-shadow:0 0 6px var(--green2);transition:width .4s ease}
+.log-line{background:var(--bg2);border:1px solid var(--border);padding:7px 10px;font-size:10px;color:var(--mid);min-height:34px;line-height:1.9}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:5px 13px;border:1px solid;background:none;font-family:inherit;font-size:11px;cursor:pointer;transition:all .15s}
+.btn:disabled{opacity:.3;cursor:not-allowed}
+.btn-g{border-color:var(--green);color:var(--green)}.btn-g:hover:not(:disabled){background:rgba(0,224,64,.08)}
+.btn-c{border-color:var(--cyan);color:var(--cyan)}.btn-c:hover:not(:disabled){background:rgba(0,204,196,.08)}
+.btn-a{border-color:var(--amber);color:var(--amber)}.btn-a:hover:not(:disabled){background:rgba(232,160,0,.08)}
+.btn-b{border-color:var(--blue);color:var(--blue)}.btn-b:hover:not(:disabled){background:rgba(72,152,248,.08)}
+.btn-r{border-color:var(--red);color:var(--red)}.btn-r:hover:not(:disabled){background:rgba(224,64,64,.08)}
+.btn-d{border-color:var(--border);color:var(--mid)}.btn-d:hover:not(:disabled){border-color:var(--mid);color:var(--text)}
+.row{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+.divider{border:none;border-top:1px solid var(--border);margin:14px 0}
+.form-row{display:flex;align-items:flex-start;gap:10px;margin-bottom:8px}
+.form-lbl{color:var(--mid);font-size:11px;width:90px;flex-shrink:0;padding-top:6px}
+.form-in,.form-sel,.form-ta{background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:5px 8px;font-family:inherit;font-size:11px;outline:none}
+.form-in{flex:1;max-width:320px}.form-in:focus,.form-ta:focus{border-color:var(--mid)}
+.form-in::placeholder,.form-ta::placeholder{color:#2a4a6a;font-style:italic}
+.form-ta{flex:1;max-width:320px;resize:vertical;min-height:52px;line-height:1.6}
+.form-in.err{border-color:var(--red)!important}
+.field-err{font-size:9px;color:var(--red);margin-top:2px;display:none}
+.field-hint{font-size:9px;color:var(--dim);margin-top:2px}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:6px;margin-bottom:14px}
+.stat-box{background:var(--bg2);border:1px solid var(--border);padding:9px 11px}
+.stat-box-action{transition:border-color .15s,background .15s}
+.stat-box-action:hover{border-color:var(--green);background:rgba(0,204,100,.07)}
+.stat-box-action:active{background:rgba(0,204,100,.14)}
+.stat-val{font-size:20px;font-weight:700;line-height:1;margin-bottom:3px}.stat-lbl{font-size:9px;color:var(--dim);letter-spacing:.06em}
+.dt{width:100%;border-collapse:collapse;font-size:10px}
+.dt th{text-align:left;padding:4px 7px;color:var(--dim);font-weight:400;border-bottom:1px solid var(--border);font-size:9px;letter-spacing:.08em}
+.dt td{padding:5px 7px;border-bottom:1px solid rgba(26,42,26,.6);vertical-align:middle}
+.dt tr:hover td{background:var(--bg2)}
+.td-n{color:var(--bright);font-size:11px}.td-o{color:var(--mid)}.td-d{color:var(--dim)}
+.pill{display:inline-block;padding:1px 5px;border-radius:2px;font-size:9px;margin-right:2px;border:1px solid}
+.pg{background:rgba(0,224,64,.07);border-color:rgba(0,224,64,.2);color:var(--green)}
+.pc{background:rgba(0,204,196,.07);border-color:rgba(0,204,196,.2);color:var(--cyan)}
+.pa{background:rgba(232,160,0,.07);border-color:rgba(232,160,0,.2);color:var(--amber)}
+.pp{background:rgba(152,104,232,.07);border-color:rgba(152,104,232,.2);color:var(--purple)}
+.pag{display:flex;align-items:center;gap:7px;margin-top:9px;font-size:10px;color:var(--dim)}
+.bar-row{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.bar-lbl{width:78px;text-align:right;color:var(--mid);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar-trk{flex:1;height:9px;background:var(--bg2);border:1px solid var(--border);overflow:hidden}
+.bar-fill{height:100%;background:var(--green2);box-shadow:1px 0 5px var(--green2)}
+.bar-n{width:30px;color:var(--dim);font-size:10px}
+.cat-tiles{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px}
+.ct{display:flex;align-items:center;gap:6px;padding:5px 9px;background:var(--bg2);border:1px solid var(--border);cursor:pointer;transition:border-color .15s;font-size:11px;color:var(--text)}
+.ct:hover{border-color:var(--mid)}.ct.sel{border-color:var(--amber);color:var(--bright)}
+.ct .ctd{width:5px;height:5px;border-radius:50%;background:var(--dim);flex-shrink:0}.ct.sel .ctd{background:var(--amber)}
+.src-row{display:flex;gap:6px;margin-bottom:9px}
+.src-in{flex:1;background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:5px 8px;font-family:inherit;font-size:11px;outline:none}
+.src-in:focus{border-color:var(--mid)}.src-in::placeholder{color:var(--dim)}
+.flt-sel{background:var(--bg2);border:1px solid var(--border);color:var(--mid);padding:5px 8px;font-family:inherit;font-size:11px;outline:none;cursor:pointer}
+.ml-tile{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:var(--bg2);border:1px solid var(--border);cursor:pointer;font-size:11px;color:var(--mid);transition:all .15s;margin-right:5px}
+.ml-tile:hover{border-color:var(--mid);color:var(--text)}
+.empty{padding:28px;text-align:center;color:var(--dim);font-size:11px;line-height:2.2}
+::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:var(--bg2)}::-webkit-scrollbar-thumb{background:var(--border)}
+
+/* Edit/Add Modal */
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;display:none;align-items:center;justify-content:center}
+.modal-backdrop.open{display:flex}
+.modal{background:var(--bg2);border:1px solid var(--border);width:580px;max-width:95vw;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 0 40px rgba(0,0,0,.8)}
+.modal-header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border)}
+.modal-title{font-size:12px;font-weight:700;color:var(--bright);flex:1}
+.modal-close{background:none;border:none;color:var(--dim);cursor:pointer;font-size:16px;padding:0 4px;font-family:inherit;line-height:1}
+.modal-close:hover{color:var(--red)}
+.modal-body{overflow-y:auto;padding:16px}
+.modal-footer{padding:10px 16px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end}
+.section-divider{font-size:9px;color:var(--dim);letter-spacing:.1em;margin:14px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--border)}
+
+/* Review action buttons per row */
+.row-actions{display:none;gap:4px}
+.dt tr:hover .row-actions{display:flex}
+.rev-row-sel{background:rgba(255,170,0,.07)!important}
+.rev-row-sel td{border-bottom-color:rgba(255,170,0,.2)!important}
+.row-btn{background:none;border:1px solid var(--border);color:var(--dim);padding:1px 7px;font-family:inherit;font-size:9px;cursor:pointer;transition:all .1s}
+.row-btn:hover{border-color:var(--mid);color:var(--text)}
+.row-btn.del:hover{border-color:var(--red);color:var(--red)}
+
+/* Toast */
+#toast{position:fixed;bottom:14px;right:14px;background:var(--bg2);border:1px solid var(--green);color:var(--green);padding:6px 13px;font-size:11px;z-index:9997;opacity:0;transition:opacity .25s;pointer-events:none;max-width:380px}
+#toast.show{opacity:1}#toast.err{border-color:var(--red);color:var(--red)}
+
+/* Navigator (prev/next in edit modal) */
+.nav-arrows{display:flex;gap:6px;align-items:center}
+.nav-arrows .arr{background:none;border:1px solid var(--border);color:var(--mid);padding:2px 9px;font-family:inherit;font-size:11px;cursor:pointer}
+.nav-arrows .arr:hover:not(:disabled){border-color:var(--mid);color:var(--text)}
+.nav-arrows .arr:disabled{opacity:.3;cursor:not-allowed}
+.nav-arrows .pos{font-size:10px;color:var(--dim)}
+
+/* Kind icon in contact list */
+.kind-icon{display:inline-block;width:14px;text-align:center;margin-right:3px;font-size:11px;flex-shrink:0}
+
+/* vCard raw viewer */
+.vcf-card-block{background:var(--bg2);border:1px solid var(--border);margin-bottom:10px;overflow:hidden}
+.vcf-card-header{display:flex;align-items:center;gap:10px;padding:7px 10px;border-bottom:1px solid var(--border);background:var(--bg3)}
+.vcf-card-name{font-size:11px;font-weight:700;color:var(--bright);flex:1}
+.vcf-card-uid{font-size:9px;color:var(--dim);font-family:inherit}
+.vcf-code{padding:10px;font-family:'JetBrains Mono',monospace;font-size:10px;line-height:1.7;white-space:pre-wrap;word-break:break-all;color:var(--text);max-height:300px;overflow-y:auto}
+.vcf-prop-key{color:var(--cyan)}
+.vcf-prop-val{color:var(--text)}
+.vcf-prop-begin{color:var(--green);font-weight:700}
+.vcf-prop-end{color:var(--green2)}
+.vcf-prop-uid{color:var(--amber)}
+.vcf-prop-rev{color:var(--purple)}
+.vcf-prop-prodid{color:var(--dim)}
+
+/* Member list items */
+.member-item{display:flex;align-items:center;gap:7px;padding:5px 8px;background:var(--bg);border:1px solid var(--border);margin-bottom:3px}
+.member-name{flex:1;font-size:11px;color:var(--text)}
+.member-uid{font-size:9px;color:var(--green);opacity:.7}
+.member-remove{background:none;border:none;color:var(--dim);cursor:pointer;font-size:11px;padding:0 2px}
+.member-remove:hover{color:var(--red)}
+
+/* Welcome / first-run banner */
+#welcome-banner{background:rgba(0,224,64,.06);border:1px solid var(--green2);padding:14px 16px;margin-bottom:16px;display:none}
+.wb-title{font-size:12px;font-weight:700;color:var(--green);margin-bottom:6px}
+.wb-body{font-size:10px;color:var(--text);line-height:1.9;margin-bottom:10px}
+
+/* Self warning banner */
+#self-warn-banner{background:rgba(232,160,0,.07);border:1px solid var(--amber);padding:9px 12px;margin-bottom:10px;display:none;align-items:center;gap:10px}
+
+/* Improved rel picker */
+.rel-picker-wrap{background:var(--bg);border:1px solid var(--border);padding:8px;margin-top:6px}
+.rel-picker-search{display:flex;gap:6px;align-items:center;margin-bottom:8px}
+.rel-picker-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px;max-height:220px;overflow-y:auto}
+.rel-card{background:var(--bg2);border:1px solid var(--border);padding:6px 8px;cursor:pointer;transition:border-color .12s}
+.rel-card:hover{border-color:var(--green);background:rgba(0,224,64,.04)}
+.rel-card-name{font-size:11px;color:var(--bright);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rel-card-sub{font-size:9px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rel-card-type{font-size:9px;color:var(--amber);margin-top:2px}
+.rel-no-results{color:var(--dim);font-size:10px;padding:12px;text-align:center;grid-column:1/-1}
+.rel-item{display:flex;align-items:center;gap:7px;padding:5px 8px;background:var(--bg);border:1px solid var(--border);margin-bottom:3px}
+.ri-type{font-size:9px;color:var(--amber);background:rgba(232,160,0,.1);border:1px solid rgba(232,160,0,.2);padding:1px 5px}
+.ri-name{flex:1;font-size:11px;color:var(--text)}
+.ri-uid{font-size:9px;color:var(--green);opacity:.7}
+.rel-remove{background:none;border:none;color:var(--dim);cursor:pointer;font-size:11px;padding:0 2px}
+.rel-remove:hover{color:var(--red)}
+</style>
+</head>
+<body>
+<div id="app">
+
+<!-- Header -->
+<header id="header">
+  <div class="wordmark"><span class="v">v</span><span class="rest">card studio</span></div>
+  <div class="tagline">local · no cloud · GNU GPL v3</div>
+  <div id="hdr-version" style="font-size:10px;color:var(--dim);padding-left:8px;border-left:1px solid var(--border)"></div>
+  <div class="hdr-spacer"></div>
+  <div class="hdr-status" id="hdr-status">idle</div>
+  <div id="hdr-saved" style="font-size:10px;color:var(--dim);padding:0 8px;opacity:0;transition:opacity 1s">
+    ✓ saved
+  </div>
+  <div class="dot idle" id="dot"></div>
+  <button class="btn-quit" onclick="doQuit()">✕ quit</button>
+</header>
+
+<!-- Sidebar -->
+<nav id="sidebar">
+  <div class="nav-grp">
+    <div class="nav-grp-lbl">WORKFLOW</div>
+    <div class="nav-item active" data-p="unify"    onclick="show('unify')">   <span class="nav-step">1</span> Unify    <span class="nav-badge" id="nb-unify">—</span></div>
+    <div class="nav-item"        data-p="clean"    onclick="show('clean')">   <span class="nav-step">2</span> Clean    <span class="nav-badge" id="nb-clean">—</span></div>
+    <div class="nav-item"        data-p="split"    onclick="show('split')">   <span class="nav-step">3</span> Split    <span class="nav-badge" id="nb-split">—</span></div>
+    <div class="nav-item"        data-p="review"   onclick="show('review')">  <span class="nav-step">4</span> Review   <span class="nav-badge" id="nb-review">—</span></div>
+    <div class="nav-item"        data-p="add"      onclick="show('add')">     <span class="nav-step">+</span> Add Contact</div>
+    <div class="nav-item"        data-p="insights" onclick="show('insights')"><span class="nav-step">5</span> Insights</div>
+    <div class="nav-item"        data-p="export"   onclick="show('export')">  <span class="nav-step">6</span> Export</div>
+    <div class="nav-item"        data-p="viewer"   onclick="show('viewer')">  <span class="nav-step">◈</span> Raw Viewer</div>
+    <div class="nav-item"        data-p="prefs"    onclick="show('prefs')">   <span class="nav-step">⚙</span> Preferences</div>
+  </div>
+  <div class="sb-footer">
+    <div class="sb-row"><span class="sb-lbl">contacts</span><span class="sb-val" style="color:var(--green)"  id="sb-total">0</span></div>
+    <div class="sb-row"><span class="sb-lbl">merged</span>  <span class="sb-val" style="color:var(--amber)"  id="sb-dupes">0</span></div>
+    <div class="sb-row"><span class="sb-lbl">sources</span> <span class="sb-val"                             id="sb-src">0</span></div>
+  </div>
+</nav>
+
+<!-- Main -->
+<main id="main">
+
+<!-- §1 UNIFY -->
+<div id="panel-unify" class="panel active">
+  <div class="ph"><div class="ph-title" style="color:var(--green)"><span style="color:var(--green);margin-right:5px">$</span>unify_sources</div><div class="ph-sub">merge .vcf exports · deduplicate across sources</div></div>
+
+  <!-- First-run welcome banner -->
+  <div id="welcome-banner">
+    <div class="wb-title">👋 Welcome to vCard Studio</div>
+    <div class="wb-body">Before you import contacts, let's set up your own profile card and home country.<br>
+    Your profile card (KIND=self) helps the app skip you in duplicate checks and quality reports.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-g" onclick="openProfileSetup()">⭐ set up my profile</button>
+      <button class="btn btn-d" style="font-size:10px" onclick="dismissWelcome()">skip for now</button>
+    </div>
+  </div>
+  <div class="sec-lbl">SOURCE FILES <span style="color:var(--dim);font-weight:400">(cards-in/)</span></div>
+  <div id="u-sources"></div>
+  <div class="dz" onclick="document.getElementById('u-fi').click()">
+    <div class="dz-title">Drop .vcf files here, or click to browse</div>
+    <div class="dz-hint">iCloud · Protonmail · Google Contacts · Outlook</div>
+    <input id="u-fi" type="file" accept=".vcf" multiple style="display:none" onchange="fileHint()">
+  </div>
+  <div id="u-prog" style="display:none">
+    <div class="log-line" id="u-log"></div>
+    <div class="prog-wrap"><div class="prog-bar" id="u-bar" style="width:0%"></div></div>
+  </div>
+  <div class="row">
+    <button class="btn btn-g" id="btn-proc" onclick="startProcess()">▶ merge &amp; deduplicate</button>
+    <button class="btn btn-d" id="btn-next" onclick="show('clean')" style="display:none">next: clean →</button>
+  </div>
+  <hr class="divider" style="margin-top:18px">
+  <div class="sec-lbl">WHAT THIS STEP DOES</div>
+  <div style="color:var(--dim);font-size:10px;line-height:2.2">· Parses vCard 2.1, 3.0, 4.0 from any source<br>· Strips proprietary Apple/Google fields and embedded photos<br>· Normalises phone numbers to E.164 international format<br>· Detects duplicates via email, phone, and fuzzy name matching<br>· Auto-merges duplicate clusters, choosing the richest card as base</div>
+</div>
+
+<!-- §2 CLEAN -->
+<div id="panel-clean" class="panel">
+  <div class="ph"><div class="ph-title" style="color:var(--cyan)"><span style="color:var(--cyan);margin-right:5px">$</span>clean_contacts</div><div class="ph-sub">auto-clean · classify · categorise</div></div>
+  <div class="sec-lbl">SUMMARY</div>
+  <div class="stats-grid">
+    <div class="stat-box"><div class="stat-val" style="color:var(--cyan)" id="cs-total">0</div><div class="stat-lbl">CONTACTS</div></div>
+    <div class="stat-box"><div class="stat-val" style="color:var(--cyan)" id="cs-dupes">0</div><div class="stat-lbl">DUPES MERGED</div></div>
+    <div class="stat-box"><div class="stat-val" style="color:var(--cyan)" id="cs-cats">0</div><div class="stat-lbl">CATEGORIES</div></div>
+    <div class="stat-box"><div class="stat-val" style="color:var(--cyan)" id="cs-src">0</div><div class="stat-lbl">SOURCES</div></div>
+  </div>
+  <div class="sec-lbl">CATEGORIES DETECTED <span style="color:var(--dim);font-weight:400">— click to filter Review</span></div>
+  <div class="cat-tiles" id="clean-cats">
+    <div id="clean-no-data" style="display:none"></div>
+  </div>
+
+  <!-- Shown when sources exist but no merge has been run yet -->
+  <div id="clean-needs-merge" style="display:none;flex-direction:column;gap:10px;
+       background:rgba(0,204,196,.06);border:1px solid var(--cyan);padding:14px 16px;margin:8px 0 14px">
+    <div style="color:var(--cyan);font-size:11px;font-weight:700">▲ No contacts loaded — merge your source files first</div>
+    <div style="color:var(--dim);font-size:10px">
+      Source files are ready in <code style="color:var(--text)">cards-in/</code> but the merge hasn't been run yet.
+      Click below to merge and load your contacts now.
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn btn-g" onclick="startProcessFromClean()">▶ merge &amp; deduplicate now</button>
+      <span style="color:var(--dim);font-size:10px" id="clean-merge-srcs"></span>
+    </div>
+  </div>
+
+  <!-- Shown when no sources AND no contacts — truly empty -->
+  <div id="clean-truly-empty" style="display:none;align-items:center;gap:10px;padding:6px 0">
+    <span style="color:var(--dim);font-size:10px;">No contacts and no source files found.</span>
+    <button class="btn btn-c" style="font-size:10px;padding:3px 10px" onclick="show('unify')">→ go to Unify to add files</button>
+  </div>
+  <hr class="divider">
+  <div class="sec-lbl">AUTO-REVIEW
+    <span style="color:var(--dim);font-weight:400"> — flag contacts that may need attention</span>
+  </div>
+
+  <div class="row" style="margin-bottom:10px;gap:6px">
+    <button class="btn btn-c" id="btn-review-run" onclick="runAutoReview()">⟳ scan contacts</button>
+    <span style="font-size:10px;color:var(--dim)" id="review-run-hint">Checks all loaded contacts for common data quality issues</span>
+  </div>
+
+  <div id="review-results" style="display:none">
+    <div class="stats-grid" id="review-stats"></div>
+    <div id="review-issues"></div>
+  </div>
+
+  <hr class="divider">
+  <div class="sec-lbl">WHAT CLEAN DID</div>
+  <div style="color:var(--dim);font-size:10px;line-height:2.2">· Phones normalised to E.164 (country inferred from address)<br>· Contacts classified as individual or organisation<br>· Rule-based auto-tagging from local/vcard.conf patterns<br>· Proprietary Apple/Google fields stripped</div>
+</div>
+
+<!-- §3 SPLIT -->
+<div id="panel-split" class="panel">
+  <div class="ph"><div class="ph-title" style="color:var(--amber)"><span style="color:var(--amber);margin-right:5px">$</span>split_by_category</div><div class="ph-sub">partition contacts into separate .vcf files</div></div>
+  <div class="sec-lbl">SELECT CATEGORIES</div>
+  <div class="cat-tiles" id="split-cats"><div style="color:var(--dim);font-size:10px;">Run step 1 first.</div></div>
+  <div class="form-row"><span class="form-lbl">output mode</span><select class="form-sel" id="split-mode"><option value="separate">one file per category</option><option value="combined">combined into one file</option></select></div>
+  <div class="row" style="margin-top:6px"><button class="btn btn-a" onclick="doSplit()" id="btn-split">⤒ export split files</button></div>
+  <hr class="divider">
+  <div class="sec-lbl">RECENT OUTPUTS <span style="color:var(--dim);font-weight:400">(cards-out/)</span></div>
+  <div id="split-files"></div>
+</div>
+
+<!-- §4 REVIEW -->
+<div id="panel-review" class="panel">
+  <div class="ph">
+    <div class="ph-title" style="color:var(--red)"><span style="color:var(--red);margin-right:5px">$</span>review_contacts</div>
+    <div class="ph-sub" id="rev-sub">browse · edit · delete</div>
+    <div style="margin-left:auto">
+      <button class="btn btn-g" style="font-size:10px;padding:3px 10px" onclick="show('add')">+ add contact</button>
+    </div>
+  </div>
+  <div class="src-row">
+    <input class="src-in" id="rev-q" placeholder="search name, org, email…" oninput="onRevSearch()">
+    <select class="flt-sel" id="rev-cat" onchange="onRevFilter()"><option value="">all categories</option></select>
+    <select class="flt-sel" id="rev-kind" onchange="onRevFilter()"><option value="">all kinds</option><option value="individual">individual</option><option value="org">org</option><option value="self">self</option></select>
+    <select class="flt-sel" id="rev-quality" onchange="onRevQualityFilter()" title="Target review: show contacts missing specific fields">
+      <option value="">quality filter…</option>
+      <option value="no_email">missing email</option>
+      <option value="no_phone">missing phone</option>
+      <option value="no_category">uncategorised</option>
+      <option value="no_org">no org/company</option>
+      <option value="no_address">no address</option>
+      <option value="num_prefix">junk number prefix</option>
+    </select>
+    <button class="btn btn-d" id="rev-clear-btn" onclick="clearRevFilters()" style="display:none;font-size:10px;padding:2px 8px">✕ clear</button>
+  </div>
+  <div id="rev-empty" class="empty">No contacts loaded.<br><span style="color:var(--dim)">Complete step 1 (Unify) first.</span></div>
+  <table class="dt" id="rev-tbl" style="display:none">
+    <thead><tr><th style="width:28px"><input type="checkbox" id="rev-select-all" title="Select all on page" onchange="toggleRevSelectAll(this.checked)" style="accent-color:var(--green)"></th><th>NAME</th><th>ORG</th><th>EMAIL</th><th>PHONE</th><th>CATEGORIES</th><th></th></tr></thead>
+    <tbody id="rev-body"></tbody>
+  </table>
+  <div class="pag" id="rev-pag"></div>
+  <!-- Merge bar — appears when 2+ rows are checked -->
+  <div id="rev-merge-bar" style="display:none;position:sticky;bottom:0;background:var(--bg2);
+       border-top:1px solid var(--amber);padding:8px 12px;display:none;
+       align-items:center;gap:12px;z-index:50">
+    <span id="rev-merge-count" style="font-size:11px;color:var(--amber)">0 selected</span>
+    <button class="btn" style="background:rgba(255,170,0,.1);border-color:var(--amber);color:var(--amber);font-size:10px"
+            onclick="doMergeSelected()">⊕ merge selected into one card</button>
+    <button class="btn" style="background:rgba(255,60,60,.1);border-color:var(--red);color:var(--red);font-size:10px"
+            onclick="doDeleteSelected()">✕ delete selected</button>
+    <span style="font-size:10px;color:var(--dim)">Fields are unioned — richest card wins</span>
+    <button class="btn btn-d" style="margin-left:auto;font-size:10px" onclick="clearRevSelection()">✕ clear</button>
+  </div>
+  <hr class="divider">
+  <div class="sec-lbl">MAILING LISTS <span style="color:var(--dim);font-weight:400">— click to filter</span></div>
+  <div style="margin-top:4px">
+    <span class="ml-tile" onclick="jumpList('Christmas Card')">🎄 Christmas Card</span>
+    <span class="ml-tile" onclick="jumpList('Newsletter')">📨 Newsletter</span>
+    <span class="ml-tile" onclick="jumpList('Event')">🎉 Event Invite</span>
+  </div>
+</div>
+
+<!-- ADD CONTACT -->
+<div id="panel-add" class="panel">
+  <div class="ph"><div class="ph-title" style="color:var(--green)"><span style="color:var(--green);margin-right:5px">$</span>add_contact</div><div class="ph-sub">new contact · validated · auto-formatted</div></div>
+
+  <div class="section-divider">IDENTITY</div>
+  <!-- KIND selector shown FIRST so the form adapts immediately -->
+  <div class="form-row" style="margin-bottom:12px">
+    <span class="form-lbl">type</span>
+    <div style="display:flex;gap:8px">
+      <label id="kind-btn-individual" onclick="setAddKind('individual')"
+        style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 12px;
+               border:1px solid var(--green);color:var(--bright);font-size:11px;background:rgba(0,204,100,.08)">
+        <span style="font-size:14px">👤</span> Individual
+      </label>
+      <label id="kind-btn-org" onclick="setAddKind('org')"
+        style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 12px;
+               border:1px solid var(--border);color:var(--dim);font-size:11px">
+        <span style="font-size:14px">🏢</span> Organisation
+      </label>
+      <label id="kind-btn-self" onclick="setAddKind('self')"
+        style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 12px;
+               border:1px solid var(--border);color:var(--dim);font-size:11px">
+        <span style="font-size:14px">⭐</span> Self
+      </label>
+    </div>
+  </div>
+  <!-- hidden select keeps existing logic working -->
+  <input type="hidden" id="add-kind" value="individual">
+  <!-- Org name field shown only for KIND=org -->
+  <div class="form-row" id="add-orgname-row" style="display:none">
+    <span class="form-lbl">org name <span style="color:var(--red)">*</span></span>
+    <input class="form-in" id="add-orgname" placeholder="Bupa - U16 Appointments" oninput="document.getElementById('add-fn').value=this.value">
+  </div>
+  <div id="add-person-fields">
+  <div class="form-row">
+    <span class="form-lbl">prefix</span>
+    <div class="typeahead-wrap">
+      <input class="form-in" id="add-prefix" placeholder="Mr, Mrs, Dr…" autocomplete="off"
+             oninput="prefixTypeahead(this,'add-prefix-drop')" onblur="closeTaDrop('add-prefix-drop',200)">
+      <div class="typeahead-drop" id="add-prefix-drop"></div>
+    </div>
+  </div>
+  <div class="form-row">
+    <span class="form-lbl">first name <span style="color:var(--red)">*</span></span>
+    <div style="flex:1;max-width:320px">
+      <input class="form-in" id="add-given" placeholder="Jane" oninput="syncAddFn()" oncut="cutNamePart(event,'add')">
+      <div class="field-err" id="add-fn-err">First name is required</div>
+    </div>
+  </div>
+  <div class="form-row">
+    <span class="form-lbl">middle name</span>
+    <input class="form-in" id="add-additional" placeholder="Elizabeth" oninput="syncAddFn()" oncut="cutNamePart(event,'add')">
+  </div>
+  <div class="form-row">
+    <span class="form-lbl">last name</span>
+    <input class="form-in" id="add-family" placeholder="Smith" oninput="syncAddFn()" oncut="cutNamePart(event,'add')">
+  </div>
+  <div class="form-row">
+    <span class="form-lbl">suffix</span>
+    <input class="form-in" id="add-suffix" placeholder="OBE, Jr, PhD…" oninput="syncAddFn()" oncut="cutNamePart(event,'add')">
+  </div>
+  <div class="form-row" style="align-items:center">
+    <span class="form-lbl">display name</span>
+    <div style="flex:1;max-width:320px">
+      <input class="form-in" id="add-fn" placeholder="auto-built from name parts" style="width:100%" oninput="addFnManualOverride()">
+      <div class="field-hint" id="add-fn-hint">Auto-generated · type here to override</div>
+    </div>
+  </div>
+  </div><!-- /add-person-fields -->
+  <div class="form-row" id="add-org-row">
+    <span class="form-lbl" id="add-org-lbl">org / company</span>
+    <input class="form-in" id="add-org" placeholder="Acme Ltd">
+  </div>
+  <div class="form-row" id="add-title-row"><span class="form-lbl">job title</span><input class="form-in" id="add-title" placeholder="Director"></div>
+  <div class="form-row">
+    <span class="form-lbl">kind</span>
+    <select class="form-sel" id="add-kind" onchange="onKindChange('add')">
+      <option value="individual">individual</option>
+      <option value="org">organisation</option>
+    </select>
+  </div>
+
+  <div class="section-divider">CONTACT</div>
+  <div class="form-row">
+    <span class="form-lbl">email(s)</span>
+    <div style="flex:1;max-width:320px">
+      <textarea class="form-ta" id="add-email" placeholder="jane@example.com&#10;jane@work.com" rows="2" oninput="addValidateEmail()"></textarea>
+      <div class="field-err" id="add-email-err">Invalid email address</div>
+      <div class="field-hint">One per line or comma-separated</div>
+    </div>
+  </div>
+  <div class="form-row">
+    <span class="form-lbl">phone(s)</span>
+    <div style="flex:1;max-width:320px">
+      <textarea class="form-ta" id="add-tel" placeholder="+44 7980 123 456&#10;020 7946 0123" rows="2" oninput="addValidateTel()"></textarea>
+      <div class="field-err" id="add-tel-err">Could not parse phone number</div>
+      <div class="field-hint" id="add-tel-hint">Will be normalised to E.164 on save</div>
+    </div>
+  </div>
+
+  <div class="section-divider">ADDRESS</div>
+  <div class="form-row"><span class="form-lbl">street</span><input class="form-in" id="add-street" placeholder="12 Baker Street" oninput="detectSingleLineAddressAdd(this)"></div>
+  <div id="add-addr-hint" style="display:none;margin:-4px 0 8px 130px;font-size:10px;color:var(--amber)">
+    ⚠ This looks like a full address in one field.
+    <button class="btn btn-d" style="font-size:9px;padding:1px 7px;margin-left:6px" onclick="parseSingleLineAddressAdd()">auto-split into fields</button>
+    <button class="btn btn-d" style="font-size:9px;padding:1px 7px;margin-left:4px" onclick="document.getElementById('add-addr-hint').style.display='none'">dismiss</button>
+  </div>
+  <div class="form-row"><span class="form-lbl">city</span><input class="form-in" id="add-city" placeholder="London"></div>
+  <div class="form-row"><span class="form-lbl">region</span><input class="form-in" id="add-region" placeholder="Greater London"></div>
+  <div class="form-row"><span class="form-lbl">postcode</span><input class="form-in" id="add-postal" placeholder="NW1 6XE"></div>
+  <div class="form-row"><span class="form-lbl">country</span>
+    <div class="cat-ta-wrap" style="flex:1;position:relative">
+      <input class="form-in" id="add-country" placeholder="Start typing a country…"
+             autocomplete="off"
+             oninput="countryTypeahead(this,'add-country-drop');updateCountryPreview('add-country')"
+             onblur="closeTaDrop('add-country-drop',200);updateCountryPreview('add-country')"
+             style="width:100%">
+      <div class="typeahead-drop" id="add-country-drop"></div>
+      <div id="add-country-flag-preview" style="display:none;font-size:11px;color:var(--green);margin-top:3px;padding-left:2px"></div>
+    </div>
+  </div>
+
+  <div class="section-divider">DATES</div>
+  <div class="form-row">
+    <span class="form-lbl">birthday</span>
+    <input class="form-in" id="add-bday" placeholder="1980-06-15 or --0615">
+  </div>
+  <div class="form-row">
+    <span class="form-lbl">anniversary</span>
+    <input class="form-in" id="add-anniversary" placeholder="2005-09-24">
+  </div>
+  <div class="section-divider">NOTES</div>
+  <div class="form-row" style="align-items:flex-start">
+    <span class="form-lbl" style="padding-top:4px">notes</span>
+    <textarea class="form-ta" id="add-note" rows="3" placeholder="Free text notes…" style="flex:1;resize:vertical;font-family:inherit;font-size:11px"></textarea>
+  </div>
+
+  <div class="section-divider">CATEGORIES</div>
+  <div class="form-row">
+    <span class="form-lbl">categories</span>
+    <div class="cat-ta-wrap">
+      <input class="form-in" id="add-cats" placeholder="Work, Personal" autocomplete="off"
+             oninput="catTypeahead(this,'add-cats-drop')" onblur="closeTaDrop('add-cats-drop',200)">
+      <div class="typeahead-drop" id="add-cats-drop"></div>
+      <div class="field-hint">Comma-separated · type to autocomplete</div>
+    </div>
+  </div>
+
+  <div class="section-divider">LINKED PEOPLE <span style="color:var(--dim);font-weight:400;font-size:9px">— vCard 4.0 RELATED</span></div>
+  <div id="add-rel-list" class="rel-list"></div>
+  <div class="rel-picker-wrap">
+    <div style="font-size:10px;color:var(--dim);margin-bottom:7px">Search and click to link a contact:</div>
+    <div class="rel-picker-search">
+      <select class="form-sel" id="add-rel-type" style="width:90px;flex-shrink:0">
+        <option value="spouse">spouse</option>
+        <option value="partner">partner</option>
+        <option value="sibling">sibling</option>
+        <option value="parent">parent</option>
+        <option value="child">child</option>
+        <option value="friend">friend</option>
+        <option value="emergency">emergency</option>
+      </select>
+      <input class="form-in" id="add-rel-search" placeholder="type name to search…" style="flex:1;max-width:none"
+             oninput="relSearchPicker(this.value,'add-rel-picker-grid','add')"
+             autocomplete="off">
+      <button class="btn btn-d" style="font-size:10px;padding:3px 8px;flex-shrink:0" onclick="addRelManual('add')" title="Add by name only (no UID link)">+ text only</button>
+    </div>
+    <div class="rel-picker-grid" id="add-rel-picker-grid">
+      <div class="rel-no-results" id="add-rel-no-results">Type a name above to search contacts</div>
+    </div>
+  </div>
+
+  <div class="row" style="margin-top:16px;gap:8px">
+    <button class="btn btn-g" id="btn-add-save" onclick="doAddContact()">✓ save contact</button>
+    <button class="btn btn-d" onclick="clearAddForm()">✕ clear</button>
+  </div>
+</div>
+
+<!-- §5 INSIGHTS -->
+<div id="panel-insights" class="panel">
+  <div class="ph"><div class="ph-title" style="color:var(--purple)"><span style="color:var(--purple);margin-right:5px">$</span>insights</div><div class="ph-sub">data quality · completeness · breakdown</div></div>
+  <div class="stats-grid">
+    <div class="stat-box"><div class="stat-val" style="color:var(--green)"   id="ins-total">0</div><div class="stat-lbl">CONTACTS</div></div>
+    <div class="stat-box"><div class="stat-val" style="color:var(--amber)"   id="ins-dupes">0</div><div class="stat-lbl">DUPES MERGED</div></div>
+    <div class="stat-box"><div class="stat-val" style="color:var(--cyan)"    id="ins-src">0</div>  <div class="stat-lbl">SOURCES</div></div>
+    <div class="stat-box"><div class="stat-val" style="color:var(--purple)"  id="ins-cats">0</div> <div class="stat-lbl">CATEGORIES</div></div>
+  </div>
+  <div class="sec-lbl">COMPLETENESS</div><div id="ins-completeness" style="margin-bottom:12px"></div>
+  <div class="sec-lbl">CATEGORY BREAKDOWN</div><div id="ins-cat-bars" style="margin-bottom:12px"></div>
+  <div class="sec-lbl">SOURCE FILES</div><div id="ins-sources" style="margin-bottom:12px"></div>
+  <div class="sec-lbl">CONTACTS BY COUNTRY</div><div id="ins-countries" style="margin-bottom:12px"></div>
+</div>
+
+<!-- §6 EXPORT -->
+<div id="panel-export" class="panel">
+  <div class="ph"><div class="ph-title" style="color:var(--blue)"><span style="color:var(--blue);margin-right:5px">$</span>export</div><div class="ph-sub">write clean .vcf or .csv · filter by category</div></div>
+  <div class="sec-lbl">SETTINGS</div>
+  <div class="form-row"><span class="form-lbl">owner name</span><input class="form-in" id="exp-owner" placeholder="Your Name"></div>
+  <div class="form-row"><span class="form-lbl">vCard format</span><select class="form-sel" id="exp-ver"><option value="4.0">vCard 4.0 (recommended)</option><option value="3.0">vCard 3.0 (legacy apps)</option></select></div>
+
+  <div class="sec-lbl" style="margin-top:14px">CATEGORY FILTER
+    <span style="color:var(--dim);font-weight:400"> — tick the ones to include, or leave all ticked for a full export</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+    <label style="font-size:10px;color:var(--text);display:flex;align-items:center;gap:5px;cursor:pointer">
+      <input type="checkbox" id="exp-all-cb" checked onchange="toggleExpAll(this.checked)"
+             style="accent-color:var(--green)">
+      <span id="exp-all-lbl">all contacts</span>
+    </label>
+    <button class="btn btn-d" style="font-size:9px;padding:1px 7px" onclick="toggleExpAll(true)">select all</button>
+    <button class="btn btn-d" style="font-size:9px;padding:1px 7px" onclick="toggleExpAll(false)">clear all</button>
+  </div>
+  <div id="exp-cat-checks" style="display:flex;flex-wrap:wrap;gap:5px 14px;margin-bottom:12px;max-width:640px">
+    <span style="color:var(--dim);font-size:10px">Load contacts first to see categories.</span>
+  </div>
+
+  <div class="row" style="margin-top:4px;gap:8px;flex-wrap:wrap">
+    <button class="btn btn-b" onclick="doExport()" id="btn-exp">⤒ export combined .vcf</button>
+    <button class="btn btn-d" onclick="doExportCSV()">⤒ export .csv</button>
+    <span id="exp-count-hint" style="font-size:10px;color:var(--dim);align-self:center"></span>
+  </div>
+
+  <hr class="divider">
+  <div class="sec-lbl">INDIVIDUAL FILE EXPORT</div>
+  <div style="font-size:10px;color:var(--dim);line-height:1.9;margin-bottom:10px">
+    Exports each contact as a separate .vcf file inside <code style="color:var(--text)">cards-out/vcard-studio-&lt;date&gt;/</code><br>
+    Each file is named: <code style="color:var(--text)">vcard-&lt;ISO8601&gt;-&lt;LastName&gt;-&lt;FirstName&gt;.vcf</code>
+  </div>
+  <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
+    <button class="btn btn-b" onclick="doExportIndividual()" id="btn-exp-ind">⤒ export as individual files</button>
+    <span id="exp-ind-hint" style="font-size:10px;color:var(--dim)"></span>
+  </div>
+  <div id="exp-ind-result" style="display:none;margin-top:8px;background:rgba(72,152,248,.07);border:1px solid var(--blue);padding:8px 12px;font-size:10px;color:var(--blue)"></div>
+  <hr class="divider">
+  <div class="sec-lbl">OUTPUT FILES <span style="color:var(--dim);font-weight:400">(cards-out/)</span></div>
+  <div id="exp-files"></div>
+  <hr class="divider">
+  <div style="color:var(--dim);font-size:10px;line-height:2.2">· All processing is local — no data leaves this machine<br>· vCard 4.0 recommended; use 3.0 for older apps<br>· GNU GPL v3 · no telemetry · no accounts</div>
+</div>
+
+
+<!-- §8 RAW VIEWER -->
+<div id="panel-viewer" class="panel">
+  <div class="ph">
+    <div class="ph-title" style="color:var(--purple)"><span style="color:var(--purple);margin-right:5px">{ }</span>raw_viewer</div>
+    <div class="ph-sub">inspect vCard source · validate fields</div>
+  </div>
+
+  <div class="src-row" style="margin-bottom:10px">
+    <input class="src-in" id="viewer-q" placeholder="search name, org…" oninput="onViewerSearch()" style="flex:1">
+    <select class="flt-sel" id="viewer-ver" onchange="renderViewerPage(1)">
+      <option value="4.0">vCard 4.0</option>
+      <option value="3.0">vCard 3.0</option>
+    </select>
+    <button class="btn btn-d" style="font-size:10px;padding:2px 8px" onclick="refreshViewer()">⟳ refresh</button>
+  </div>
+
+  <div id="viewer-empty" class="empty" style="display:none">No contacts loaded.</div>
+  <div id="viewer-cards"></div>
+  <div class="pag" id="viewer-pag"></div>
+</div>
+
+
+<!-- §7 PREFERENCES -->
+<div id="panel-prefs" class="panel">
+  <div class="ph">
+    <div class="ph-title" style="color:var(--mid)"><span style="margin-right:5px">⚙</span>preferences</div>
+    <div class="ph-sub">display · sort · regional settings</div>
+  </div>
+
+  <!-- Self card warning -->
+  <div id="self-warn-banner" style="display:none;background:rgba(232,160,0,.07);border:1px solid var(--amber);padding:9px 12px;margin-bottom:14px;align-items:flex-start;gap:10px">
+    <div style="flex:1">
+      <div style="color:var(--amber);font-size:11px;font-weight:700;margin-bottom:3px">⚠ Multiple self cards detected</div>
+      <div id="self-warn-msg" style="font-size:10px;color:var(--text);line-height:1.7"></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0">
+      <button class="btn btn-a" style="font-size:10px;padding:2px 8px" onclick="show('review');document.getElementById('rev-kind').value='self';onRevFilter()">view self cards →</button>
+      <button class="btn btn-d" style="font-size:10px;padding:2px 8px" onclick="ignoreSelfWarn()">ignore</button>
+    </div>
+  </div>
+
+  <div class="sec-lbl">YOUR PROFILE</div>
+  <div style="background:var(--bg2);border:1px solid var(--border);padding:10px 12px;margin-bottom:10px">
+    <div id="pref-self-summary" style="font-size:10px;color:var(--dim);line-height:1.9">No self card found.</div>
+    <div style="margin-top:8px;display:flex;gap:7px">
+      <button class="btn btn-g" style="font-size:10px;padding:2px 9px" onclick="openProfileSetup()">⭐ set up profile</button>
+      <button class="btn btn-d" style="font-size:10px;padding:2px 9px" id="pref-edit-self-btn" onclick="editSelfCard()" style="display:none">edit →</button>
+    </div>
+  </div>
+
+  <div class="sec-lbl" style="margin-top:14px">HOME COUNTRY</div>
+  <div style="font-size:10px;color:var(--dim);margin-bottom:8px">Used to normalise phone numbers to international format.</div>
+  <div class="form-row">
+    <span class="form-lbl">country</span>
+    <div class="cat-ta-wrap" style="position:relative;flex:1;max-width:280px">
+      <input class="form-in" id="pref-country" placeholder="United Kingdom"
+             autocomplete="off"
+             oninput="countryTypeahead(this,'pref-country-drop');updateCountryPreview('pref-country')"
+             onblur="closeTaDrop('pref-country-drop',200);updateCountryPreview('pref-country')"
+             style="width:100%">
+      <div class="typeahead-drop" id="pref-country-drop"></div>
+      <div id="pref-country-flag-preview" style="display:none;font-size:11px;color:var(--green);margin-top:3px;padding-left:2px"></div>
+    </div>
+    <button class="btn btn-g" style="font-size:10px;padding:3px 10px;margin-left:6px" onclick="savePrefCountry()">save</button>
+  </div>
+  <div id="pref-country-saved" style="display:none;font-size:10px;color:var(--green);margin-bottom:10px">✓ Country saved — takes effect on next merge</div>
+
+  <hr class="divider">
+  <div class="sec-lbl">SORT ORDER</div>
+  <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
+    <label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:11px;color:var(--text)">
+      <input type="radio" name="pref-sort" value="last_name" checked
+             onchange="savePref('sort_order',this.value)" style="accent-color:var(--green)">
+      <span><strong style="color:var(--bright)">Last name</strong>
+        <span style="color:var(--dim)"> — Smith, Jones, Patel… (default)</span></span>
+    </label>
+    <label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:11px;color:var(--text)">
+      <input type="radio" name="pref-sort" value="first_name"
+             onchange="savePref('sort_order',this.value)" style="accent-color:var(--green)">
+      <span><strong style="color:var(--bright)">First name</strong>
+        <span style="color:var(--dim)"> — James, Jane, John…</span></span>
+    </label>
+  </div>
+  <div style="color:var(--dim);font-size:10px;margin-bottom:20px">
+    Organisations are always sorted alphabetically by name and listed alongside individuals.
+  </div>
+
+  <div class="sec-lbl">FLAG ICONS</div>
+  <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
+    <label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:11px;color:var(--text)">
+      <input type="radio" name="pref-flags" value="show" checked
+             onchange="savePref('show_flags',this.value)" style="accent-color:var(--green)">
+      <span><strong style="color:var(--bright)">Show flags</strong>
+        <span style="color:var(--dim)"> — country emoji in contact list</span></span>
+    </label>
+    <label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:11px;color:var(--text)">
+      <input type="radio" name="pref-flags" value="hide"
+             onchange="savePref('show_flags',this.value)" style="accent-color:var(--green)">
+      <span><strong style="color:var(--bright)">Hide flags</strong></span>
+    </label>
+  </div>
+
+  <hr class="divider">
+  <div class="sec-lbl">WARNINGS</div>
+  <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px">
+    <label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:11px;color:var(--text)">
+      <input type="checkbox" id="pref-ignore-multi-self"
+             onchange="savePref('ignore_multi_self',this.checked)" style="accent-color:var(--amber)">
+      <span><strong style="color:var(--bright)">Ignore multiple self cards</strong>
+        <span style="color:var(--dim)"> — suppress the warning in Preferences</span></span>
+    </label>
+  </div>
+</div>
+
+</main>
+</div>
+
+<!-- EDIT MODAL -->
+<div class="modal-backdrop" id="edit-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="edit-modal-title">Edit Contact</div>
+      <div class="nav-arrows">
+        <button class="arr" id="edit-prev" onclick="editNav(-1)">← prev</button>
+        <span class="pos" id="edit-pos"></span>
+        <button class="arr" id="edit-next" onclick="editNav(1)">next →</button>
+      </div>
+      <button class="modal-close" onclick="closeEditModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-idx">
+
+      <!-- UID / REV metadata strip -->
+      <div id="edit-meta-strip" style="display:none;background:var(--bg3);border:1px solid var(--border);
+           padding:6px 10px;margin-bottom:10px;font-size:9px;color:var(--dim);display:flex;
+           align-items:center;gap:0;flex-wrap:wrap;gap:6px 18px">
+        <span>UID <span id="edit-uid-val" style="color:var(--mid);user-select:all;cursor:text;font-family:inherit">—</span></span>
+        <span>REV <span id="edit-rev-val" style="color:var(--mid)">—</span></span>
+        <button onclick="openViewerForCurrent()" style="margin-left:auto;background:none;border:1px solid var(--border);
+                color:var(--dim);padding:1px 8px;font-family:inherit;font-size:9px;cursor:pointer"
+                title="View raw vCard source">{ } raw</button>
+      </div>
+
+      <div class="section-divider">IDENTITY</div>
+      <div class="form-row">
+        <span class="form-lbl">prefix</span>
+        <div class="typeahead-wrap">
+          <input class="form-in" id="edit-prefix" placeholder="Mr, Mrs, Dr…" autocomplete="off"
+                 oninput="prefixTypeahead(this,'edit-prefix-drop')" onblur="closeTaDrop('edit-prefix-drop',200)">
+          <div class="typeahead-drop" id="edit-prefix-drop"></div>
+        </div>
+      </div>
+      <div id="edit-person-fields">
+        <div class="form-row"><span class="form-lbl">first name <span style="color:var(--red)">*</span></span><input class="form-in" id="edit-given" placeholder="Jane" oninput="syncEditFn()" oncut="cutNamePart(event,'edit')"></div>
+        <div class="form-row"><span class="form-lbl">middle name</span><input class="form-in" id="edit-additional" placeholder="Elizabeth" oninput="syncEditFn()" oncut="cutNamePart(event,'edit')"></div>
+        <div class="form-row"><span class="form-lbl">last name</span><input class="form-in" id="edit-family" placeholder="Smith" oninput="syncEditFn()" oncut="cutNamePart(event,'edit')"></div>
+        <div class="form-row"><span class="form-lbl">suffix</span><input class="form-in" id="edit-suffix" placeholder="OBE, Jr…" oninput="syncEditFn()" oncut="cutNamePart(event,'edit')"></div>
+      </div>
+      <div class="form-row">
+        <span class="form-lbl">display name</span>
+        <div style="flex:1;max-width:320px">
+          <input class="form-in" id="edit-fn" placeholder="auto-built from name parts"
+                 oninput="editFnManualOverride()" style="width:100%">
+          <div class="field-hint" id="edit-fn-hint">Auto-generated · type here to override</div>
+        </div>
+      </div>
+      <div class="form-row" id="edit-org-row">
+        <span class="form-lbl" id="edit-org-lbl">org</span>
+        <input class="form-in" id="edit-org" placeholder="Acme Ltd">
+      </div>
+      <div class="form-row" id="edit-title-row"><span class="form-lbl">job title</span><input class="form-in" id="edit-title" placeholder="Director"></div>
+      <div class="form-row"><span class="form-lbl">kind</span>
+        <select class="form-sel" id="edit-kind" onchange="onKindChange('edit')">
+          <option value="individual">individual</option>
+          <option value="org">organisation</option>
+          <option value="self">self (my own card)</option>
+        </select>
+      </div>
+      <div id="edit-self-banner" style="display:none;background:rgba(77,159,255,.08);border:1px solid #4d9fff;padding:7px 10px;font-size:10px;color:#4d9fff;margin:6px 0">
+        ★ This is your own contact card. vCard 4.0 KIND=individual is the correct export value — "self" is a local label only.
+        Tagging yourself helps tools like the auto-reviewer skip you in certain checks.
+      </div>
+
+      <div class="section-divider">CONTACT</div>
+      <div class="form-row">
+        <span class="form-lbl">emails</span>
+        <div style="flex:1;max-width:320px">
+          <textarea class="form-ta" id="edit-emails" placeholder="jane@example.com" rows="2"></textarea>
+          <div class="field-hint">One per line</div>
+        </div>
+      </div>
+      <div class="form-row">
+        <span class="form-lbl">phones</span>
+        <div style="flex:1;max-width:320px">
+          <textarea class="form-ta" id="edit-tels" placeholder="+44 7980 123 456" rows="2"></textarea>
+          <div class="field-hint">One per line · will be normalised on save</div>
+        </div>
+      </div>
+
+      <div class="section-divider">ADDRESS</div>
+      <div class="form-row"><span class="form-lbl">street</span><input class="form-in" id="edit-street" placeholder="12 Baker Street" oninput="detectSingleLineAddress(this)"></div>
+      <div id="edit-addr-hint" style="display:none;margin:-4px 0 8px 130px;font-size:10px;color:var(--amber)">
+        ⚠ This looks like a full address in one field.
+        <button class="btn btn-d" style="font-size:9px;padding:1px 7px;margin-left:6px" onclick="parseSingleLineAddress()">auto-split into fields</button>
+        <button class="btn btn-d" style="font-size:9px;padding:1px 7px;margin-left:4px" onclick="dismissAddrHint()">dismiss</button>
+      </div>
+      <div class="form-row"><span class="form-lbl">city</span><input class="form-in" id="edit-city" placeholder="London"></div>
+      <div class="form-row"><span class="form-lbl">region</span><input class="form-in" id="edit-region" placeholder="Greater London"></div>
+      <div class="form-row"><span class="form-lbl">postcode</span><input class="form-in" id="edit-postal" placeholder="NW1 6XE"></div>
+      <div class="form-row"><span class="form-lbl">country</span>
+        <div class="cat-ta-wrap" style="flex:1;position:relative">
+          <input class="form-in" id="edit-country" placeholder="Start typing a country…"
+                 autocomplete="off"
+                 oninput="countryTypeahead(this,'edit-country-drop');updateCountryPreview('edit-country')"
+                 onblur="closeTaDrop('edit-country-drop',200);updateCountryPreview('edit-country')"
+                 style="width:100%">
+          <div class="typeahead-drop" id="edit-country-drop"></div>
+          <div id="edit-country-flag-preview" style="display:none;font-size:11px;color:var(--green);margin-top:3px;padding-left:2px"></div>
+        </div>
+      </div>
+
+      <div id="edit-dates-section">
+      <div class="section-divider">DATES</div>
+      <div class="form-row"><span class="form-lbl">birthday</span><input class="form-in" id="edit-bday" placeholder="1980-06-15 or --0615"></div>
+      <div class="form-row"><span class="form-lbl">anniversary</span><input class="form-in" id="edit-anniversary" placeholder="2005-09-24"></div>
+      </div>
+      <div class="section-divider">NOTES</div>
+      <div class="form-row" style="align-items:flex-start">
+        <span class="form-lbl" style="padding-top:4px">notes</span>
+        <textarea class="form-ta" id="edit-note" rows="4" placeholder="Free text notes…" style="flex:1;resize:vertical;font-family:inherit;font-size:11px"></textarea>
+      </div>
+
+      <div class="section-divider">CATEGORIES</div>
+      <div class="form-row">
+        <span class="form-lbl">categories</span>
+        <div class="cat-ta-wrap">
+          <input class="form-in" id="edit-cats" placeholder="Work, Personal" autocomplete="off"
+                 oninput="catTypeahead(this,'edit-cats-drop')" onblur="closeTaDrop('edit-cats-drop',200)">
+          <div class="typeahead-drop" id="edit-cats-drop"></div>
+          <div class="field-hint">Comma-separated · type to autocomplete</div>
+        </div>
+      </div>
+
+      <div class="section-divider">LINKED PEOPLE <span style="color:var(--dim);font-weight:400;font-size:9px">— vCard 4.0 RELATED</span></div>
+      <div id="edit-rel-list" class="rel-list"></div>
+      <!-- Improved rel picker -->
+      <div class="rel-picker-wrap">
+        <div style="font-size:10px;color:var(--dim);margin-bottom:7px">Search and click to link a contact:</div>
+        <div class="rel-picker-search">
+          <select class="form-sel" id="edit-rel-type" style="width:90px;flex-shrink:0">
+            <option value="spouse">spouse</option>
+            <option value="partner">partner</option>
+            <option value="sibling">sibling</option>
+            <option value="parent">parent</option>
+            <option value="child">child</option>
+            <option value="friend">friend</option>
+            <option value="emergency">emergency</option>
+          </select>
+          <input class="form-in" id="edit-rel-search" placeholder="type name to search…" style="flex:1;max-width:none"
+                 oninput="relSearchPicker(this.value,'edit-rel-picker-grid','edit')"
+                 autocomplete="off">
+          <button class="btn btn-d" style="font-size:10px;padding:3px 8px;flex-shrink:0" onclick="addRelManual('edit')" title="Add by name only (no UID link)">+ text only</button>
+        </div>
+        <div class="rel-picker-grid" id="edit-rel-picker-grid">
+          <div class="rel-no-results" style="display:none" id="edit-rel-no-results">Type a name above to search contacts</div>
+        </div>
+      </div>
+
+      <!-- MEMBER section — shown only for org/group KIND cards -->
+      <div id="edit-member-section" style="display:none">
+        <div class="section-divider">MEMBERS <span style="color:var(--dim);font-weight:400;font-size:9px">— vCard 4.0 MEMBER — individuals who belong to this organisation</span></div>
+        <div id="edit-member-list" style="margin-bottom:6px"></div>
+        <div class="rel-picker-wrap">
+          <div style="font-size:10px;color:var(--dim);margin-bottom:7px">Search for contacts to add as members:</div>
+          <div class="rel-picker-search">
+            <input class="form-in" id="edit-member-search" placeholder="type name to search…" style="flex:1;max-width:none"
+                   oninput="memberSearchPicker(this.value,'edit-member-picker-grid')" autocomplete="off">
+          </div>
+          <div class="rel-picker-grid" id="edit-member-picker-grid">
+            <div class="rel-no-results">Type a name above to search contacts</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="edit-clone-banner" class="clone-banner">
+        <span id="edit-clone-msg"></span>
+        <button class="btn btn-c" style="font-size:10px;padding:2px 8px" onclick="cloneAddress()">copy address</button>
+        <button class="btn btn-d" style="font-size:10px;padding:2px 8px" onclick="dismissClone()">dismiss</button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-r" onclick="deleteFromModal()">✕ delete</button>
+      <div style="flex:1"></div>
+      <button class="btn btn-d" onclick="closeEditModal()">cancel</button>
+      <button class="btn btn-g" onclick="saveEdit()">✓ save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Profile Setup Modal -->
+<div class="modal-backdrop" id="profile-modal">
+  <div class="modal" style="width:500px">
+    <div class="modal-header">
+      <div class="modal-title">⭐ Set Up Your Profile</div>
+      <button class="modal-close" onclick="closeProfileSetup()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:10px;color:var(--dim);margin-bottom:14px;line-height:1.8">
+        Your profile card is tagged KIND=self so vCard Studio knows who you are.
+        It skips you in duplicate detection and quality checks.
+      </div>
+      <div class="section-divider">YOUR NAME</div>
+      <div class="form-row"><span class="form-lbl">display name</span><input class="form-in" id="prof-fn" placeholder="Jane Smith"></div>
+      <div class="form-row"><span class="form-lbl">first name</span><input class="form-in" id="prof-given" placeholder="Jane"></div>
+      <div class="form-row"><span class="form-lbl">last name</span><input class="form-in" id="prof-family" placeholder="Smith"></div>
+      <div class="form-row"><span class="form-lbl">email</span><input class="form-in" id="prof-email" placeholder="jane@example.com" type="email"></div>
+      <div class="form-row"><span class="form-lbl">phone</span><input class="form-in" id="prof-tel" placeholder="+44 7700 000000"></div>
+
+      <div class="section-divider">HOME COUNTRY</div>
+      <div style="font-size:10px;color:var(--dim);margin-bottom:8px">Used to normalise phone numbers to the correct international format.</div>
+      <div class="form-row">
+        <span class="form-lbl">country</span>
+        <div class="cat-ta-wrap" style="flex:1;position:relative">
+          <input class="form-in" id="prof-country" placeholder="United Kingdom"
+                 autocomplete="off"
+                 oninput="countryTypeahead(this,'prof-country-drop');updateCountryPreview('prof-country')"
+                 onblur="closeTaDrop('prof-country-drop',200);updateCountryPreview('prof-country')"
+                 style="width:100%">
+          <div class="typeahead-drop" id="prof-country-drop"></div>
+          <div id="prof-country-flag-preview" style="display:none;font-size:11px;color:var(--green);margin-top:3px;padding-left:2px"></div>
+        </div>
+      </div>
+      <div id="prof-save-msg" style="display:none;font-size:10px;color:var(--green);margin-top:8px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-d" onclick="closeProfileSetup()">skip</button>
+      <button class="btn btn-g" onclick="saveProfileSetup()">✓ save profile</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ══ State ═════════════════════════════════════════════════════════════════════
+// Flash the "✓ saved" indicator in the header with timestamp
+function flashSaved(filename) {
+  const el = document.getElementById('hdr-saved');
+  if (!el) return;
+  const now = new Date();
+  const hhmm = now.getHours().toString().padStart(2,'0') + now.getMinutes().toString().padStart(2,'0');
+  const datePart = now.toISOString().slice(0,10);
+  const label = filename || `${datePart}-${hhmm}-checkpoint.vcf`;
+  el.textContent = `✓ saved → ${label}`;
+  el.style.opacity = '1';
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.style.opacity = '0'; }, 4000);
+}
+
+let S = { status:'idle', total_cards:0, dup_count:0, source_counts:{},
+          category_counts:{}, sources_present:[], output_files:[], message:'', progress:0 };
+let revPage=1, revSearch='', revCat='', revKind='';
+let _lastKnownCardCount = -1;  // track to avoid spurious table rebuilds
+let splitSel = new Set();
+// For modal prev/next navigation
+let _currentPageCards = [];  // [{card, _idx, position_in_page}]
+let _editPagePos = 0;        // index within current page
+let _selfCardIdx = null;     // global index of self card, if found
+let _state_cards_by_uid = {}; // uid → {fn, org} for member resolution
+
+// ══ Init / Poll ═══════════════════════════════════════════════════════════════
+window.addEventListener('load', () => { poll(); setInterval(poll, 1800); });
+
+async function poll() {
+  loadPrefs();
+  try { applyState(await (await fetch('/api/status')).json()); } catch(e){}
+}
+
+function applyState(d) {
+  S = d;
+  document.getElementById('dot').className = 'dot ' + d.status;
+  const msgs = { idle:'idle', loaded:`${d.total_cards} contacts loaded`,
+                 processing:`processing… ${d.progress}%`, error:'error' };
+  document.getElementById('hdr-status').textContent = msgs[d.status] || d.status;
+  if (d.version) document.getElementById('hdr-version').textContent = 'v' + d.version;
+
+  document.getElementById('sb-total').textContent = d.total_cards||0;
+  document.getElementById('sb-dupes').textContent = d.dup_count||0;
+  document.getElementById('sb-src').textContent   = Object.keys(d.source_counts||{}).length;
+
+  document.getElementById('nb-unify').textContent  = d.sources_present?.length ? d.sources_present.length+' src' : '—';
+  document.getElementById('nb-clean').textContent  = d.total_cards || '—';
+  document.getElementById('nb-split').textContent  = Object.keys(d.category_counts||{}).length || '—';
+  document.getElementById('nb-review').textContent = d.total_cards || '—';
+
+  renderSrcList(d.sources_present||[]);
+  renderClean(d); renderSplit(d); renderInsights(d); renderExport(d);
+  populateCatDrops(d.category_counts||{});
+
+  if (d.status==='loaded') {
+    checkSelfCards();
+    checkFirstRun(d);
+  }
+
+  if (d.status==='processing') {
+    document.getElementById('u-prog').style.display='';
+    document.getElementById('u-bar').style.width=(d.progress||0)+'%';
+    document.getElementById('u-log').innerHTML=`<span style="color:var(--green)">→</span> ${d.message||'…'}`;
+  }
+  if (d.status==='loaded') {
+    document.getElementById('u-prog').style.display='';
+    document.getElementById('u-bar').style.width='100%';
+    document.getElementById('u-log').innerHTML=`<span style="color:var(--green)">✓</span> ${d.message}`;
+    document.getElementById('btn-next').style.display='';
+    // Only reload the review table when the total count has actually changed
+    // (not on every poll tick). This prevents checkbox selection being wiped every 1.8s.
+    if (d.total_cards !== _lastKnownCardCount) {
+      _lastKnownCardCount = d.total_cards;
+      // Pinned _idx values become stale whenever the card list changes
+      if (_revPinnedIds) clearRevPin();
+      // Only refresh table if no rows are currently selected
+      if (_revSelected.size === 0) {
+        loadRevCards();
+      }
+    }
+    // If we were processing (just finished), auto-advance to Clean
+    if (S.status === 'processing') {
+      setTimeout(() => show('clean'), 600);
+    }
+  }
+  if (d.status==='error') {
+    document.getElementById('u-prog').style.display='';
+    document.getElementById('u-log').innerHTML=`<span style="color:var(--red)">✗</span> ${d.message}`;
+  }
+}
+
+// ══ §1 Unify ══════════════════════════════════════════════════════════════════
+function renderSrcList(files) {
+  const el = document.getElementById('u-sources');
+  el.innerHTML = files.length
+    ? files.map(f=>`<div class="fi"><div class="fi-dot"></div><span class="fi-name">${esc(f)}</span></div>`).join('')
+    : `<div style="color:var(--dim);font-size:10px;padding:3px 0 8px;">No .vcf files in cards-in/ yet.</div>`;
+}
+async function startProcess() {
+  document.getElementById('btn-proc').disabled=true;
+  document.getElementById('btn-next').style.display='none';
+  document.getElementById('u-prog').style.display='';
+  document.getElementById('u-log').innerHTML=`<span style="color:var(--green)">→</span> starting…`;
+  document.getElementById('u-bar').style.width='0%';
+  try { await post('/api/process', {}); } catch(e){ toast('Server error',true); }
+  setTimeout(()=>document.getElementById('btn-proc').disabled=false, 2000);
+}
+
+async function startProcessFromClean() {
+  // Navigate to Unify to show progress bar, then kick off merge
+  show('unify');
+  await startProcess();
+}
+function fileHint() { toast('Add .vcf files to the cards-in/ folder, then click Merge'); }
+
+// ══ §2 Clean ══════════════════════════════════════════════════════════════════
+function renderClean(d) {
+  document.getElementById('cs-total').textContent = d.total_cards||0;
+  document.getElementById('cs-dupes').textContent = d.dup_count||0;
+  document.getElementById('cs-cats').textContent  = Object.keys(d.category_counts||{}).length;
+  document.getElementById('cs-src').textContent   = Object.keys(d.source_counts||{}).length;
+
+  // Show the right empty state
+  const hasSources  = (d.sources_present||[]).length > 0;
+  const hasContacts = d.total_cards > 0;
+  const needsMerge  = document.getElementById('clean-needs-merge');
+  const trulyEmpty  = document.getElementById('clean-truly-empty');
+  if (needsMerge) needsMerge.style.display = (!hasContacts && hasSources && d.status !== 'processing') ? 'flex' : 'none';
+  if (trulyEmpty) trulyEmpty.style.display = (!hasContacts && !hasSources && d.status !== 'processing') ? 'flex' : 'none';
+  // Update source count hint in the merge banner
+  const srcHint = document.getElementById('clean-merge-srcs');
+  if (srcHint && hasSources) srcHint.textContent = (d.sources_present||[]).length + ' file(s) ready';
+  const cats = Object.entries(d.category_counts||{}).sort((a,b)=>b[1]-a[1]);
+  document.getElementById('clean-cats').innerHTML = cats.length
+    ? cats.map(([c,n])=>`<div class="ct" onclick="jumpCat('${esc(c)}')" title="Filter Review by this category"><span class="ctd"></span>${esc(c)}<span style="color:var(--dim);font-size:9px;margin-left:4px">${n}</span></div>`).join('')
+    : `<div style="color:var(--dim);font-size:10px;">Run step 1 first.</div>`;
+}
+
+// ══ §3 Split ══════════════════════════════════════════════════════════════════
+function renderSplit(d) {
+  const cats = Object.entries(d.category_counts||{}).sort((a,b)=>b[1]-a[1]);
+  document.getElementById('split-cats').innerHTML = cats.length
+    ? cats.map(([c,n])=>`<div class="ct ${splitSel.has(c)?'sel':''}" onclick="toggleSplit('${esc(c)}')" id="sct-${esc(c)}"><span class="ctd"></span>${esc(c)}<span style="color:var(--dim);font-size:9px;margin-left:4px">${n}</span></div>`).join('')
+    : `<div style="color:var(--dim);font-size:10px;">Run step 1 first.</div>`;
+  document.getElementById('split-files').innerHTML = (d.output_files||[]).length
+    ? d.output_files.map(f=>`<div class="fi"><span style="color:var(--amber)">▪</span><span class="fi-name">${esc(f.name)}</span><span class="fi-meta">${f.size_kb} KB</span></div>`).join('')
+    : `<div style="color:var(--dim);font-size:10px;">No split files yet.</div>`;
+}
+function toggleSplit(cat) { splitSel.has(cat)?splitSel.delete(cat):splitSel.add(cat); renderSplit(S); }
+async function doSplit() {
+  if (!S.total_cards) { toast('No contacts loaded',true); return; }
+  if (!splitSel.size) { toast('Select at least one category',true); return; }
+  document.getElementById('btn-split').disabled=true;
+  const owner = document.getElementById('exp-owner').value||'Contacts';
+  const mode  = document.getElementById('split-mode').value;
+  try {
+    const cats=[...splitSel];
+    const calls = mode==='separate'
+      ? cats.map(c=>post('/api/export',{owner_name:owner,version:'4.0',category:c}))
+      : [post('/api/export',{owner_name:owner,version:'4.0',category:cats[0]})];
+    const res=await Promise.all(calls);
+    toast(`✓ Wrote ${res.filter(r=>r.ok).length} file(s)`); poll();
+  } catch(e){toast('Export failed',true);}
+  finally{document.getElementById('btn-split').disabled=false;}
+}
+
+// ══ §4 Review ═════════════════════════════════════════════════════════════════
+async function loadRevCards(page) {
+  page = page||revPage;
+  revPage = page;
+
+  // If pinned, fetch all (no server paging) then filter client-side
+  if (_revPinnedIds && _revPinnedIds.size > 0) {
+    const p2 = new URLSearchParams({page:1, per_page:9999, search:revSearch});
+    p2.set('sort_order', _PREFS.sort_order);
+    try {
+      const raw = await (await fetch('/api/cards?'+p2)).json();
+      const pinned = raw.cards.filter(c => _revPinnedIds.has(c._idx));
+      const perPage = 50;
+      const totalPages = Math.max(1, Math.ceil(pinned.length / perPage));
+      revPage = Math.min(revPage, totalPages);
+      const pageCards = pinned.slice((revPage-1)*perPage, revPage*perPage);
+      _currentPageCards = pageCards;
+      collectPrefixes();
+      renderRevTable({cards:pageCards, total:pinned.length, page:revPage, per_page:perPage});
+      const sub = document.getElementById('rev-sub');
+      if (sub) sub.innerHTML = `<span style="color:var(--amber)">${_revPinnedLabel}</span>
+        <button class="btn btn-d" style="font-size:9px;padding:1px 7px;margin-left:8px"
+                onclick="clearRevPin()">✕ clear filter</button>`;
+      updateClearBtn();
+    } catch(e){}
+    return;
+  }
+
+  const p = new URLSearchParams({page, per_page:50, search:revSearch, category:revCat});
+  if (revKind) p.set('kind', revKind);
+  if (revQuality) p.set('quality', revQuality);
+  p.set('sort_order', _PREFS.sort_order);
+  try {
+    const d = await (await fetch('/api/cards?'+p)).json();
+    _currentPageCards = d.cards;
+    collectPrefixes();
+    renderRevTable(d);
+    const filterDesc = revQuality ? ` · quality: ${revQuality.replace('_',' ')}` : '';
+    document.getElementById('rev-sub').textContent = `${d.total} contact${d.total!==1?'s':''}${filterDesc}`;
+    updateClearBtn();
+  } catch(e){}
+}
+
+function renderRevTable(d) {
+  const empty=document.getElementById('rev-empty'), tbl=document.getElementById('rev-tbl');
+  if (!d.total && !S.total_cards) { empty.style.display=''; tbl.style.display='none'; return; }
+  empty.style.display='none'; tbl.style.display='';
+
+  const pc=cat=>{const l=cat.toLowerCase();return l.includes('work')||l.includes('business')?'pc':l.includes('fam')?'pa':l.includes('med')?'pp':'pg';};
+
+  _revSelected.clear();
+  updateRevMergeBar();
+  document.getElementById('rev-body').innerHTML = d.cards.map((c,pi)=>{
+    const kindIcon = c.kind==='org' ? '🏢' : c.kind==='self' ? '⭐' : '👤';
+    return `
+    <tr id="rev-row-${pi}" ondblclick="openEdit(${pi})" class="${_revSelected.has(pi)?'rev-row-sel':''}">
+      <td style="width:28px;text-align:center">
+        <input type="checkbox" class="rev-cb" data-pi="${pi}"
+               onchange="toggleRevRow(${pi},this.checked)"
+               style="accent-color:var(--green)">
+      </td>
+      <td class="td-n">
+        <span class="kind-icon" title="${c.kind||'individual'}">${kindIcon}</span>
+        ${_PREFS.show_flags==='show' && c.addresses&&c.addresses[0]&&c.addresses[0].country
+          ? `<span title="${esc(c.addresses[0].country)}" style="margin-right:4px;font-size:13px">${countryFlag(c.addresses[0].country)}</span>`
+          : ''}
+        ${esc(c.fn||'—')}
+      </td>
+      <td class="td-o">${esc(c.org||'')}</td>
+      <td class="td-d">${esc(c.emails[0]||'')}</td>
+      <td class="td-d">${esc(c.tels[0]||'')}</td>
+      <td>${c.categories.map(cat=>`<span class="pill ${pc(cat)}">${esc(cat)}</span>`).join('')||'<span style="color:var(--dim)">—</span>'}${c.note?`<span title="${esc(c.note)}" style="color:var(--dim);margin-left:6px;cursor:help;font-size:12px">📝</span>`:''}</td>
+      <td>
+        <div class="row-actions">
+          <button class="row-btn" onclick="openEdit(${pi})">edit</button>
+          <button class="row-btn del" onclick="deleteCard(${pi}, event)">del</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const pages=Math.ceil(d.total/d.per_page);
+  document.getElementById('rev-pag').innerHTML = pages<=1 ? '' : `
+    <span>${d.total} total</span>
+    ${d.page>1?`<button class="btn btn-d" style="padding:2px 7px;font-size:10px" onclick="loadRevCards(${d.page-1})">←</button>`:''}
+    <span>page ${d.page}/${pages}</span>
+    ${d.page<pages?`<button class="btn btn-d" style="padding:2px 7px;font-size:10px" onclick="loadRevCards(${d.page+1})">→</button>`:''}`;
+}
+
+let _rst;
+// ══ Review — row selection & manual merge ═════════════════════════════════════
+const _revSelected = new Set(); // Set of page indices (pi)
+let _revPinnedIds   = null;     // Set of _idx — when set, Review shows only these
+let _revPinnedLabel = '';       // amber subtitle shown when pinned
+
+function clearRevPin() {
+  _revPinnedIds   = null;
+  _revPinnedLabel = '';
+  clearRevSelection();
+  loadRevCards(1);
+}
+
+function clearRevFilters() {
+  revCat = ''; revKind = ''; revQuality = ''; revSearch = '';
+  _revPinnedIds = null; _revPinnedLabel = '';
+  ['rev-cat','rev-kind','rev-quality','rev-q'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  clearRevSelection();
+  loadRevCards(1);
+}
+
+function updateClearBtn() {
+  const btn = document.getElementById('rev-clear-btn');
+  if (!btn) return;
+  const active = revCat || revKind || revQuality || revSearch || _revPinnedIds;
+  btn.style.display = active ? '' : 'none';
+}
+
+
+function toggleRevRow(pi, checked) {
+  if (checked) _revSelected.add(pi);
+  else         _revSelected.delete(pi);
+  const row = document.getElementById(`rev-row-${pi}`);
+  if (row) row.className = checked ? 'rev-row-sel' : '';
+  updateRevMergeBar();
+  // Sync select-all checkbox
+  const cbs = document.querySelectorAll('.rev-cb');
+  const allChecked = cbs.length && [...cbs].every(cb => cb.checked);
+  const saEl = document.getElementById('rev-select-all');
+  if (saEl) saEl.checked = allChecked;
+}
+
+function toggleRevSelectAll(checked) {
+  document.querySelectorAll('.rev-cb').forEach((cb, pi) => {
+    cb.checked = checked;
+    toggleRevRow(parseInt(cb.dataset.pi), checked);
+  });
+}
+
+function clearRevSelection() {
+  _revSelected.clear();
+  document.querySelectorAll('.rev-cb').forEach(cb => cb.checked = false);
+  document.querySelectorAll('.rev-row-sel').forEach(r => r.className = '');
+  const saEl = document.getElementById('rev-select-all');
+  if (saEl) saEl.checked = false;
+  updateRevMergeBar();
+}
+
+function updateRevMergeBar() {
+  const bar   = document.getElementById('rev-merge-bar');
+  const count = document.getElementById('rev-merge-count');
+  if (!bar) return;
+  const n = _revSelected.size;
+  if (n >= 2) {
+    bar.style.display = 'flex';
+    count.textContent = `${n} selected`;
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+async function doMergeSelected() {
+  if (_revSelected.size < 2) { toast('Select at least 2 cards to merge', true); return; }
+  const piList  = [..._revSelected].sort((a,b)=>a-b);
+  const indices = piList.map(pi => _currentPageCards[pi]?._idx).filter(i => i !== undefined);
+  if (indices.length < 2) { toast('Could not resolve card indices', true); return; }
+
+  const names = piList.map(pi => _currentPageCards[pi]?.fn || _currentPageCards[pi]?.org || '?').join(' + ');
+  if (!confirm(`Merge into one card?\n\n${names}\n\nFields will be unioned — richest card wins.`)) return;
+
+  try {
+    const d = await post('/api/merge_cards', { indices });
+    if (d.ok) {
+      toast(`⊕ Merged ${d.merged} cards → "${d.fn}"`);
+      flashSaved();
+      _lastKnownCardCount = -1;  // force table rebuild on next poll
+      clearRevPin();             // _idx values are now stale after merge
+      clearRevSelection();
+      loadRevCards(revPage);
+      poll();
+    } else {
+      toast(d.error || 'Merge failed', true);
+    }
+  } catch(e) {
+    toast('Merge failed', true);
+  }
+}
+
+async function doDeleteSelected() {
+  if (_revSelected.size < 1) { toast('Select at least 1 card to delete', true); return; }
+  const piList  = [..._revSelected].sort((a,b)=>a-b);
+  const names   = piList.map(pi => _currentPageCards[pi]?.fn || _currentPageCards[pi]?.org || '?').join('\n• ');
+  if (!confirm(`Permanently delete ${piList.length} contact(s)?\n\n• ${names}\n\nThis cannot be undone.`)) return;
+
+  // Delete highest indices first so lower indices remain valid
+  const indices = piList.map(pi => _currentPageCards[pi]?._idx).filter(i => i !== undefined);
+  const sorted  = [...indices].sort((a,b)=>b-a);
+  let ok = 0, fail = 0;
+  for (const idx of sorted) {
+    try {
+      const d = await post('/api/delete_card', { index: idx });
+      if (d.ok) ok++; else fail++;
+    } catch(e) { fail++; }
+  }
+  toast(fail ? `Deleted ${ok}, failed ${fail}` : `✓ Deleted ${ok} contact(s)`, fail > 0);
+  flashSaved();
+  _lastKnownCardCount = -1;
+  clearRevPin();
+  clearRevSelection();
+  loadRevCards(revPage);
+  poll();
+}
+
+function onRevSearch(){clearTimeout(_rst);_rst=setTimeout(()=>{revSearch=document.getElementById('rev-q').value;revPage=1;loadRevCards(1);},250);}
+function onRevFilter(){revCat=document.getElementById('rev-cat').value;revKind=document.getElementById('rev-kind').value;revPage=1;loadRevCards(1);}
+function jumpQuality(issueKey) {
+  // Clear regular filters
+  revCat = ''; revKind = ''; revSearch = ''; revPage = 1;
+  ['rev-cat','rev-kind','rev-quality','rev-q'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  revQuality = '';
+
+  // Issues with a server-side quality filter: just set the filter
+  const serverFilters = {
+    'num_prefix': 'num_prefix',
+    'no_email':   'no_email',
+    'no_phone':   'no_phone',
+    'no_category':'no_category',
+  };
+  if (serverFilters[issueKey]) {
+    revQuality = serverFilters[issueKey];
+    const qSel = document.getElementById('rev-quality');
+    if (qSel) qSel.value = revQuality;
+    _revPinnedIds   = null;
+    _revPinnedLabel = '';
+    show('review');
+    loadRevCards(1);
+    return;
+  }
+
+  // Scan-only issues: pin to the specific card _idx list from _issueData
+  const issueCards = _issueData[issueKey.replace('_','').replace('dupEmail','dupEmail')
+    .replace('dup_email','dupEmail')
+    .replace('name_swap','nameSwap')
+    .replace('org_as_name','orgAsName')] || [];
+
+  // Normalise key: 'dup_email' → 'dupEmail' etc.
+  const keyNorm = {
+    'dup_email':  'dupEmail',
+    'name_swap':  'nameSwap',
+    'org_as_name':'orgAsName',
+  };
+  const cards = _issueData[keyNorm[issueKey] || issueKey] || [];
+
+  if (!cards.length) {
+    show('review'); loadRevCards(1); return;
+  }
+
+  _revPinnedIds   = new Set(cards.map(c => c._idx));
+  _revPinnedLabel  = {
+    'dup_email':  `Showing ${_revPinnedIds.size} contacts with duplicate emails`,
+    'name_swap':  `Showing ${Math.round(_revPinnedIds.size/2)} probable name-swap pairs — tick both rows and use ⊕ merge`,
+    'org_as_name': `Showing ${_revPinnedIds.size} contacts possibly filed as wrong kind`,
+  }[issueKey] || `Showing ${_revPinnedIds.size} flagged contacts`;
+
+  show('review');
+  loadRevCards(1).then(() => {
+    // For name_swap: auto-tick all rows so they're ready to review & merge in pairs
+    if (issueKey === 'name_swap') {
+      // Tick pairs in groups of 2 so the merge bar is primed for each pair
+      // Just tick the first pair to start
+      const cbs = document.querySelectorAll('.rev-cb');
+      if (cbs.length >= 2) {
+        cbs[0].checked = true; toggleRevRow(0, true);
+        cbs[1].checked = true; toggleRevRow(1, true);
+      }
+    }
+  });
+}
+
+function jumpList(cat){revCat=cat;document.getElementById('rev-cat').value=cat;show('review');loadRevCards(1);}
+function jumpCat(cat){revCat=cat;show('review');loadRevCards(1);}
+
+// ══ Edit Modal ════════════════════════════════════════════════════════════════
+function openEdit(pageIdx) {
+  _editPagePos = pageIdx;
+  const c = _currentPageCards[pageIdx];
+  if (!c) return;
+
+  document.getElementById('edit-idx').value = c._idx;
+  document.getElementById('edit-fn').value         = c.fn||'';
+  document.getElementById('edit-prefix').value     = c.name_prefix||'';
+  document.getElementById('edit-given').value      = c.name_given||'';
+  document.getElementById('edit-additional').value = c.name_additional||'';
+  document.getElementById('edit-family').value     = c.name_family||'';
+  document.getElementById('edit-suffix').value     = c.name_suffix||'';
+  document.getElementById('edit-org').value        = c.org||'';
+  document.getElementById('edit-title').value      = c.title||'';
+  document.getElementById('edit-bday').value       = c.bday||'';
+  document.getElementById('edit-anniversary').value= c.anniversary||'';
+  document.getElementById('edit-note').value         = c.note||'';
+  document.getElementById('edit-kind').value       = c.kind||'individual';
+  document.getElementById('edit-emails').value     = c.emails.join('\n');
+  document.getElementById('edit-tels').value       = c.tels.join('\n');
+  document.getElementById('edit-cats').value       = c.categories.join(', ');
+
+  const adr = c.addresses&&c.addresses[0] ? c.addresses[0] : {};
+  document.getElementById('edit-street').value  = adr.street||'';
+  document.getElementById('edit-city').value    = adr.locality||'';
+  document.getElementById('edit-region').value  = adr.region||'';
+  document.getElementById('edit-postal').value  = adr.postal_code||'';
+  document.getElementById('edit-country').value = adr.country||'';
+  updateCountryPreview('edit-country');
+  // Check if street looks like a single-line full address (city/postal already empty)
+  detectSingleLineAddress(document.getElementById('edit-street'), !(adr.locality) && !(adr.postal_code));
+
+  // Related
+  _editRelated = (c.related||[]).map(r=>({...r}));
+  renderRelList('edit');
+  // Show clone banner if any linked person has an address
+  checkCloneBanner(c);
+
+  // UID / REV metadata strip
+  const strip = document.getElementById('edit-meta-strip');
+  const uidEl = document.getElementById('edit-uid-val');
+  const revEl = document.getElementById('edit-rev-val');
+  if (strip) {
+    strip.style.display = 'flex';
+    if (uidEl) uidEl.textContent = c.uid || '(no UID)';
+    if (revEl) revEl.textContent = c.rev ? c.rev.replace('T',' ').replace('Z',' UTC') : '(not yet saved)';
+  }
+
+  // MEMBER section — only for org/group kinds
+  _editMembers = (c.member||[]).map(uid => {
+    // Try to resolve UID to a name from loaded cards
+    const match = _state_cards_by_uid ? _state_cards_by_uid[uid] : null;
+    return { uid, fn: match ? match.fn || match.org || uid : uid };
+  });
+  const memberSection = document.getElementById('edit-member-section');
+  if (memberSection) memberSection.style.display = (c.kind==='org'||c.kind==='group') ? '' : 'none';
+  renderMemberList();
+  // Clear member search
+  const ms = document.getElementById('edit-member-search');
+  if (ms) ms.value = '';
+  const mg = document.getElementById('edit-member-picker-grid');
+  if (mg) mg.innerHTML = '<div class="rel-no-results">Type a name above to search contacts</div>';
+
+  document.getElementById('edit-modal-title').textContent = 'Edit: ' + (c.fn||c.org||'Contact');
+  updateEditNav();
+  _editFnManual = false;
+  document.getElementById('edit-modal').classList.add('open');
+  applyKindLayout('edit');
+  document.getElementById('edit-fn').focus();
+}
+
+function updateEditNav() {
+  const total = _currentPageCards.length;
+  document.getElementById('edit-prev').disabled = _editPagePos <= 0;
+  document.getElementById('edit-next').disabled = _editPagePos >= total - 1;
+  document.getElementById('edit-pos').textContent = `${_editPagePos+1} / ${total}`;
+}
+
+function editNav(dir) {
+  const newPos = _editPagePos + dir;
+  if (newPos < 0 || newPos >= _currentPageCards.length) return;
+  // Save current first
+  saveEdit(/*silent=*/true).then(() => { openEdit(newPos); });
+}
+
+function closeEditModal() {
+  document.getElementById('edit-modal').classList.remove('open');
+  // Always clear related state on close to prevent leaking into next card
+  _editRelated = [];
+  _editMembers = [];
+  dismissClone();
+  const relSearch = document.getElementById('edit-rel-search');
+  if (relSearch) relSearch.value = '';
+  const relResults = document.getElementById('edit-rel-results');
+  if (relResults) relResults.classList.remove('open');
+  // Clear the rel picker grid
+  const pickerGrid = document.getElementById('edit-rel-picker-grid');
+  if (pickerGrid) pickerGrid.innerHTML = '<div class="rel-no-results">Type a name above to search contacts</div>';
+}
+
+async function saveEdit(silent) {
+  const idx = parseInt(document.getElementById('edit-idx').value);
+  const fn  = document.getElementById('edit-fn').value.trim();
+  if (!fn) { toast('Name is required', true); return; }
+
+  const body = {
+    index: idx, fn,
+    name_prefix:     document.getElementById('edit-prefix').value.trim(),
+    name_given:      document.getElementById('edit-given').value.trim(),
+    name_additional: document.getElementById('edit-additional').value.trim(),
+    name_family:     document.getElementById('edit-family').value.trim(),
+    name_suffix:     document.getElementById('edit-suffix').value.trim(),
+    org:         document.getElementById('edit-org').value,
+    title:       document.getElementById('edit-title').value,
+    bday:        document.getElementById('edit-bday').value,
+    anniversary: document.getElementById('edit-anniversary').value,
+    note:        document.getElementById('edit-note').value,
+    kind:        document.getElementById('edit-kind').value,
+    emails:      document.getElementById('edit-emails').value,
+    tels:        document.getElementById('edit-tels').value,
+    categories:  document.getElementById('edit-cats').value,
+    street:      document.getElementById('edit-street').value,
+    city:        document.getElementById('edit-city').value,
+    region:      document.getElementById('edit-region').value,
+    postal:      document.getElementById('edit-postal').value,
+    country:     document.getElementById('edit-country').value,
+    related:     _editRelated,
+    member:      _editMembers.map(m => m.uid).filter(Boolean),
+  };
+
+  try {
+    const d = await post('/api/full_update_card', body);
+    if (!d.ok) { toast(d.error||'Save failed', true); return; }
+    if (!silent) {
+      // Show normalised phones
+      const tels = d.normalised_tels||[];
+      if (tels.length) document.getElementById('edit-tels').value = tels.join('\n');
+      toast(`✓ Saved`); flashSaved();
+      closeEditModal();
+      loadRevCards(revPage);
+    }
+  } catch(e) { toast('Save failed', true); }
+}
+
+async function deleteFromModal() {
+  const idx = parseInt(document.getElementById('edit-idx').value);
+  const name = document.getElementById('edit-fn').value || 'this contact';
+  if (!confirm(`Delete ${name}?`)) return;
+  try {
+    const d = await post('/api/delete_card', {index: idx});
+    if (!d.ok) { toast(d.error||'Delete failed', true); return; }
+    _lastKnownCardCount = -1;
+    toast(`✓ Deleted ${d.removed}`); flashSaved();
+    closeEditModal();
+    loadRevCards(revPage);
+    poll();
+  } catch(e) { toast('Delete failed', true); }
+}
+
+async function deleteCard(pageIdx, ev) {
+  ev.stopPropagation();
+  const c = _currentPageCards[pageIdx];
+  if (!c) return;
+  if (!confirm(`Delete ${c.fn||c.org||'this contact'}?`)) return;
+  try {
+    const d = await post('/api/delete_card', {index: c._idx});
+    if (!d.ok) { toast(d.error, true); return; }
+    _lastKnownCardCount = -1;
+    toast(`✓ Deleted ${d.removed}`); flashSaved();
+    loadRevCards(revPage); poll();
+  } catch(e) { toast('Delete failed', true); }
+}
+
+// Keyboard nav in modal
+document.addEventListener('keydown', e => {
+  if (!document.getElementById('edit-modal').classList.contains('open')) return;
+  if (e.key === 'Escape') closeEditModal();
+  if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && e.altKey) {
+    editNav(e.key === 'ArrowLeft' ? -1 : 1);
+  }
+});
+
+// ══ Add Contact ═══════════════════════════════════════════════════════════════
+function addValidate() {
+  const fn = document.getElementById('add-fn').value.trim();
+  const errEl = document.getElementById('add-fn-err');
+  if (!fn) { document.getElementById('add-fn').classList.add('err'); errEl.style.display='block'; }
+  else { document.getElementById('add-fn').classList.remove('err'); errEl.style.display='none'; }
+}
+
+function addValidateEmail() {
+  const raw = document.getElementById('add-email').value;
+  const emails = raw.split(/[\n,]+/).map(e=>e.trim()).filter(Boolean);
+  const valid = emails.every(e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+  const errEl = document.getElementById('add-email-err');
+  if (emails.length && !valid) {
+    document.getElementById('add-email').classList.add('err');
+    errEl.style.display='block';
+  } else {
+    document.getElementById('add-email').classList.remove('err');
+    errEl.style.display='none';
+  }
+}
+
+function addValidateTel() {
+  // Just clear error — server will normalise and return result
+  document.getElementById('add-tel').classList.remove('err');
+  document.getElementById('add-tel-err').style.display='none';
+  document.getElementById('add-tel-hint').textContent='Will be normalised to E.164 on save';
+}
+
+async function doAddContact() {
+  const fn = document.getElementById('add-fn').value.trim() || document.getElementById('add-given').value.trim();
+  if (!fn) { toast('First name is required', true); return; }
+
+  const rawEmails = document.getElementById('add-email').value;
+  const emails = rawEmails.split(/[\n,]+/).map(e=>e.trim()).filter(Boolean);
+  const badEmails = emails.filter(e=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)===false);
+  if (badEmails.length) { addValidateEmail(); toast('Fix email addresses first', true); return; }
+
+  const btn = document.getElementById('btn-add-save');
+  btn.disabled = true;
+
+  const body = {
+    fn,
+    name_prefix:     document.getElementById('add-prefix').value.trim(),
+    name_given:      document.getElementById('add-given').value.trim(),
+    name_additional: document.getElementById('add-additional').value.trim(),
+    name_family:     document.getElementById('add-family').value.trim(),
+    name_suffix:     document.getElementById('add-suffix').value.trim(),
+    org:        document.getElementById('add-org').value,
+    title:      document.getElementById('add-title').value,
+    kind:       document.getElementById('add-kind').value,
+    email:      rawEmails,
+    tel:        document.getElementById('add-tel').value,
+    bday:       document.getElementById('add-bday').value,
+    anniversary:document.getElementById('add-anniversary').value,
+    note:document.getElementById('add-note').value,
+    street:     document.getElementById('add-street').value,
+    city:       document.getElementById('add-city').value,
+    region:     document.getElementById('add-region').value,
+    postal:     document.getElementById('add-postal').value,
+    country:    document.getElementById('add-country').value,
+    categories: document.getElementById('add-cats').value,
+    related:    _addRelated,
+  };
+
+  try {
+    const d = await post('/api/add_card', body);
+    if (!d.ok) { toast(d.error||'Failed to add contact', true); return; }
+    if (d.normalised_tels && d.normalised_tels.length) {
+      document.getElementById('add-tel-hint').textContent = '→ ' + d.normalised_tels.join(', ');
+    }
+    toast(`✓ Added ${fn} · ${d.total} contacts total`); flashSaved();
+    clearAddForm();
+    poll();
+  } catch(e) { toast('Add failed', true); }
+  finally { btn.disabled=false; }
+}
+
+function clearAddForm() {
+  ['add-prefix','add-given','add-additional','add-family','add-suffix',
+   'add-fn','add-org','add-title','add-email','add-tel','add-bday','add-anniversary','add-note',
+   'add-street','add-city','add-region','add-postal','add-country','add-cats']
+    .forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  document.getElementById('add-kind').value='individual';
+  document.getElementById('add-tel-hint').textContent='Will be normalised to E.164 on save';
+  ['add-fn','add-email','add-tel'].forEach(id=>document.getElementById(id).classList.remove('err'));
+  ['add-fn-err','add-email-err','add-tel-err'].forEach(id=>document.getElementById(id).style.display='none');
+  _addRelated = [];
+  renderRelList('add');
+  setAddKind('individual');
+}
+
+// ══ §5 Insights ═══════════════════════════════════════════════════════════════
+function renderInsights(d) {
+  document.getElementById('ins-total').textContent = d.total_cards||0;
+  document.getElementById('ins-dupes').textContent = d.dup_count||0;
+  document.getElementById('ins-src').textContent   = Object.keys(d.source_counts||{}).length;
+  document.getElementById('ins-cats').textContent  = Object.keys(d.category_counts||{}).length;
+  const catVals=Object.values(d.category_counts||{});
+  const catTotal=catVals.reduce((a,b)=>a+b,0);
+  const catPct=d.total_cards?Math.min(100,Math.round(catTotal/d.total_cards*100)):0;
+  document.getElementById('ins-completeness').innerHTML=`
+    <div class="bar-row"><div class="bar-lbl">categorised</div><div class="bar-trk"><div class="bar-fill" style="width:${catPct}%;background:var(--purple);box-shadow:1px 0 5px var(--purple)"></div></div><div class="bar-n">${catPct}%</div></div>`;
+  const cats=Object.entries(d.category_counts||{}).sort((a,b)=>b[1]-a[1]);
+  const maxN=cats[0]?.[1]||1;
+  document.getElementById('ins-cat-bars').innerHTML=cats.length
+    ? cats.map(([c,n])=>`<div class="bar-row"><div class="bar-lbl">${esc(c)}</div><div class="bar-trk"><div class="bar-fill" style="width:${Math.round(n/maxN*100)}%;background:var(--purple);box-shadow:1px 0 5px var(--purple)"></div></div><div class="bar-n">${n}</div></div>`).join('')
+    : `<div style="color:var(--dim);font-size:10px;">No categories yet.</div>`;
+  document.getElementById('ins-sources').innerHTML=Object.entries(d.source_counts||{}).length
+    ? Object.entries(d.source_counts).map(([s,n])=>`<div class="fi"><div class="fi-dot"></div><span class="fi-name">${esc(s)}</span><span class="fi-meta">${n} cards</span></div>`).join('')
+    : `<div style="color:var(--dim);font-size:10px;">No sources loaded.</div>`;
+
+  const ccounts = d.country_counts || {};
+  const maxC = Math.max(...Object.values(ccounts), 1);
+  const insCountries = document.getElementById('ins-countries');
+  if (insCountries) {
+    insCountries.innerHTML = Object.entries(ccounts).length
+      ? Object.entries(ccounts).sort((a,b)=>b[1]-a[1]).map(([country,n])=>{
+          const flag = countryFlag(country);
+          const pct = Math.round(n/maxC*100);
+          return `<div class="bar-row">
+            <div class="bar-lbl">${flag?`<span style="margin-right:5px">${flag}</span>`:''}${esc(country)}</div>
+            <div class="bar-trk"><div class="bar-fill" style="width:${pct}%;background:var(--cyan);box-shadow:1px 0 5px var(--cyan)"></div></div>
+            <div class="bar-n">${n}</div>
+          </div>`;
+        }).join('')
+      : '<div style="color:var(--dim);font-size:10px;">No address data available.</div>';
+  }
+}
+
+// ══ §6 Export ═════════════════════════════════════════════════════════════════
+function renderExport(d) {
+  document.getElementById('exp-files').innerHTML=(d.output_files||[]).length
+    ? d.output_files.map(f=>`<div class="fi"><span style="color:var(--blue)">▪</span><span class="fi-name">${esc(f.name)}</span><span class="fi-meta">${f.size_kb} KB</span></div>`).join('')
+    : `<div style="color:var(--dim);font-size:10px;">No exports yet.</div>`;
+}
+
+// Return list of selected categories from the checkbox grid, or [] for "all"
+function getExpCategories() {
+  const allCb = document.getElementById('exp-all-cb');
+  if (allCb && allCb.checked) return [];  // all contacts
+  const checked = [...document.querySelectorAll('.exp-cb:checked')].map(cb => cb.value);
+  return checked;
+}
+
+function toggleExpAll(checked) {
+  document.getElementById('exp-all-cb').checked = checked;
+  document.querySelectorAll('.exp-cb').forEach(cb => {
+    cb.checked = checked;
+    cb.closest('.exp-cat-cb')?.classList.toggle('active', checked);
+  });
+  updateExpCountHint();
+}
+
+function onExpCbChange(cb) {
+  cb.closest('.exp-cat-cb')?.classList.toggle('active', cb.checked);
+  // If any category is unchecked, uncheck "all contacts"
+  const anyUnchecked = [...document.querySelectorAll('.exp-cb')].some(c => !c.checked);
+  document.getElementById('exp-all-cb').checked = !anyUnchecked;
+  updateExpCountHint();
+}
+
+function updateExpCountHint() {
+  const cats = getExpCategories();
+  const hint = document.getElementById('exp-count-hint');
+  if (!hint) return;
+  if (!cats.length) {
+    hint.textContent = `${S.total_cards || 0} contacts`;
+  } else {
+    hint.textContent = `${cats.length} category filter(s) selected`;
+  }
+}
+
+async function doExport() {
+  if (!S.total_cards){toast('No contacts loaded',true);return;}
+  const btn = document.getElementById('btn-exp');
+  btn.disabled=true;
+  try{
+    const categories = getExpCategories();
+    const d = await post('/api/export',{
+      owner_name: document.getElementById('exp-owner').value||'Contacts',
+      version:    document.getElementById('exp-ver').value,
+      categories,
+    });
+    if (d.ok) {
+      const msg = d.warning
+        ? `✓ ${d.count} contacts → ${d.file}\n⚠ ${d.warning}`
+        : `✓ ${d.count} contacts → ${d.file}`;
+      toast(msg, !!d.warning);
+    } else {
+      toast(d.error||'Export failed',true);
+    }
+    poll();
+  } catch(e){toast('Export failed',true);}
+  finally{btn.disabled=false;}
+}
+
+async function doExportCSV(){
+  if(!S.total_cards){toast('No contacts loaded',true);return;}
+  try{
+    const categories = getExpCategories();
+    const d = await post('/api/export_csv',{
+      owner_name: document.getElementById('exp-owner').value||'Contacts',
+      categories,
+    });
+    d.ok ? toast(`✓ ${d.count} rows → ${d.file}`) : toast(d.error||'CSV failed',true);
+    poll();
+  } catch(e){toast('CSV export failed',true);}
+}
+
+function populateCatDrops(catCounts) {
+  // Populate the Review filter dropdown (kept as a select)
+  const revSel = document.getElementById('rev-cat');
+  if (revSel) {
+    const cur = revSel.value;
+    revSel.innerHTML = '<option value="">all categories</option>' +
+      Object.keys(catCounts).sort().map(c =>
+        `<option value="${esc(c)}"${c===cur?' selected':''}>${esc(c)} (${catCounts[c]})</option>`
+      ).join('');
+  }
+
+  // Populate Export checkbox grid
+  const grid = document.getElementById('exp-cat-checks');
+  if (!grid) return;
+  const cats = Object.keys(catCounts).sort();
+  if (!cats.length) {
+    grid.innerHTML = '<span style="color:var(--dim);font-size:10px">No categories found — all contacts will be exported.</span>';
+    return;
+  }
+  // Preserve existing checked state
+  const prevChecked = new Set([...document.querySelectorAll('.exp-cb:checked')].map(cb => cb.value));
+  const allWereChecked = prevChecked.size === 0 || document.getElementById('exp-all-cb')?.checked;
+
+  grid.innerHTML = cats.map(c => `
+    <label class="exp-cat-cb${allWereChecked||prevChecked.has(c)?' active':''}" title="${catCounts[c]} contacts">
+      <input type="checkbox" class="exp-cb" value="${esc(c)}"
+             ${allWereChecked||prevChecked.has(c)?'checked':''}
+             onchange="onExpCbChange(this)">
+      ${esc(c)} <span style="color:var(--dim)">${catCounts[c]}</span>
+    </label>`).join('');
+
+  // Sync the "all contacts" master checkbox
+  document.getElementById('exp-all-cb').checked = allWereChecked;
+  updateExpCountHint();
+}
+
+// ══ Nav ═══════════════════════════════════════════════════════════════════════
+function show(id) {
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('panel-'+id).classList.add('active');
+  document.querySelector(`[data-p="${id}"]`).classList.add('active');
+  if (id==='review') loadRevCards(revPage||1);
+  if (id==='prefs') { checkSelfCards(); loadPrefCountry(); }
+  if (id==='viewer') renderViewerPage(1);
+}
+
+async function loadPrefCountry() {
+  try {
+    const d = await (await fetch('/api/settings')).json();
+    if (d.default_region) {
+      // Find the country name from ISO code
+      const iso = d.default_region;
+      const country = Object.entries(COUNTRY_ISO).find(([,v])=>v===iso);
+      const el = document.getElementById('pref-country');
+      if (el && country && !el.value) {
+        el.value = country[0];
+        updateCountryPreview('pref-country');
+      }
+    }
+  } catch(e) {}
+}
+
+// ══ Quit ══════════════════════════════════════════════════════════════════════
+async function doQuit(){
+  if(!confirm('Shut down vCard Studio?'))return;
+  await fetch('/api/quit',{method:'POST'}).catch(()=>{});
+  document.body.innerHTML=`<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#2e4a2e;font-family:monospace;font-size:13px;">server stopped — close this tab</div>`;
+}
+
+
+// ══ Prefix Typeahead ══════════════════════════════════════════════════════════
+// The big-5 are always shown first. Any prefix already used in the dataset
+// appears in the "from your contacts" section. Free entry always allowed.
+const PREFIX_BIG5 = ['Mr', 'Mrs', 'Miss', 'Ms', 'Master'];
+const PREFIX_EXTENDED = ['Dr', 'Prof', 'Rev', 'Sir', 'Lady', 'Lord', 'Cllr', 'Capt', 'Maj', 'Col', 'Brig', 'Lt', 'Sgt'];
+
+function prefixTypeahead(input, dropId) {
+  const drop = document.getElementById(dropId);
+  const q = input.value.trim().toLowerCase();
+  
+  // Collect prefixes already used in dataset
+  const usedPrefixes = new Set();
+  _state_prefixes.forEach(p => usedPrefixes.add(p));
+
+  const big5 = PREFIX_BIG5.filter(p => !q || p.toLowerCase().startsWith(q));
+  const ext  = PREFIX_EXTENDED.filter(p => !q || p.toLowerCase().startsWith(q));
+  const used = [...usedPrefixes].filter(p =>
+    !PREFIX_BIG5.includes(p) && !PREFIX_EXTENDED.includes(p) &&
+    (!q || p.toLowerCase().startsWith(q))
+  ).sort();
+
+  let html = '';
+  if (big5.length) {
+    html += big5.map(p => `<div class="ta-opt" onmousedown="pickPrefix('${p}','${input.id}','${dropId}')">${p}</div>`).join('');
+  }
+  if (ext.length) {
+    html += `<div class="ta-sep">PROFESSIONAL / MILITARY</div>`;
+    html += ext.map(p => `<div class="ta-opt" onmousedown="pickPrefix('${p}','${input.id}','${dropId}')">${p}</div>`).join('');
+  }
+  if (used.length) {
+    html += `<div class="ta-sep">FROM YOUR CONTACTS</div>`;
+    html += used.map(p => `<div class="ta-opt" onmousedown="pickPrefix('${p}','${input.id}','${dropId}')">${p}</div>`).join('');
+  }
+
+  if (!html) { drop.classList.remove('open'); return; }
+  drop.innerHTML = html;
+  drop.classList.add('open');
+}
+
+function pickPrefix(val, inputId, dropId) {
+  document.getElementById(inputId).value = val;
+  document.getElementById(dropId).classList.remove('open');
+  // Sync FN
+  if (inputId === 'add-prefix') syncAddFn();
+  else syncEditFn();
+}
+
+function closeTaDrop(dropId, delay) {
+  setTimeout(() => document.getElementById(dropId)?.classList.remove('open'), delay);
+}
+
+// Collect prefixes from loaded state (called after poll)
+let _state_prefixes = new Set();
+function collectPrefixes() {
+  // We don't have all cards in JS, but we can collect from the current page
+  _currentPageCards.forEach(c => {
+    if (c.name_prefix) _state_prefixes.add(c.name_prefix);
+  });
+}
+
+// ══ Structured name → FN sync ════════════════════════════════════════════════
+function syncAddFn() {
+  const prefix = document.getElementById('add-prefix').value.trim();
+  const given  = document.getElementById('add-given').value.trim();
+  const mid    = document.getElementById('add-additional').value.trim();
+  const family = document.getElementById('add-family').value.trim();
+  const suffix = document.getElementById('add-suffix').value.trim();
+  const parts  = [prefix, given, mid, family, suffix].filter(Boolean);
+  document.getElementById('add-fn').value = parts.join(' ');
+  // Clear error
+  document.getElementById('add-fn').classList.remove('err');
+  document.getElementById('add-fn-err').style.display = 'none';
+}
+
+function syncEditFn() {
+  const prefix = document.getElementById('edit-prefix').value.trim();
+  const given  = document.getElementById('edit-given').value.trim();
+  const mid    = document.getElementById('edit-additional').value.trim();
+  const family = document.getElementById('edit-family').value.trim();
+  const suffix = document.getElementById('edit-suffix').value.trim();
+  const parts  = [prefix, given, mid, family, suffix].filter(Boolean);
+  if (parts.length) document.getElementById('edit-fn').value = parts.join(' ');
+}
+
+// ══ Related / Spouse picker ═══════════════════════════════════════════════════
+let _addRelated  = [];   // [{rel_type, uid, text}]
+let _editRelated = [];
+
+function renderRelList(ctx) {
+  const list = ctx === 'add' ? _addRelated : _editRelated;
+  const el = document.getElementById(`${ctx}-rel-list`);
+  if (!list.length) { el.innerHTML = `<div style="color:var(--dim);font-size:10px;padding:3px 0 6px;">No linked people yet.</div>`; return; }
+  el.innerHTML = list.map((r, i) => `
+    <div class="rel-item">
+      <span class="ri-type">${r.rel_type}</span>
+      <span class="ri-name">${esc(r.text || r.uid || '?')}</span>
+      ${r.uid ? `<span class="ri-uid" title="Linked by UID">⊕ linked</span>` : `<span class="ri-uid">text only</span>`}
+      <button class="rel-remove" onmousedown="removeRel('${ctx}',${i})">✕</button>
+    </div>`).join('');
+}
+
+function removeRel(ctx, i) {
+  if (ctx === 'add') _addRelated.splice(i, 1);
+  else _editRelated.splice(i, 1);
+  renderRelList(ctx);
+}
+
+let _relSearchTimer;
+async function relSearch(input, resultsId, ctx) {
+  clearTimeout(_relSearchTimer);
+  const q = input.value.trim();
+  if (q.length < 1) { document.getElementById(resultsId).classList.remove('open'); return; }
+  _relSearchTimer = setTimeout(async () => {
+    try {
+      const d = await (await fetch(`/api/search_cards?q=${encodeURIComponent(q)}`)).json();
+      renderRelResults(d.results || [], resultsId, ctx);
+    } catch(e) {}
+  }, 200);
+}
+
+function renderRelResults(results, resultsId, ctx) {
+  const el = document.getElementById(resultsId);
+  if (!results.length) { el.classList.remove('open'); return; }
+  el.innerHTML = results.map((r, i) => `
+    <div class="rr-item" onmousedown="pickRel(${JSON.stringify(JSON.stringify(r)).slice(1,-1)},'${resultsId}','${ctx}')">
+      <div class="rr-name">${esc(r.fn || r.org || '?')}</div>
+      <div class="rr-meta">${[r.emails[0], r.tels[0]].filter(Boolean).join(' · ')}</div>
+      ${r.address && Object.values(r.address).some(Boolean)
+        ? `<div class="rr-copy-adr" onmousedown="copyRelAddress(event,${JSON.stringify(JSON.stringify(r.address)).slice(1,-1)},'${ctx}')">⊕ copy their address to this contact</div>`
+        : ''}
+    </div>`).join('');
+  el.classList.add('open');
+}
+
+async function pickRel(rJson, resultsId, ctx) {
+  let r;
+  try { r = JSON.parse(rJson); } catch(e) { return; }
+  const relType = document.getElementById(`${ctx}-rel-type`).value;
+  const entry = { rel_type: relType, uid: r.uid || null, text: r.fn || r.org || '' };
+
+  if (ctx === 'add') _addRelated.push(entry);
+  else _editRelated.push(entry);
+
+  renderRelList(ctx);
+  document.getElementById(`${ctx}-rel-search`).value = '';
+  document.getElementById(resultsId).classList.remove('open');
+
+  // If editing an existing card, also create the bidirectional link server-side immediately
+  if (ctx === 'edit' && r._idx !== undefined) {
+    const fromIdx = parseInt(document.getElementById('edit-idx').value);
+    if (!isNaN(fromIdx) && fromIdx !== r._idx) {
+      try {
+        const res = await post('/api/link_related', {
+          from_idx: fromIdx, to_idx: r._idx, rel_type: relType
+        });
+        if (res.ok) {
+          toast(`⊕ Linked ${res.from_name} ↔ ${res.to_name} (${res.rel_type} / ${res.recip})`);
+        }
+      } catch(e) {}
+    }
+  }
+
+  // If the linked contact has an address, offer to clone it
+  if (r.address && Object.values(r.address).some(Boolean)) {
+    showCloneBanner(ctx, r.fn || r.org || 'linked contact', r.address);
+  }
+}
+
+function addRelManual(ctx) {
+  const searchEl = document.getElementById(`${ctx}-rel-search`);
+  const text = searchEl.value.trim();
+  if (!text) { toast('Type a name first', true); return; }
+  const relType = document.getElementById(`${ctx}-rel-type`).value;
+  const entry = { rel_type: relType, uid: null, text };
+  if (ctx === 'add') _addRelated.push(entry);
+  else _editRelated.push(entry);
+  renderRelList(ctx);
+  searchEl.value = '';
+}
+
+function closeRelResults(id, delay) {
+  setTimeout(() => document.getElementById(id)?.classList.remove('open'), delay);
+}
+
+// ══ Address clone ═════════════════════════════════════════════════════════════
+let _pendingCloneAddress = null;
+let _pendingCloneCtx = null;
+
+function showCloneBanner(ctx, name, address) {
+  _pendingCloneAddress = address;
+  _pendingCloneCtx = ctx;
+  const banner = document.getElementById(`${ctx}-clone-banner`);
+  if (!banner) return;
+  document.getElementById(`${ctx}-clone-msg`).textContent = `${name} has an address. Copy it to this contact?`;
+  banner.classList.add('show');
+}
+
+function cloneAddress() {
+  if (!_pendingCloneAddress || !_pendingCloneCtx) return;
+  const ctx = _pendingCloneCtx;
+  const a = _pendingCloneAddress;
+  const set = (id, val) => { const el = document.getElementById(`${ctx}-${id}`); if (el) el.value = val || ''; };
+  set('street', a.street);
+  set('city',   a.locality || a.city);
+  set('region', a.region);
+  set('postal', a.postal_code);
+  set('country',a.country);
+  toast('✓ Address copied from linked contact');
+  dismissClone();
+}
+
+function checkCloneBanner(card) {
+  // When opening edit modal: if there's a linked person with an address in the dataset,
+  // offer to clone. We only show it if the current card has NO address.
+  dismissClone();
+  const hasAdr = card.addresses && card.addresses.length > 0 &&
+    Object.values(card.addresses[0]).some(Boolean);
+  if (hasAdr) return; // already has an address
+  // Check if any related person exists with an address (need to search state)
+  // This will show via pickRel when user selects a linked contact
+}
+
+function dismissClone() {
+  _pendingCloneAddress = null;
+  _pendingCloneCtx = null;
+  ['add','edit'].forEach(ctx => {
+    const b = document.getElementById(`${ctx}-clone-banner`);
+    if (b) b.classList.remove('show');
+  });
+}
+
+function copyRelAddress(event, adrJson, ctx) {
+  event.stopPropagation();
+  let a;
+  try { a = JSON.parse(adrJson); } catch(e) { return; }
+  const set = (id, val) => { const el = document.getElementById(`${ctx}-${id}`); if (el) el.value = val || ''; };
+  set('street', a.street);
+  set('city',   a.locality || a.city);
+  set('region', a.region);
+  set('postal', a.postal_code);
+  set('country',a.country);
+  toast('✓ Address copied');
+  document.getElementById(`${ctx}-rel-search`).value = '';
+  document.getElementById(`${ctx}-rel-results`).classList.remove('open');
+}
+
+// Also call collectPrefixes when review table renders
+const _origRenderRevTable = renderRevTable;
+
+
+// ══ Cut-safe name sync ════════════════════════════════════════════════════════
+// Track whether user has manually typed into the display name field
+let _editFnManual = false;
+let _addFnManual  = false;
+
+function editFnManualOverride() { _editFnManual = true; document.getElementById('edit-fn-hint').textContent = 'Manually overridden'; }
+function addFnManualOverride()  { _addFnManual  = true; document.getElementById('add-fn-hint').textContent  = 'Manually overridden'; }
+
+// Called on oncut — we snapshot current value before browser removes it,
+// then schedule a sync on the next tick (after cut completes)
+function cutNamePart(event, ctx) {
+  const el = event.target;
+  const before = el.value;
+  const selStart = el.selectionStart;
+  const selEnd   = el.selectionEnd;
+  // After the cut fires, value will have the selected text removed
+  setTimeout(() => {
+    if (ctx === 'edit' && !_editFnManual) syncEditFn();
+    if (ctx === 'add'  && !_addFnManual)  syncAddFn();
+  }, 0);
+}
+
+// Override syncEditFn and syncAddFn to respect manual override
+const _origSyncEditFn = syncEditFn;
+const _origSyncAddFn  = syncAddFn;
+
+function syncEditFn() {
+  if (_editFnManual) return;
+  const prefix = document.getElementById('edit-prefix')?.value.trim()||'';
+  const given  = document.getElementById('edit-given')?.value.trim()||'';
+  const mid    = document.getElementById('edit-additional')?.value.trim()||'';
+  const family = document.getElementById('edit-family')?.value.trim()||'';
+  const suffix = document.getElementById('edit-suffix')?.value.trim()||'';
+  const parts  = [prefix, given, mid, family, suffix].filter(Boolean);
+  document.getElementById('edit-fn').value = parts.join(' ');
+  document.getElementById('edit-fn-hint').textContent = 'Auto-generated · type here to override';
+}
+
+function syncAddFn() {
+  if (_addFnManual) return;
+  const prefix = document.getElementById('add-prefix')?.value.trim()||'';
+  const given  = document.getElementById('add-given')?.value.trim()||'';
+  const mid    = document.getElementById('add-additional')?.value.trim()||'';
+  const family = document.getElementById('add-family')?.value.trim()||'';
+  const suffix = document.getElementById('add-suffix')?.value.trim()||'';
+  const parts  = [prefix, given, mid, family, suffix].filter(Boolean);
+  document.getElementById('add-fn').value = parts.join(' ');
+  document.getElementById('add-fn-hint').textContent = 'Auto-generated · type here to override';
+}
+
+// Reset manual override when modal opens (new contact)
+function resetFnOverride(ctx) {
+  if (ctx === 'edit') { _editFnManual = false; }
+  if (ctx === 'add')  { _addFnManual  = false; }
+}
+
+// ══ Auto-Review (Clean panel) ═════════════════════════════════════════════════
+async function runAutoReview() {
+  const btn = document.getElementById('btn-review-run');
+  btn.disabled = true;
+  btn.textContent = '⟳ scanning…';
+
+  // Fetch all cards (up to 2000) to scan client-side
+  let allCards = [];
+  try {
+    for (let page = 1; page <= 40; page++) {
+      const d = await (await fetch(`/api/cards?page=${page}&per_page=50`)).json();
+      allCards = allCards.concat(d.cards);
+      if (allCards.length >= d.total) break;
+    }
+  } catch(e) { toast('Scan failed', true); btn.disabled=false; btn.textContent='⟳ scan contacts'; return; }
+
+  const issues = analyseCards(allCards);
+  renderReviewResults(issues, allCards.length);
+
+  btn.disabled = false;
+  btn.textContent = '⟳ rescan';
+  document.getElementById('review-results').style.display = '';
+}
+
+function analyseCards(cards) {
+  const issues = {
+    noEmail:    [],
+    noPhone:    [],
+    noName:     [],
+    dupEmail:   [],
+    badPhone:   [],
+    noCategory: [],
+    orgAsName:  [],
+    numPrefix:  [],
+    nameSwap:   [],  // likely same person with first/last swapped (e.g. "Ruth Bartosik" + "Bartosik Ruth")
+  };
+
+  const emailSeen = {};
+  cards.forEach(c => {
+    c.emails.forEach(e => { emailSeen[e] = (emailSeen[e]||0) + 1; });
+  });
+
+  // Build token-sorted name set for name-swap detection
+  // key = words sorted alphabetically, value = first card seen with that key
+  const nameSortedSeen = {};  // "bartosik ruth" → {_idx, fn}
+  const nameSwapPairs  = new Set(); // _idx of cards already flagged as a pair
+
+  cards.forEach(c => {
+    const fn = (c.fn||'').trim();
+    if (!fn) return;
+    // Normalise: lowercase, strip punctuation, sort words
+    const words = fn.toLowerCase().replace(/[^a-z\s]/g,'').trim().split(/\s+/).sort();
+    if (words.length < 2) return; // single-word names can't be swapped
+    const key = words.join(' ');
+    if (nameSortedSeen[key] && nameSortedSeen[key]._idx !== c._idx) {
+      // Different card, same sorted tokens → probable swap pair
+      const other = nameSortedSeen[key];
+      // Only flag if the FNs are actually different (not just same name twice)
+      if (other.fn !== fn && !nameSwapPairs.has(c._idx) && !nameSwapPairs.has(other._idx)) {
+        nameSwapPairs.add(c._idx);
+        nameSwapPairs.add(other._idx);
+        issues.nameSwap.push({...c,  _swap_with: other.fn, _swap_idx: other._idx});
+        issues.nameSwap.push({...other, _swap_with: fn,    _swap_idx: c._idx});
+      }
+    } else {
+      nameSortedSeen[key] = c;
+    }
+  });
+
+  cards.forEach(c => {
+    const fn = (c.fn||'').trim();
+
+    if (!fn || /^\d/.test(fn))
+      issues.numPrefix.push(c);
+
+    if (!c.emails.length)
+      issues.noEmail.push(c);
+
+    if (!c.tels.length)
+      issues.noPhone.push(c);
+
+    if (!c.categories.length)
+      issues.noCategory.push(c);
+
+    c.emails.forEach(e => {
+      if (emailSeen[e] > 1 && !issues.dupEmail.find(x=>x.fn===c.fn&&x._idx===c._idx))
+        issues.dupEmail.push({...c, _dup_email: e});
+    });
+
+    c.tels.forEach(t => {
+      if (t && !/^\+/.test(t))
+        issues.badPhone.push({...c, _bad_tel: t});
+    });
+
+    if (c.kind === 'individual' && !c.name_given && !c.name_family && c.org && fn === c.org)
+      issues.orgAsName.push(c);
+  });
+
+  return issues;
+}
+
+// Stores issue cards per group for bulk ops: { groupKey: [card, ...] }
+let _issueData = {};
+
+// Bulk-select state: Set of "{groupKey}:{_idx}"
+let _bulkSelected = new Set();
+
+function renderReviewResults(issues, total) {
+  const statsEl = document.getElementById('review-stats');
+  const issuesEl = document.getElementById('review-issues');
+
+  const groups = [
+    { key:'numPrefix',  label:'Names starting with numbers', sev:'warn',  desc:'Old sort-key prefix — edit to remove', bulkActions:[{label:'⟳ strip number prefix', fn:'bulkStripPrefix'}] },
+    { key:'dupEmail',   label:'Duplicate emails',            sev:'error', desc:'Same email on multiple contacts',       bulkActions:[] },
+    { key:'badPhone',   label:'Phones not in E.164',         sev:'warn',  desc:'Not normalised to +XX format',          bulkActions:[] },
+    { key:'noEmail',    label:'No email address',            sev:'info',  desc:'May be intentional',                    bulkActions:[] },
+    { key:'noPhone',    label:'No phone number',             sev:'info',  desc:'May be intentional',                    bulkActions:[] },
+    { key:'noCategory', label:'Uncategorised',               sev:'info',  desc:'No category tag',                       bulkActions:[{label:'+ add category…', fn:'bulkAddCategory'}] },
+    { key:'orgAsName',  label:'Org filed as individual?',    sev:'warn',  desc:'KIND=individual, name looks like org',  bulkActions:[{label:'⇄ change to KIND=org', fn:'bulkSetKindOrg'}, {label:'⇄ move name → ORG field', fn:'bulkMoveNameToOrg'}] },
+    { key:'nameSwap',   label:'Possible name-swap duplicates', sev:'error', desc:'Same name in different word order — may be the same person', bulkActions:[] },
+  ];
+
+  _issueData = {};
+  groups.forEach(g => { _issueData[g.key] = issues[g.key] || []; });
+  _bulkSelected = new Set();
+
+  const totalIssues = groups.reduce((sum, g) => sum + (issues[g.key]||[]).length, 0);
+
+  // Helper: build a clickable stat box that jumps to Review with a quality filter
+  const statBtn = (val, label, color, onclick, title='') =>
+    `<div class="stat-box${onclick?' stat-box-action':''}" title="${title}"
+          style="${onclick?'cursor:pointer':''}"
+          ${onclick?`onclick="${onclick}"`:''}
+     ><div class="stat-val" style="color:${color}">${val}</div>
+      <div class="stat-lbl">${label}${onclick?` <span style="font-size:8px;opacity:.5">↗</span>`:''}</div>
+    </div>`;
+
+  statsEl.innerHTML =
+    statBtn(total, 'SCANNED', 'var(--cyan)', `show('review');loadRevCards(1)`, 'View all contacts in Review') +
+    statBtn(totalIssues, 'ISSUES FOUND', totalIssues?'var(--amber)':'var(--green)', '', '') +
+    ((issues.dupEmail||[]).length  ? statBtn((issues.dupEmail||[]).length,  'DUP EMAILS',    'var(--red)',   `jumpQuality('dup_email')`,  'Review contacts with duplicate emails') : '') +
+    ((issues.nameSwap||[]).length  ? statBtn((issues.nameSwap||[]).length/2|0,'NAME SWAPS',  'var(--red)',   `jumpQuality('name_swap')`,  'Review probable name-swap duplicates') : '') +
+    ((issues.numPrefix||[]).length ? statBtn((issues.numPrefix||[]).length, 'JUNK PREFIXES', 'var(--amber)', `jumpQuality('num_prefix')`, 'Review contacts with junk number prefixes') : '') +
+    ((issues.noEmail||[]).length   ? statBtn((issues.noEmail||[]).length,   'NO EMAIL',      'var(--dim)',   `jumpQuality('no_email')`,   'Review contacts missing an email') : '') +
+    ((issues.noPhone||[]).length   ? statBtn((issues.noPhone||[]).length,   'NO PHONE',      'var(--dim)',   `jumpQuality('no_phone')`,   'Review contacts missing a phone') : '') +
+    ((issues.noCategory||[]).length? statBtn((issues.noCategory||[]).length,'UNCATEGORISED', 'var(--dim)',   `jumpQuality('no_category')`, 'Review uncategorised contacts') : '') +
+    ((issues.orgAsName||[]).length ? statBtn((issues.orgAsName||[]).length, 'ORG AS NAME?',  'var(--amber)', `jumpQuality('org_as_name')`, 'Review orgs possibly filed as individuals') : '');
+
+  if (totalIssues === 0) {
+    issuesEl.innerHTML = `<div style="color:var(--green);font-size:11px;padding:12px 0">✓ No issues found — your contacts look clean.</div>`;
+    updateBulkBar();
+    return;
+  }
+
+  issuesEl.innerHTML = groups.filter(g => (issues[g.key]||[]).length > 0).map(g => {
+    const list = issues[g.key];
+    const showAll = list.length <= 50;
+    const visible = list.slice(0, 50);
+    return `
+    <div class="issue-group" id="ig-${g.key}">
+      <div class="issue-group-hdr">
+        <input type="checkbox" class="issue-cb" title="Select all in group"
+               onchange="toggleGroupSelect('${g.key}', this.checked)" id="ig-cb-${g.key}">
+        ${g.label} <span class="ig-count">${list.length}</span>
+        <span style="color:var(--dim);font-weight:400;font-size:9px;flex:1">— ${g.desc}</span>
+        ${g.bulkActions.map(a => `<button class="ig-selall" onclick="${a.fn}('${g.key}')">${a.label}</button>`).join('')}
+      </div>
+      ${visible.map((c,i) => `
+        <div class="issue-card ${g.sev}" id="ic-${g.key}-${i}">
+          <input type="checkbox" class="issue-cb" data-key="${g.key}" data-i="${i}" data-idx="${c._idx}"
+                 onchange="toggleIssueSelect('${g.key}',${i},this.checked)">
+          <span class="issue-name">${esc(c.fn||'—')}</span>
+          <span class="issue-desc">${issueDetail(g.key, c)}</span>
+          <button class="issue-fix" onclick="openEditFromIssue(${c._idx})">edit →</button>
+        </div>`).join('')}
+      ${list.length > 50 ? `<div style="color:var(--dim);font-size:10px;padding:4px 10px">… and ${list.length - 50} more — fix these first, then rescan</div>` : ''}
+    </div>`;
+  }).join('') + `<div class="bulk-bar" id="bulk-bar">
+    <span class="bulk-count" id="bulk-count">0 selected</span>
+    <div class="bulk-actions" id="bulk-actions"></div>
+    <span class="bulk-spacer"></span>
+    <button class="bulk-btn danger" onclick="clearBulkSelection()">✕ deselect all</button>
+  </div>`;
+}
+
+function toggleGroupSelect(key, checked) {
+  const list = _issueData[key] || [];
+  list.forEach((c, i) => {
+    const id = `${key}:${i}`;
+    if (checked) _bulkSelected.add(id);
+    else _bulkSelected.delete(id);
+    const cb = document.querySelector(`[data-key="${key}"][data-i="${i}"]`);
+    if (cb) cb.checked = checked;
+    const card = document.getElementById(`ic-${key}-${i}`);
+    if (card) card.style.background = checked ? 'rgba(232,160,0,.07)' : '';
+  });
+  updateBulkBar();
+}
+
+function toggleIssueSelect(key, i, checked) {
+  const id = `${key}:${i}`;
+  if (checked) _bulkSelected.add(id);
+  else _bulkSelected.delete(id);
+  const card = document.getElementById(`ic-${key}-${i}`);
+  if (card) card.style.background = checked ? 'rgba(232,160,0,.07)' : '';
+  // Update group checkbox state
+  const list = _issueData[key] || [];
+  const allChecked = list.every((c,j) => _bulkSelected.has(`${key}:${j}`));
+  const groupCb = document.getElementById(`ig-cb-${key}`);
+  if (groupCb) groupCb.checked = allChecked;
+  updateBulkBar();
+}
+
+function clearBulkSelection() {
+  _bulkSelected.clear();
+  document.querySelectorAll('.issue-cb').forEach(cb => cb.checked = false);
+  document.querySelectorAll('.issue-card').forEach(c => c.style.background = '');
+  updateBulkBar();
+}
+
+function getSelectedCards() {
+  // Returns [{key, i, card}]
+  return [..._bulkSelected].map(id => {
+    const [key, iStr] = id.split(':');
+    const i = parseInt(iStr);
+    return { key, i, card: (_issueData[key]||[])[i] };
+  }).filter(x => x.card);
+}
+
+function updateBulkBar() {
+  const bar = document.getElementById('bulk-bar');
+  if (!bar) return;
+  const n = _bulkSelected.size;
+  if (n === 0) { bar.classList.remove('show'); return; }
+
+  bar.classList.add('show');
+  document.getElementById('bulk-count').textContent = `${n} selected`;
+
+  // Derive which bulk actions are available based on selected groups
+  const selectedKeys = new Set([...getSelectedCards()].map(x => x.key));
+  const actionsEl = document.getElementById('bulk-actions');
+  const actions = [];
+
+  if (selectedKeys.has('orgAsName')) {
+    actions.push(`<button class="bulk-btn" onclick="bulkSetKindOrg()">⇄ set KIND=org</button>`);
+    actions.push(`<button class="bulk-btn" onclick="bulkMoveNameToOrg()">⇄ move name → ORG field</button>`);
+  }
+  if (selectedKeys.has('numPrefix')) {
+    actions.push(`<button class="bulk-btn" onclick="bulkStripPrefix()">⟳ strip number prefix</button>`);
+  }
+  if (selectedKeys.has('noCategory')) {
+    actions.push(`<button class="bulk-btn" onclick="bulkAddCategory()">+ add category</button>`);
+  }
+  if (!actions.length) {
+    actions.push(`<span style="color:var(--dim);font-size:10px">use the edit → button for individual fixes</span>`);
+  }
+  actionsEl.innerHTML = actions.join('');
+}
+
+// ── Bulk actions ──────────────────────────────────────────────────────────────
+
+async function bulkSetKindOrg(groupKey) {
+  const cards = groupKey
+    ? (_issueData[groupKey]||[]).map((c,i) => ({key:groupKey,i,card:c}))
+    : getSelectedCards().filter(x => x.key === 'orgAsName');
+  if (!cards.length) { toast('Nothing selected',true); return; }
+
+  if (!confirm(`Change KIND to "org" for ${cards.length} contact(s)?`)) return;
+
+  let ok = 0;
+  for (const {card} of cards) {
+    const d = await post('/api/full_update_card', {
+      index: card._idx, fn: card.fn||'', kind: 'org',
+      org: card.org||'', title: card.title||'', emails: (card.emails||[]).join('\n'),
+      tels: (card.tels||[]).join('\n'), categories: (card.categories||[]).join(','),
+      name_prefix: card.name_prefix||'', name_given: card.name_given||'',
+      name_additional: card.name_additional||'', name_family: card.name_family||'',
+      name_suffix: card.name_suffix||'', bday: card.bday||'', anniversary: card.anniversary||'',
+    });
+    if (d.ok) ok++;
+  }
+  toast(`✓ Changed ${ok} contact(s) to KIND=org`); flashSaved();
+  clearBulkSelection();
+  await refreshAndRescan();
+}
+
+async function bulkMoveNameToOrg(groupKey) {
+  const cards = groupKey
+    ? (_issueData[groupKey]||[]).map((c,i) => ({key:groupKey,i,card:c}))
+    : getSelectedCards().filter(x => x.key === 'orgAsName');
+  if (!cards.length) { toast('Nothing selected',true); return; }
+
+  if (!confirm(`Move display name into the ORG field for ${cards.length} contact(s) and set KIND=org?`)) return;
+
+  let ok = 0;
+  for (const {card} of cards) {
+    const d = await post('/api/full_update_card', {
+      index: card._idx, fn: card.fn||'', kind: 'org',
+      org: card.fn||card.org||'',   // move fn → org
+      title: card.title||'', emails: (card.emails||[]).join('\n'),
+      tels: (card.tels||[]).join('\n'), categories: (card.categories||[]).join(','),
+      name_prefix:'', name_given:'', name_additional:'', name_family:'', name_suffix:'',
+      bday: card.bday||'', anniversary: card.anniversary||'',
+    });
+    if (d.ok) ok++;
+  }
+  toast(`✓ Moved ${ok} name(s) → ORG field`); flashSaved();
+  clearBulkSelection();
+  await refreshAndRescan();
+}
+
+async function bulkStripPrefix(groupKey) {
+  const cards = groupKey
+    ? (_issueData[groupKey]||[]).map((c,i) => ({key:groupKey,i,card:c}))
+    : getSelectedCards().filter(x => x.key === 'numPrefix');
+  if (!cards.length) { toast('Nothing selected',true); return; }
+
+  if (!confirm(`Strip leading numbers from ${cards.length} name(s)?`)) return;
+
+  let ok = 0;
+  for (const {card} of cards) {
+    const stripped = (card.fn||'').replace(/^\d+\s*/, '').trim();
+    if (!stripped) continue;
+    const d = await post('/api/full_update_card', {
+      index: card._idx, fn: stripped,
+      org: card.org||'', kind: card.kind||'individual', title: card.title||'',
+      emails: (card.emails||[]).join('\n'), tels: (card.tels||[]).join('\n'),
+      categories: (card.categories||[]).join(','),
+      name_prefix: card.name_prefix||'', name_given: card.name_given||'',
+      name_additional: card.name_additional||'', name_family: card.name_family||'',
+      name_suffix: card.name_suffix||'', bday: card.bday||'', anniversary: card.anniversary||'',
+    });
+    if (d.ok) ok++;
+  }
+  toast(`✓ Stripped prefix from ${ok} name(s)`); flashSaved();
+  clearBulkSelection();
+  await refreshAndRescan();
+}
+
+async function bulkAddCategory(groupKey) {
+  const cat = prompt('Category to add to all selected contacts:');
+  if (!cat || !cat.trim()) return;
+
+  const cards = groupKey
+    ? (_issueData[groupKey]||[]).map((c,i) => ({key:groupKey,i,card:c}))
+    : getSelectedCards().filter(x => x.key === 'noCategory');
+  if (!cards.length) { toast('Nothing selected',true); return; }
+
+  let ok = 0;
+  for (const {card} of cards) {
+    const cats = [...new Set([...(card.categories||[]), cat.trim()])].join(',');
+    const d = await post('/api/full_update_card', {
+      index: card._idx, fn: card.fn||'',
+      org: card.org||'', kind: card.kind||'individual', title: card.title||'',
+      emails: (card.emails||[]).join('\n'), tels: (card.tels||[]).join('\n'),
+      categories: cats,
+      name_prefix: card.name_prefix||'', name_given: card.name_given||'',
+      name_additional: card.name_additional||'', name_family: card.name_family||'',
+      name_suffix: card.name_suffix||'', bday: card.bday||'', anniversary: card.anniversary||'',
+    });
+    if (d.ok) ok++;
+  }
+  toast(`✓ Added "${cat.trim()}" to ${ok} contact(s)`); flashSaved();
+  clearBulkSelection();
+  await refreshAndRescan();
+}
+
+
+
+function issueDetail(key, c) {
+  if (key==='numPrefix')  return `name starts with "${(c.fn||'').match(/^\d+/)?.[0]||'?'}" — remove the number`;
+  if (key==='dupEmail')   return `email ${esc(c._dup_email||'')} is shared`;
+  if (key==='badPhone')   return `"${esc(c._bad_tel||c.tels[0]||'?')}" — not E.164`;
+  if (key==='noEmail')    return 'no email address recorded';
+  if (key==='noPhone')    return 'no phone number recorded';
+  if (key==='noCategory') return 'no category tags';
+  if (key==='orgAsName')  return `KIND=individual, name "${esc(c.fn||'')}" looks like an org`;
+  if (key==='nameSwap' && c._swap_with) return `Same name as: "${esc(c._swap_with)}". Tick both and use ⊕ merge in Review to combine.`;
+  return '';
+}
+
+async function openEditFromIssue(idx) {
+  // Find which page this card is on, load it, then open the edit modal
+  // We need to search all cards, not just the current page
+  show('review');
+  // First check current page
+  const pageCard = _currentPageCards.find(c => c._idx === idx);
+  if (pageCard) {
+    openEdit(_currentPageCards.indexOf(pageCard));
+    return;
+  }
+  // Not on current page — search all pages to find which page it's on
+  try {
+    // Fetch without pagination limits to find the card
+    const d = await (await fetch('/api/cards?page=1&per_page=9999')).json();
+    const globalPos = d.cards.findIndex(c => c._idx === idx);
+    if (globalPos === -1) { toast('Card not found', true); return; }
+    // Calculate which page it's on with per_page=50
+    const targetPage = Math.floor(globalPos / 50) + 1;
+    // Clear any category/kind filters that would hide it
+    revCat = ''; revKind = ''; revQuality = ''; revSearch = '';
+    document.getElementById('rev-cat').value = '';
+    document.getElementById('rev-kind').value = '';
+    document.getElementById('rev-quality').value = '';
+    document.getElementById('rev-q').value = '';
+    await loadRevCards(targetPage);
+    const pi = _currentPageCards.findIndex(c => c._idx === idx);
+    if (pi >= 0) openEdit(pi);
+    else toast('Card not found on page', true);
+  } catch(e) {
+    toast('Could not navigate to card', true);
+  }
+}
+
+
+// ══ Category typeahead ════════════════════════════════════════════════════════
+// Driven by the live category_counts from the last poll — always up to date
+function countryTypeahead(input, dropId) {
+  const drop = document.getElementById(dropId);
+  if (!drop) return;
+  const q = input.value.trim().toLowerCase();
+  if (q.length < 1) { drop.innerHTML=''; drop.classList.remove('open'); return; }
+
+  // Build sorted list of all country names from COUNTRY_ISO
+  const allCountries = Object.keys(COUNTRY_ISO).sort();
+  // Match: starts-with first, then contains
+  const startsWith = allCountries.filter(c => c.toLowerCase().startsWith(q));
+  const contains   = allCountries.filter(c => !c.toLowerCase().startsWith(q) && c.toLowerCase().includes(q));
+  const matches    = [...startsWith, ...contains].slice(0, 10);
+
+  if (!matches.length) { drop.innerHTML=''; drop.classList.remove('open'); return; }
+  drop.innerHTML = matches.map(c => {
+    const flag = countryFlag(c);
+    return `<div class="ta-item" onmousedown="pickCountry('${c.replace(/'/g,"\'")}',event,'${input.id}','${dropId}')">
+      ${flag ? `<span style="margin-right:6px">${flag}</span>` : ''}${esc(c)}
+    </div>`;
+  }).join('');
+  drop.classList.add('open');
+}
+
+function pickCountry(name, event, inputId, dropId) {
+  event.preventDefault();
+  const inp = document.getElementById(inputId);
+  if (inp) {
+    inp.value = name;
+    inp.style.color = 'var(--bright)';   // confirmed selection → bright text
+    // Update live flag preview label
+    const previewId = inputId.replace('country', 'country-flag-preview');
+    const prev = document.getElementById(previewId);
+    if (prev) { const f = countryFlag(name); prev.textContent = f ? f + ' ' + name : name; prev.style.display = ''; }
+  }
+  const drop = document.getElementById(dropId);
+  if (drop) { drop.innerHTML=''; drop.classList.remove('open'); }
+}
+
+function updateCountryPreview(inputId) {
+  const inp = document.getElementById(inputId);
+  if (!inp) return;
+  const name = inp.value.trim();
+  const previewId = inputId.replace('country', 'country-flag-preview');
+  const prev = document.getElementById(previewId);
+  if (!prev) return;
+  if (!name) { prev.style.display='none'; inp.style.color=''; return; }
+  const f = countryFlag(name);
+  if (f) {
+    prev.textContent = f + ' ' + name;
+    prev.style.display = '';
+    inp.style.color = 'var(--bright)';
+  } else {
+    prev.style.display = 'none';
+    inp.style.color = '';  // unknown country — revert to default
+  }
+}
+
+function catTypeahead(input, dropId) {
+  const drop = document.getElementById(dropId);
+  const raw   = input.value;
+  // Only complete the last comma-separated token
+  const parts = raw.split(',');
+  const token = parts[parts.length - 1].trimStart().toLowerCase();
+
+  const allCats = Object.keys(S.category_counts || {}).sort();
+  const already = new Set(parts.slice(0,-1).map(p=>p.trim().toLowerCase()));
+
+  const matches = allCats.filter(c =>
+    c.toLowerCase().includes(token) && !already.has(c.toLowerCase())
+  );
+
+  if (!matches.length || !token) { drop.classList.remove('open'); return; }
+
+  drop.innerHTML = matches.map(c =>
+    `<div class="ta-opt" onmousedown="pickCat('${esc(c)}','${input.id}','${dropId}')">${esc(c)}</div>`
+  ).join('');
+  drop.classList.add('open');
+}
+
+function pickCat(cat, inputId, dropId) {
+  const input = document.getElementById(inputId);
+  const parts = input.value.split(',');
+  parts[parts.length - 1] = ' ' + cat;
+  input.value = parts.join(',').replace(/^,\s*/, '') + ', ';
+  // Position cursor at end
+  input.focus();
+  const len = input.value.length;
+  input.setSelectionRange(len, len);
+  document.getElementById(dropId).classList.remove('open');
+}
+
+// ══ KIND-adaptive layout ══════════════════════════════════════════════════════
+// Hides/shows person vs org fields based on selected KIND
+function onKindChange(ctx) {
+  const kind = document.getElementById(`${ctx}-kind`).value;
+  const isOrg  = kind === 'org';
+  const isSelf = kind === 'self';
+  const isPerson = !isOrg; // self is still a person for form purposes
+
+  if (ctx === 'edit') {
+    const personFields = document.getElementById('edit-person-fields');
+    if (personFields) personFields.style.display = isOrg ? 'none' : '';
+    const prefixWrap = document.getElementById('edit-prefix')?.closest('.form-row');
+    if (prefixWrap) prefixWrap.style.display = isOrg ? 'none' : '';
+    const orgLbl = document.getElementById('edit-org-lbl');
+    if (orgLbl) orgLbl.textContent = isOrg ? 'org name *' : 'org';
+    const titleRow = document.getElementById('edit-title-row');
+    if (titleRow) titleRow.style.display = isOrg ? 'none' : '';
+    const fnRow = document.getElementById('edit-fn')?.closest('.form-row');
+    if (fnRow) { const lbl = fnRow.querySelector('.form-lbl'); if (lbl) lbl.textContent = isOrg ? 'display name *' : 'display name'; }
+    // Hide dates for orgs (birthday/anniversary not relevant)
+    const datesSection = document.getElementById('edit-dates-section');
+    if (datesSection) datesSection.style.display = isOrg ? 'none' : '';
+    // Self indicator
+    const selfBanner = document.getElementById('edit-self-banner');
+    if (selfBanner) selfBanner.style.display = isSelf ? '' : 'none';
+    // MEMBER section — only relevant for org/group
+    const memberSection = document.getElementById('edit-member-section');
+    if (memberSection) memberSection.style.display = (isOrg || kind === 'group') ? '' : 'none';
+  }
+
+  if (ctx === 'add') {
+    const personFields = document.getElementById('add-person-fields');
+    const orgnameRow   = document.getElementById('add-orgname-row');
+    if (personFields) personFields.style.display = isOrg ? 'none' : '';
+    if (orgnameRow)   orgnameRow.style.display   = isOrg ? '' : 'none';
+    const titleRow = document.getElementById('add-title-row');
+    if (titleRow) titleRow.style.display = isOrg ? 'none' : '';
+    const orgRow = document.getElementById('add-org-row');
+    if (orgRow) orgRow.style.display = isOrg ? 'none' : '';
+    const addDates = document.getElementById('add-dates-section');
+    if (addDates) addDates.style.display = isOrg ? 'none' : '';
+    // Highlight active kind button
+    ['individual','org','self'].forEach(k => {
+      const btn = document.getElementById(`kind-btn-${k}`);
+      if (!btn) return;
+      const active = k === kind;
+      btn.style.borderColor = active ? 'var(--green)' : 'var(--border)';
+      btn.style.color = active ? 'var(--bright)' : 'var(--dim)';
+      btn.style.background = active ? 'rgba(0,204,100,.08)' : '';
+    });
+  }
+}
+
+// Apply correct layout when modal opens (called after openEdit populates kind)
+function applyKindLayout(ctx) {
+  onKindChange(ctx);
+}
+
+function setAddKind(kind) {
+  document.getElementById('add-kind').value = kind;
+  onKindChange('add');
+}
+
+
+// ══ Country → ISO 3166-1 alpha-2 → Flag emoji ═════════════════════════════════
+const COUNTRY_ISO = {
+  'Afghanistan':'AF','Albania':'AL','Algeria':'DZ','Andorra':'AD','Angola':'AO',
+  'Argentina':'AR','Armenia':'AM','Australia':'AU','Austria':'AT','Azerbaijan':'AZ',
+  'Bahrain':'BH','Bangladesh':'BD','Belarus':'BY','Belgium':'BE','Bolivia':'BO',
+  'Bosnia':'BA','Bosnia and Herzegovina':'BA','Brazil':'BR','Bulgaria':'BG',
+  'Cambodia':'KH','Cameroon':'CM','Canada':'CA','Chile':'CL','China':'CN',
+  'Colombia':'CO','Croatia':'HR','Cuba':'CU','Cyprus':'CY','Czech Republic':'CZ',
+  'Czechia':'CZ','Denmark':'DK','Ecuador':'EC','Egypt':'EG','Estonia':'EE',
+  'Ethiopia':'ET','Finland':'FI','France':'FR','Georgia':'GE','Germany':'DE',
+  'Ghana':'GH','Greece':'GR','Guatemala':'GT','Honduras':'HN','Hong Kong':'HK',
+  'Hungary':'HU','Iceland':'IS','India':'IN','Indonesia':'ID','Iran':'IR',
+  'Iraq':'IQ','Ireland':'IE','Israel':'IL','Italy':'IT','Jamaica':'JM','Japan':'JP',
+  'Jordan':'JO','Kazakhstan':'KZ','Kenya':'KE','Kuwait':'KW','Latvia':'LV',
+  'Lebanon':'LB','Libya':'LY','Liechtenstein':'LI','Lithuania':'LT','Luxembourg':'LU',
+  'Malaysia':'MY','Malta':'MT','Mexico':'MX','Moldova':'MD','Monaco':'MC',
+  'Mongolia':'MN','Montenegro':'ME','Morocco':'MA','Mozambique':'MZ','Myanmar':'MM',
+  'Netherlands':'NL','New Zealand':'NZ','Nigeria':'NG','North Macedonia':'MK',
+  'Norway':'NO','Oman':'OM','Pakistan':'PK','Palestine':'PS','Panama':'PA',
+  'Paraguay':'PY','Peru':'PE','Philippines':'PH','Poland':'PL','Portugal':'PT',
+  'Qatar':'QA','Romania':'RO','Russia':'RU',
+  'Saudi Arabia':'SA','Serbia':'RS','Singapore':'SG','Slovakia':'SK',
+  'Slovenia':'SI','Somalia':'SO','South Africa':'ZA','South Korea':'KR',
+  'Spain':'ES','Sri Lanka':'LK','Sudan':'SD','Sweden':'SE','Switzerland':'CH',
+  'Syria':'SY','Taiwan':'TW','Tanzania':'TZ','Thailand':'TH','Tunisia':'TN',
+  'Turkey':'TR','Türkiye':'TR','Uganda':'UG','Ukraine':'UA',
+  'United Arab Emirates':'AE','UAE':'AE',
+  'United Kingdom':'GB','UK':'GB','England':'GB','Scotland':'GB','Wales':'GB',
+  'United States':'US','USA':'US',
+  'Uruguay':'UY','Uzbekistan':'UZ','Venezuela':'VE','Vietnam':'VN','Yemen':'YE',
+  'Zimbabwe':'ZW','Holland':'NL','Eire':'IE','Ivory Coast':'CI',
+  "Côte d'Ivoire":'CI','Isle of Man':'IM','Jersey':'JE','Guernsey':'GG',
+  'Gibraltar':'GI','Puerto Rico':'PR','Guam':'GU','Bermuda':'BM',
+};
+
+function countryFlag(name) {
+  if (!name) return '';
+  let iso = COUNTRY_ISO[name.trim()];
+  if (!iso) {
+    const lo = name.trim().toLowerCase();
+    const k = Object.keys(COUNTRY_ISO).find(k => k.toLowerCase() === lo);
+    if (k) iso = COUNTRY_ISO[k];
+  }
+  if (!iso) {
+    const lo = name.trim().toLowerCase();
+    const k = Object.keys(COUNTRY_ISO).find(k =>
+      lo.includes(k.toLowerCase()) || k.toLowerCase().includes(lo)
+    );
+    if (k) iso = COUNTRY_ISO[k];
+  }
+  if (!iso || iso.length !== 2) return '';
+  const b = 0x1F1E6 - 65;
+  return String.fromCodePoint(b + iso.charCodeAt(0), b + iso.charCodeAt(1));
+}
+
+// ══ Preferences ═══════════════════════════════════════════════════════════════
+const _PREFS = { sort_order: 'last_name', show_flags: 'show', ignore_multi_self: false };
+
+function savePref(key, value) {
+  _PREFS[key] = value;
+  try { sessionStorage.setItem('vcard_pref_' + key, String(value)); } catch(e) {}
+  if (key === 'sort_order' || key === 'show_flags') loadRevCards(revPage || 1);
+  if (key === 'ignore_multi_self' && !value) checkSelfCards(); // re-check if toggled off
+}
+
+function loadPrefs() {
+  try {
+    const so = sessionStorage.getItem('vcard_pref_sort_order');
+    const sf = sessionStorage.getItem('vcard_pref_show_flags');
+    const ims = sessionStorage.getItem('vcard_pref_ignore_multi_self');
+    if (so) _PREFS.sort_order = so;
+    if (sf) _PREFS.show_flags = sf;
+    if (ims) _PREFS.ignore_multi_self = ims === 'true';
+  } catch(e) {}
+  document.querySelectorAll('input[name="pref-sort"]').forEach(r => r.checked = r.value === _PREFS.sort_order);
+  document.querySelectorAll('input[name="pref-flags"]').forEach(r => r.checked = r.value === _PREFS.show_flags);
+  const imsCb = document.getElementById('pref-ignore-multi-self');
+  if (imsCb) imsCb.checked = !!_PREFS.ignore_multi_self;
+}
+
+// ══ Saving fix — runAutoReview must re-fetch from server ══════════════════════
+// The previous version used _currentPageCards which is a stale snapshot.
+// Override: always re-fetch all cards fresh from /api/cards before analysing.
+// (The original runAutoReview already does this with the fetch loop — the bug
+// was that _currentPageCards used by openEditFromIssue was stale after edits.
+// Fix: after bulk ops / individual saves, force a full re-fetch.)
+async function refreshAndRescan() {
+  // Reload current review page so _currentPageCards is fresh
+  await loadRevCards(revPage || 1);
+  await runAutoReview();
+}
+
+// ══ First-run / Welcome ═══════════════════════════════════════════════════════
+let _welcomeDismissed = false;
+let _selfCards = [];
+
+async function checkFirstRun(d) {
+  if (_welcomeDismissed) return;
+  // Show welcome if no contacts loaded and no checkpoint
+  if (!d.total_cards && !d.checkpoint) {
+    try {
+      const alreadyDismissed = sessionStorage.getItem('vcard_welcome_dismissed');
+      if (!alreadyDismissed) {
+        document.getElementById('welcome-banner').style.display = '';
+      }
+    } catch(e) {
+      document.getElementById('welcome-banner').style.display = '';
+    }
+  }
+}
+
+function dismissWelcome() {
+  _welcomeDismissed = true;
+  document.getElementById('welcome-banner').style.display = 'none';
+  try { sessionStorage.setItem('vcard_welcome_dismissed', '1'); } catch(e) {}
+}
+
+async function checkSelfCards() {
+  if (_PREFS.ignore_multi_self) return;
+  try {
+    const d = await (await fetch('/api/cards?per_page=500')).json();
+    // Build uid lookup for member resolution
+    _state_cards_by_uid = {};
+    (d.cards || []).forEach(c => { if (c.uid) _state_cards_by_uid[c.uid] = c; });
+    _selfCards = (d.cards || []).filter(c => c.kind === 'self');
+    _selfCardIdx = _selfCards.length === 1 ? _selfCards[0]._idx : null;
+
+    // Update prefs panel summary
+    const summary = document.getElementById('pref-self-summary');
+    const editBtn = document.getElementById('pref-edit-self-btn');
+    if (summary) {
+      if (_selfCards.length === 0) {
+        summary.innerHTML = `<span style="color:var(--dim)">No self card found.</span> <span style="color:var(--dim);font-size:9px">Your own contact card helps the app identify you.</span>`;
+        if (editBtn) editBtn.style.display = 'none';
+      } else {
+        const s = _selfCards[0];
+        summary.innerHTML = `<strong style="color:var(--bright)">${esc(s.fn||'Unnamed')}</strong>` +
+          (s.emails[0] ? ` · <span style="color:var(--dim)">${esc(s.emails[0])}</span>` : '') +
+          (s.tels[0] ? ` · <span style="color:var(--dim)">${esc(s.tels[0])}</span>` : '') +
+          `<br><span style="color:var(--green);font-size:9px">⭐ KIND=self</span>`;
+        if (editBtn) editBtn.style.display = '';
+      }
+    }
+
+    // Show multi-self warning
+    const warn = document.getElementById('self-warn-banner');
+    const warnMsg = document.getElementById('self-warn-msg');
+    if (warn && _selfCards.length > 1) {
+      if (warnMsg) warnMsg.textContent = `${_selfCards.length} contacts are tagged as self: ${_selfCards.map(c=>c.fn||'Unnamed').join(', ')}. Only one self card is expected.`;
+      warn.style.display = 'flex';
+    } else if (warn) {
+      warn.style.display = 'none';
+    }
+  } catch(e) {}
+}
+
+function ignoreSelfWarn() {
+  document.getElementById('self-warn-banner').style.display = 'none';
+  savePref('ignore_multi_self', true);
+  const cb = document.getElementById('pref-ignore-multi-self');
+  if (cb) cb.checked = true;
+}
+
+function editSelfCard() {
+  if (_selfCards.length < 1) { toast('No self card found', true); return; }
+  // Navigate to Review and open edit for the self card
+  show('review');
+  setTimeout(async () => {
+    // Re-fetch to get the page position
+    try {
+      const d = await (await fetch('/api/cards?per_page=500')).json();
+      const idx = _selfCards[0]._idx;
+      const pi = (d.cards || []).findIndex(c => c._idx === idx);
+      if (pi >= 0) {
+        _currentPageCards = d.cards;
+        openEdit(pi);
+      }
+    } catch(e) {}
+  }, 300);
+}
+
+// ══ Profile setup modal ═══════════════════════════════════════════════════════
+function openProfileSetup() {
+  dismissWelcome();
+  // Pre-fill from existing self card if available
+  if (_selfCards.length > 0) {
+    const s = _selfCards[0];
+    document.getElementById('prof-fn').value = s.fn || '';
+    document.getElementById('prof-given').value = s.name_given || '';
+    document.getElementById('prof-family').value = s.name_family || '';
+    document.getElementById('prof-email').value = (s.emails||[])[0] || '';
+    document.getElementById('prof-tel').value = (s.tels||[])[0] || '';
+    const adr = s.addresses&&s.addresses[0] ? s.addresses[0] : {};
+    document.getElementById('prof-country').value = adr.country || '';
+    updateCountryPreview('prof-country');
+  } else {
+    // Pre-populate country from server settings
+    try {
+      fetch('/api/status').then(r=>r.json()).then(d => {
+        if (d.default_region_country) {
+          document.getElementById('prof-country').value = d.default_region_country;
+          updateCountryPreview('prof-country');
+        }
+      });
+    } catch(e) {}
+  }
+  document.getElementById('profile-modal').classList.add('open');
+}
+
+function closeProfileSetup() {
+  document.getElementById('profile-modal').classList.remove('open');
+  document.getElementById('prof-save-msg').style.display = 'none';
+}
+
+async function saveProfileSetup() {
+  const fn = document.getElementById('prof-fn').value.trim();
+  if (!fn) { toast('Please enter your name', true); return; }
+  const country = document.getElementById('prof-country').value.trim();
+  const given = document.getElementById('prof-given').value.trim();
+  const family = document.getElementById('prof-family').value.trim();
+  const email = document.getElementById('prof-email').value.trim();
+  const tel = document.getElementById('prof-tel').value.trim();
+
+  // Save country setting to server
+  if (country) {
+    const iso = getISOFromCountry(country);
+    if (iso) await post('/api/save_settings', { default_region: iso });
+  }
+
+  // If there's already a self card, update it; otherwise create one
+  let result;
+  if (_selfCards.length > 0) {
+    const s = _selfCards[0];
+    result = await post('/api/full_update_card', {
+      index: s._idx, fn, kind: 'self',
+      name_given: given, name_family: family, name_prefix: s.name_prefix||'',
+      name_additional: s.name_additional||'', name_suffix: s.name_suffix||'',
+      org: s.org||'', title: s.title||'',
+      emails: email || (s.emails||[]).join('\n'),
+      tels: tel || (s.tels||[]).join('\n'),
+      categories: (s.categories||[]).join(','),
+      street: (s.addresses&&s.addresses[0]?.street)||'',
+      city: (s.addresses&&s.addresses[0]?.locality)||'',
+      region: (s.addresses&&s.addresses[0]?.region)||'',
+      postal: (s.addresses&&s.addresses[0]?.postal_code)||'',
+      country,
+      bday: s.bday||'', anniversary: s.anniversary||'',
+    });
+  } else {
+    result = await post('/api/add_card', {
+      fn, kind: 'self',
+      name_given: given, name_family: family,
+      email, tel, country,
+    });
+  }
+
+  if (result.ok) {
+    const msg = document.getElementById('prof-save-msg');
+    msg.textContent = '✓ Profile saved';
+    msg.style.display = '';
+    flashSaved();
+    await poll();
+    await checkSelfCards();
+    setTimeout(() => closeProfileSetup(), 1200);
+  } else {
+    toast(result.error || 'Save failed', true);
+  }
+}
+
+// ══ Preferences: home country ══════════════════════════════════════════════════
+function getISOFromCountry(name) {
+  return COUNTRY_ISO[name] || COUNTRY_ISO[name.trim()] || null;
+}
+
+async function savePrefCountry() {
+  const country = document.getElementById('pref-country').value.trim();
+  if (!country) { toast('Please enter a country name', true); return; }
+  const iso = getISOFromCountry(country);
+  if (!iso) { toast(`Country "${country}" not recognised — try "United Kingdom" or "United States"`, true); return; }
+  const d = await post('/api/save_settings', { default_region: iso });
+  if (d.ok) {
+    const saved = document.getElementById('pref-country-saved');
+    if (saved) { saved.style.display = ''; setTimeout(()=>saved.style.display='none', 3000); }
+    toast(`✓ Home country set to ${country} (${iso})`);
+  } else {
+    toast(d.error || 'Save failed', true);
+  }
+}
+
+// ══ Improved related person picker ═══════════════════════════════════════════
+let _relSearchTimer2;
+async function relSearchPicker(q, gridId, ctx) {
+  clearTimeout(_relSearchTimer2);
+  const grid = document.getElementById(gridId);
+  const noRes = document.getElementById(`${ctx}-rel-no-results`);
+  if (!q || q.length < 1) {
+    grid.innerHTML = noRes ? noRes.outerHTML : '';
+    if (noRes) { noRes.style.display=''; noRes.textContent='Type a name above to search contacts'; }
+    return;
+  }
+  _relSearchTimer2 = setTimeout(async () => {
+    try {
+      const d = await (await fetch(`/api/search_cards?q=${encodeURIComponent(q)}`)).json();
+      renderRelPickerGrid(d.results||[], gridId, ctx);
+    } catch(e) {}
+  }, 180);
+}
+
+function renderRelPickerGrid(results, gridId, ctx) {
+  const grid = document.getElementById(gridId);
+  if (!results.length) {
+    grid.innerHTML = `<div class="rel-no-results">No contacts found matching that name</div>`;
+    return;
+  }
+  grid.innerHTML = results.map(r => {
+    const kindIcon = r.kind==='org' ? '🏢' : '👤';
+    const sub = [r.emails[0], r.tels[0]].filter(Boolean).join(' · ');
+    return `<div class="rel-card" onclick="pickRelFromGrid(${JSON.stringify(JSON.stringify(r)).slice(1,-1)},'${gridId}','${ctx}')">
+      <div class="rel-card-name">${kindIcon} ${esc(r.fn||r.org||'?')}</div>
+      ${sub ? `<div class="rel-card-sub">${esc(sub)}</div>` : ''}
+      <div class="rel-card-type">${r.uid ? '⊕ will be UID-linked' : 'text link'}</div>
+    </div>`;
+  }).join('');
+}
+
+async function pickRelFromGrid(rJson, gridId, ctx) {
+  let r;
+  try { r = JSON.parse(rJson); } catch(e) { return; }
+  const relType = document.getElementById(`${ctx}-rel-type`).value;
+
+  // ── Edit modal: fire bidirectional server-side link immediately ──────────────
+  if (ctx === 'edit' && r._idx !== undefined) {
+    const fromIdx = parseInt(document.getElementById('edit-idx').value);
+    if (!isNaN(fromIdx) && fromIdx !== r._idx) {
+      try {
+        const res = await post('/api/link_related', {
+          from_idx: fromIdx, to_idx: r._idx, rel_type: relType
+        });
+        if (res.ok) {
+          // Reload _editRelated from the server so saveEdit won't clobber it
+          await reloadEditRelated(fromIdx);
+          // Show a strong confirmation banner inside the picker
+          showRelLinkedConfirm(gridId, res.from_name, res.to_name, res.rel_type, res.recip);
+          flashSaved();
+        } else {
+          toast(res.error || 'Link failed', true);
+        }
+      } catch(e) {
+        toast('Link failed — server error', true);
+      }
+      return; // don't touch local _editRelated — server is the source of truth
+    }
+  }
+
+  // ── Add modal (card not yet saved): local-only link ──────────────────────────
+  const entry = { rel_type: relType, uid: r.uid || null, text: r.fn || r.org || '' };
+  _addRelated.push(entry);
+  renderRelList('add');
+
+  // Clear search and show confirmation in grid
+  const searchEl = document.getElementById(`${ctx}-rel-search`);
+  if (searchEl) searchEl.value = '';
+  showRelLinkedConfirm(gridId, null, r.fn || r.org || '?', relType, null);
+
+  // If the linked contact has an address, offer to clone it
+  if (r.address && Object.values(r.address).some(Boolean)) {
+    showCloneBanner(ctx, r.fn || r.org || 'linked contact', r.address);
+  }
+}
+
+// Reload the related list for the currently-open edit card from server state
+async function reloadEditRelated(cardIdx) {
+  try {
+    // Fetch a large page and find by _idx
+    const d = await (await fetch(`/api/cards?per_page=1000`)).json();
+    const card = (d.cards || []).find(c => c._idx === cardIdx);
+    if (card) {
+      _editRelated = (card.related || []).map(r => ({...r}));
+      renderRelList('edit');
+    }
+  } catch(e) {}
+}
+
+// Show a green "linked!" confirmation inside the picker grid
+function showRelLinkedConfirm(gridId, fromName, toName, relType, recipType) {
+  const grid = document.getElementById(gridId);
+  if (!grid) return;
+  const recip = recipType ? ` ↔ ${recipType} on their card` : '';
+  grid.innerHTML = `
+    <div style="grid-column:1/-1;background:rgba(0,224,64,.08);border:1px solid var(--green2);
+         padding:10px 12px;display:flex;align-items:center;gap:10px">
+      <span style="color:var(--green);font-size:16px">⊕</span>
+      <div>
+        <div style="color:var(--green);font-size:11px;font-weight:700">
+          ${fromName ? `${esc(fromName)} linked as <strong>${esc(relType)}</strong> of ${esc(toName)}` : `Linked as <strong>${esc(relType)}</strong> of ${esc(toName)}`}
+        </div>
+        ${recipType ? `<div style="font-size:10px;color:var(--dim);margin-top:2px">↔ ${esc(toName)} has been updated as <strong>${esc(recipType)}</strong> on their card automatically</div>` : ''}
+        <div style="margin-top:6px">
+          <button class="btn btn-d" style="font-size:10px;padding:2px 8px"
+            onclick="this.closest('[id]').innerHTML='<div class=\\'rel-no-results\\'>Type a name above to search contacts</div>'">
+            link another…
+          </button>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ══ Individual export ════════════════════════════════════════════════════════
+async function doExportIndividual() {
+  const btn = document.getElementById('btn-exp-ind');
+  const hint = document.getElementById('exp-ind-hint');
+  const result = document.getElementById('exp-ind-result');
+  btn.disabled = true;
+  hint.textContent = 'exporting…';
+  result.style.display = 'none';
+
+  const version = document.getElementById('exp-ver').value;
+  const cats = [...document.querySelectorAll('#exp-cat-checks input[type=checkbox]:checked')]
+    .map(cb => cb.value).filter(v => v !== '__all__');
+
+  try {
+    const d = await post('/api/export_individual', { version, categories: cats });
+    btn.disabled = false;
+    if (!d.ok) { hint.textContent = ''; toast(d.error || 'Export failed', true); return; }
+    hint.textContent = '';
+    result.style.display = '';
+    result.innerHTML = `✓ <strong>${d.written}</strong> individual files written to <code style="color:var(--bright)">${esc(d.folder)}/</code>` +
+      (d.skipped ? `<br><span style="color:var(--amber)">⚠ ${d.skipped} skipped due to data errors</span>` : '');
+    if (d.warning) result.innerHTML += `<br><span style="color:var(--amber)">${esc(d.warning)}</span>`;
+    toast(`✓ ${d.written} files exported`);
+  } catch(e) {
+    btn.disabled = false;
+    hint.textContent = '';
+    toast('Export failed', true);
+  }
+}
+
+
+// ══ MEMBER picker ═════════════════════════════════════════════════════════════
+let _editMembers = [];   // [{uid, fn}]
+
+function renderMemberList() {
+  const el = document.getElementById('edit-member-list');
+  if (!el) return;
+  if (!_editMembers.length) {
+    el.innerHTML = '<div style="color:var(--dim);font-size:10px;padding:3px 0 6px">No members yet.</div>';
+    return;
+  }
+  el.innerHTML = _editMembers.map((m, i) => `
+    <div class="member-item">
+      <span class="member-name">👤 ${esc(m.fn || m.uid || '?')}</span>
+      ${m.uid ? `<span class="member-uid">⊕ ${esc(m.uid.slice(0,12))}…</span>` : ''}
+      <button class="member-remove" onmousedown="removeMember(${i})">✕</button>
+    </div>`).join('');
+}
+
+function removeMember(i) {
+  _editMembers.splice(i, 1);
+  renderMemberList();
+}
+
+let _memberSearchTimer;
+async function memberSearchPicker(q, gridId) {
+  clearTimeout(_memberSearchTimer);
+  const grid = document.getElementById(gridId);
+  if (!q || q.length < 1) {
+    if (grid) grid.innerHTML = '<div class="rel-no-results">Type a name above to search contacts</div>';
+    return;
+  }
+  _memberSearchTimer = setTimeout(async () => {
+    try {
+      const d = await (await fetch(`/api/search_cards?q=${encodeURIComponent(q)}`)).json();
+      renderMemberPickerGrid(d.results || [], gridId);
+    } catch(e) {}
+  }, 180);
+}
+
+function renderMemberPickerGrid(results, gridId) {
+  const grid = document.getElementById(gridId);
+  if (!results.length) {
+    grid.innerHTML = '<div class="rel-no-results">No contacts found</div>';
+    return;
+  }
+  grid.innerHTML = results.map(r => {
+    const already = _editMembers.some(m => m.uid && m.uid === r.uid);
+    const sub = [r.emails[0], r.tels[0]].filter(Boolean).join(' · ');
+    return `<div class="rel-card${already ? '" style="opacity:.4;pointer-events:none' : ''}" 
+         onclick="addMemberFromGrid(${JSON.stringify(JSON.stringify(r)).slice(1,-1)})">
+      <div class="rel-card-name">👤 ${esc(r.fn || r.org || '?')}</div>
+      ${sub ? `<div class="rel-card-sub">${esc(sub)}</div>` : ''}
+      <div class="rel-card-type">${already ? '✓ already added' : r.uid ? '⊕ will be UID-linked' : 'text link'}</div>
+    </div>`;
+  }).join('');
+}
+
+function addMemberFromGrid(rJson) {
+  let r;
+  try { r = JSON.parse(rJson); } catch(e) { return; }
+  if (_editMembers.some(m => m.uid && m.uid === r.uid)) {
+    toast('Already in members list', true); return;
+  }
+  _editMembers.push({ uid: r.uid || '', fn: r.fn || r.org || '' });
+  renderMemberList();
+  const grid = document.getElementById('edit-member-picker-grid');
+  if (grid) {
+    // Re-render to grey out the added contact
+    const lastQ = document.getElementById('edit-member-search')?.value || '';
+    if (lastQ) memberSearchPicker(lastQ, 'edit-member-picker-grid');
+  }
+  toast(`✓ ${r.fn || r.org || 'Contact'} added as member`);
+}
+
+
+// ══ Raw Viewer ════════════════════════════════════════════════════════════════
+let _viewerPage = 1;
+let _viewerSearch = '';
+const VIEWER_PER_PAGE = 10;
+let _viewerCards = [];  // [{_idx, fn, text}] cached for current page
+
+function onViewerSearch() {
+  _viewerSearch = document.getElementById('viewer-q').value.trim().toLowerCase();
+  renderViewerPage(1);
+}
+
+function refreshViewer() {
+  _viewerCards = [];
+  renderViewerPage(_viewerPage);
+}
+
+async function renderViewerPage(page) {
+  _viewerPage = page;
+  const version = document.getElementById('viewer-ver').value;
+  const container = document.getElementById('viewer-cards');
+  const empty = document.getElementById('viewer-empty');
+  container.innerHTML = '<div style="color:var(--dim);font-size:10px;padding:20px;text-align:center">Loading…</div>';
+
+  try {
+    const params = new URLSearchParams({
+      page, per_page: VIEWER_PER_PAGE,
+      ...((_viewerSearch) ? {search: _viewerSearch} : {})
+    });
+    const d = await (await fetch(`/api/cards?${params}`)).json();
+    const cards = d.cards || [];
+
+    if (!cards.length) {
+      container.innerHTML = '';
+      empty.style.display = '';
+      document.getElementById('viewer-pag').innerHTML = '';
+      return;
+    }
+    empty.style.display = 'none';
+
+    // Fetch raw text for each card in parallel
+    const rawFetches = cards.map(c =>
+      fetch(`/api/card_raw?idx=${c._idx}&version=${version}`)
+        .then(r => r.json()).catch(() => ({ok: false, text: ''}))
+    );
+    const raws = await Promise.all(rawFetches);
+
+    container.innerHTML = cards.map((c, i) => {
+      const raw = raws[i];
+      const text = raw.ok ? raw.text : '# Error loading vCard';
+      return `<div class="vcf-card-block">
+        <div class="vcf-card-header">
+          <div class="vcf-card-name">${esc(c.fn || c.org || '—')}</div>
+          ${c.uid ? `<div class="vcf-card-uid">UID: ${esc(c.uid)}</div>` : ''}
+          ${c.rev ? `<div class="vcf-card-uid" style="color:var(--purple)">REV: ${esc(c.rev)}</div>` : ''}
+          <button class="btn btn-d" style="font-size:9px;padding:1px 8px;flex-shrink:0"
+                  onclick="viewerOpenEdit(${c._idx})">edit →</button>
+        </div>
+        <div class="vcf-code">${syntaxHighlightVcf(text)}</div>
+      </div>`;
+    }).join('');
+
+    // Pagination
+    const total = d.total;
+    const totalPages = Math.ceil(total / VIEWER_PER_PAGE);
+    let pag = `<span style="color:var(--dim)">showing ${(page-1)*VIEWER_PER_PAGE+1}–${Math.min(page*VIEWER_PER_PAGE,total)} of ${total}</span> `;
+    if (page > 1) pag += `<button class="btn btn-d" style="font-size:10px;padding:1px 8px" onclick="renderViewerPage(${page-1})">← prev</button> `;
+    if (page < totalPages) pag += `<button class="btn btn-d" style="font-size:10px;padding:1px 8px" onclick="renderViewerPage(${page+1})">next →</button>`;
+    document.getElementById('viewer-pag').innerHTML = pag;
+
+  } catch(e) {
+    container.innerHTML = '<div style="color:var(--red);padding:16px">Failed to load cards.</div>';
+  }
+}
+
+function syntaxHighlightVcf(text) {
+  // Colour-code the vCard source line by line
+  return text.split('\n').map(line => {
+    if (!line.trim()) return '';
+    const esc_ = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    if (line.startsWith('BEGIN:')) return `<span class="vcf-prop-begin">${esc_(line)}</span>`;
+    if (line.startsWith('END:'))   return `<span class="vcf-prop-end">${esc_(line)}</span>`;
+
+    const colon = line.indexOf(':');
+    if (colon < 0) return `<span style="color:var(--dim)">${esc_(line)}</span>`;
+
+    const key = line.slice(0, colon);
+    const val = line.slice(colon + 1);
+    const keyLower = key.split(';')[0].toLowerCase();
+
+    let keyClass = 'vcf-prop-key';
+    if (keyLower === 'uid')    keyClass = 'vcf-prop-uid';
+    if (keyLower === 'rev')    keyClass = 'vcf-prop-rev';
+    if (keyLower === 'prodid') keyClass = 'vcf-prop-prodid';
+
+    return `<span class="${keyClass}">${esc_(key)}</span><span style="color:var(--border)">:</span><span class="vcf-prop-val">${esc_(val)}</span>`;
+  }).filter(l => l).join('\n');
+}
+
+function viewerOpenEdit(globalIdx) {
+  // Switch to Review tab, then open the edit modal for the card at globalIdx
+  show('review');
+  setTimeout(async () => {
+    try {
+      const d = await (await fetch('/api/cards?per_page=1000')).json();
+      const pi = (d.cards || []).findIndex(c => c._idx === globalIdx);
+      if (pi >= 0) {
+        _currentPageCards = d.cards;
+        openEdit(pi);
+      }
+    } catch(e) {}
+  }, 200);
+}
+
+function openViewerForCurrent() {
+  // Open viewer and jump to the current card being edited
+  const idx = parseInt(document.getElementById('edit-idx').value);
+  closeEditModal();
+  show('viewer');
+  setTimeout(() => {
+    // Viewer will show by global idx — search for it
+    renderViewerPage(1);
+  }, 100);
+}
+
+
+// ══ Single-line address detection ═════════════════════════════════════════════
+// Detects when the street field contains what looks like a full address string
+// e.g. "12 High Street, Easton, Bristol, BS5 6TY, UK"
+function _looksLikeSingleLineAddress(val) {
+  if (!val || val.length < 10) return false;
+  const commaCount = (val.match(/,/g) || []).length;
+  // Heuristics: 2+ commas, or contains a postcode-like pattern, or very long
+  const hasPostcode = /[A-Z]{1,2}\d[\d A-Z]*\d[A-Z]{2}|^\d{5}/i.test(val);
+  return commaCount >= 2 || (commaCount >= 1 && hasPostcode) || (hasPostcode && val.length > 20);
+}
+
+function detectSingleLineAddress(input, forceShow) {
+  const hint = document.getElementById('edit-addr-hint');
+  if (!hint) return;
+  const city = document.getElementById('edit-city')?.value?.trim();
+  const postal = document.getElementById('edit-postal')?.value?.trim();
+  const otherFieldsEmpty = !city && !postal;
+  if (forceShow === undefined) forceShow = otherFieldsEmpty;
+  const show = forceShow && _looksLikeSingleLineAddress(input.value.trim());
+  hint.style.display = show ? '' : 'none';
+}
+
+function dismissAddrHint() {
+  document.getElementById('edit-addr-hint').style.display = 'none';
+}
+
+function detectSingleLineAddressAdd(input) {
+  const hint = document.getElementById('add-addr-hint');
+  if (!hint) return;
+  const city = document.getElementById('add-city')?.value?.trim();
+  const postal = document.getElementById('add-postal')?.value?.trim();
+  hint.style.display = (!city && !postal && _looksLikeSingleLineAddress(input.value.trim())) ? '' : 'none';
+}
+
+function _parseAddressLine(raw) {
+  // Split on commas, trim parts
+  const parts = raw.split(',').map(p => p.trim()).filter(Boolean);
+  if (parts.length < 2) return null;
+
+  // Common patterns: [street, [extended], city/town, [region], postcode, [country]]
+  // Strategy: detect postcode (UK/US patterns), country (last if text), then work backwards
+  const postcodeRe = /^([A-Z]{1,2}\d[\d A-Z]*\d[A-Z]{2}|\d{5}(-\d{4})?)$/i;
+  const countryLike = p => /^(uk|united kingdom|england|scotland|wales|ireland|usa|united states|australia|canada|france|germany|spain|italy|netherlands|new zealand)$/i.test(p);
+
+  let result = { street: '', city: '', region: '', postal: '', country: '' };
+
+  let remaining = [...parts];
+
+  // Extract country from end
+  if (remaining.length > 1 && countryLike(remaining[remaining.length - 1])) {
+    result.country = remaining.pop();
+  }
+  // Extract postcode
+  const pcIdx = remaining.findIndex(p => postcodeRe.test(p));
+  if (pcIdx >= 0) {
+    result.postal = remaining.splice(pcIdx, 1)[0];
+  }
+  // Now what's left: street, [ext], city, [region]
+  if (remaining.length >= 1) result.street  = remaining.shift();
+  if (remaining.length >= 2) result.region  = remaining.pop();
+  if (remaining.length >= 1) result.city    = remaining.pop();
+  // If still bits left, append them to street
+  if (remaining.length) result.street += ', ' + remaining.join(', ');
+
+  return result;
+}
+
+function parseSingleLineAddress() {
+  const streetEl = document.getElementById('edit-street');
+  const raw = streetEl.value.trim();
+  const parsed = _parseAddressLine(raw);
+  if (!parsed) { toast('Could not parse address — please fill in manually', true); return; }
+  streetEl.value = parsed.street;
+  document.getElementById('edit-city').value   = parsed.city;
+  document.getElementById('edit-region').value = parsed.region;
+  document.getElementById('edit-postal').value = parsed.postal;
+  if (parsed.country) {
+    document.getElementById('edit-country').value = parsed.country;
+    updateCountryPreview('edit-country');
+  }
+  document.getElementById('edit-addr-hint').style.display = 'none';
+  toast('✓ Address split into fields — please review and save');
+}
+
+function parseSingleLineAddressAdd() {
+  const streetEl = document.getElementById('add-street');
+  const raw = streetEl.value.trim();
+  const parsed = _parseAddressLine(raw);
+  if (!parsed) { toast('Could not parse address — please fill in manually', true); return; }
+  streetEl.value = parsed.street;
+  document.getElementById('add-city').value   = parsed.city;
+  document.getElementById('add-region').value = parsed.region;
+  document.getElementById('add-postal').value = parsed.postal;
+  if (parsed.country) {
+    document.getElementById('add-country').value = parsed.country;
+    updateCountryPreview('add-country');
+  }
+  document.getElementById('add-addr-hint').style.display = 'none';
+  toast('✓ Address split into fields — please review and save');
+}
+
+async function post(url,body){return(await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function toast(msg,err){const el=document.getElementById('toast');el.textContent=msg;el.className='show'+(err?' err':'');clearTimeout(el._t);el._t=setTimeout(()=>el.className='',3500);}
+</script>
+</body>
+</html>
