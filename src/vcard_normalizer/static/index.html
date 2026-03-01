@@ -1186,7 +1186,7 @@ async function loadRevCards(page) {
         <button class="btn btn-d" style="font-size:9px;padding:1px 7px;margin-left:8px"
                 onclick="clearRevPin()">✕ clear filter</button>`;
       updateClearBtn();
-    } catch(e){}
+    } catch(e){ console.error('loadRevCards (pinned):', e); }
     return;
   }
 
@@ -1202,12 +1202,17 @@ async function loadRevCards(page) {
     const filterDesc = revQuality ? ` · quality: ${revQuality.replace('_',' ')}` : '';
     document.getElementById('rev-sub').textContent = `${d.total} contact${d.total!==1?'s':''}${filterDesc}`;
     updateClearBtn();
-  } catch(e){}
+  } catch(e){ console.error('loadRevCards:', e); }
 }
+
+// ══ Review — row selection & manual merge ═════════════════════════════════════
+const _revSelected = new Set(); // Set of page indices (pi)
+let _revPinnedIds   = null;     // Set of _idx — when set, Review shows only these
+let _revPinnedLabel = '';       // amber subtitle shown when pinned
 
 function renderRevTable(d) {
   const empty=document.getElementById('rev-empty'), tbl=document.getElementById('rev-tbl');
-  if (!d.total && !S.total_cards) { empty.style.display=''; tbl.style.display='none'; return; }
+  if (!d || !d.cards || (!d.total && !S.total_cards)) { empty.style.display=''; tbl.style.display='none'; return; }
   empty.style.display='none'; tbl.style.display='';
 
   const pc=cat=>{const l=cat.toLowerCase();return l.includes('work')||l.includes('business')?'pc':l.includes('fam')?'pa':l.includes('med')?'pp':'pg';};
@@ -1252,10 +1257,6 @@ function renderRevTable(d) {
 }
 
 let _rst;
-// ══ Review — row selection & manual merge ═════════════════════════════════════
-const _revSelected = new Set(); // Set of page indices (pi)
-let _revPinnedIds   = null;     // Set of _idx — when set, Review shows only these
-let _revPinnedLabel = '';       // amber subtitle shown when pinned
 
 function clearRevPin() {
   _revPinnedIds   = null;
