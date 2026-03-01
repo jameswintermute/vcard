@@ -1,0 +1,8 @@
+# Do not commit exported contact files to git — these contain personal data
+*.vcf
+*.vcard
+*.csv
+
+# Keep this README and .gitignore tracked
+!README.md
+!.gitignore
