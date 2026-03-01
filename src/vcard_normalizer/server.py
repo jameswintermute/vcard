@@ -1025,6 +1025,117 @@ def _api_card_raw(params: dict) -> dict:
         return {"ok": False, "error": str(exc)}
 
 
+def _api_normalise_countries(body: dict) -> dict:
+    """Analyse or apply country name normalisation.
+
+    GET-style (body={dry_run:true}): returns preview of what would change.
+    POST-style (body={replacements:{old:new,...}}): applies the replacements.
+    """
+    cards = _state["cards"]
+
+    # Canonical country names we map TO — ISO 3166-1 official English names
+    CANONICAL = {
+        # British Isles variants
+        "uk": "United Kingdom",
+        "u.k.": "United Kingdom",
+        "great britain": "United Kingdom",
+        "britain": "United Kingdom",
+        "england": "United Kingdom",
+        "scotland": "United Kingdom",
+        "wales": "United Kingdom",
+        "northern ireland": "United Kingdom",
+        "united kingdom of great britain": "United Kingdom",
+        # US variants
+        "us": "United States",
+        "u.s.": "United States",
+        "usa": "United States",
+        "u.s.a.": "United States",
+        "united states of america": "United States",
+        "america": "United States",
+        # Common others
+        "nederland": "Netherlands",
+        "the netherlands": "Netherlands",
+        "holland": "Netherlands",
+        "deutschland": "Germany",
+        "espana": "Spain",
+        "españa": "Spain",
+        "suisse": "Switzerland",
+        "schweiz": "Switzerland",
+        "svizzera": "Switzerland",
+        "eire": "Ireland",
+        "republic of ireland": "Ireland",
+        "aotearoa": "New Zealand",
+        "nz": "New Zealand",
+        "aus": "Australia",
+        "oz": "Australia",
+        "ca": "Canada",
+        "fr": "France",
+        "de": "Germany",
+        "it": "Italy",
+        "es": "Spain",
+        "pt": "Portugal",
+        "pl": "Poland",
+        "se": "Sweden",
+        "no": "Norway",
+        "dk": "Denmark",
+        "fi": "Finland",
+        "be": "Belgium",
+        "at": "Austria",
+        "ch": "Switzerland",
+        "nl": "Netherlands",
+        "ie": "Ireland",
+        "jp": "Japan",
+        "cn": "China",
+        "in": "India",
+        "br": "Brazil",
+        "za": "South Africa",
+        "sg": "Singapore",
+        "ae": "United Arab Emirates",
+        "uae": "United Arab Emirates",
+    }
+
+    if body.get("apply"):
+        # Apply supplied replacements {old_name: new_name}
+        replacements = body.get("replacements", {})
+        changed = 0
+        for card in cards:
+            for adr in (card.addresses or []):
+                old = (adr.country or "").strip()
+                if old in replacements:
+                    adr.country = replacements[old]
+                    changed += 1
+        if changed:
+            _autosave_checkpoint()
+        return {"ok": True, "changed": changed}
+
+    # Dry-run: find all unique country values and suggest canonical forms
+    seen: dict[str, int] = {}
+    for card in cards:
+        for adr in (card.addresses or []):
+            c = (adr.country or "").strip()
+            if c:
+                seen[c] = seen.get(c, 0) + 1
+
+    suggestions = []
+    for raw, count in sorted(seen.items(), key=lambda x: -x[1]):
+        lo = raw.lower().strip()
+        canonical = CANONICAL.get(lo)
+        # If no direct match, try prefix/contains match
+        if not canonical:
+            for k, v in CANONICAL.items():
+                if lo.startswith(k) or k.startswith(lo):
+                    canonical = v
+                    break
+        suggestions.append({
+            "raw": raw,
+            "count": count,
+            "suggested": canonical or raw,  # suggest self if no match (already canonical)
+            "needs_fix": canonical is not None and canonical != raw,
+        })
+
+    return {"ok": True, "countries": suggestions}
+
+
 def _api_reissue_uids(body: dict) -> dict:
     """Replace all vendor-issued UIDs with clean vcard-studio-<uuid> ones.
 
@@ -1164,6 +1275,8 @@ class VCardHandler(BaseHTTPRequestHandler):
             self._send_json(_api_export_individual(body))
         elif path == "/api/reissue_uids":
             self._send_json(_api_reissue_uids(body))
+        elif path == "/api/normalise_countries":
+            self._send_json(_api_normalise_countries(body))
         elif path == "/api/export_csv":
             self._send_json(_api_export_csv(body))
         elif path == "/api/update_card":
