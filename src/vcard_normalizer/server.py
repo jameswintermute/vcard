@@ -1025,6 +1025,31 @@ def _api_card_raw(params: dict) -> dict:
         return {"ok": False, "error": str(exc)}
 
 
+def _api_reissue_uids(body: dict) -> dict:
+    """Replace all vendor-issued UIDs with clean vcard-studio-<uuid> ones.
+
+    Also assigns new UIDs to any card that still has none.
+    Returns counts of replaced and assigned UIDs.
+    """
+    from .normalize import _is_vendor_uid, new_vs_uid
+    cards = _state["cards"]
+    replaced = 0
+    assigned = 0
+    for card in cards:
+        if not card.uid or _is_vendor_uid(card.uid):
+            old = card.uid or "(none)"
+            card.uid = new_vs_uid()
+            if card.uid:
+                card.log_change(f"UID reissued: {old} → {card.uid}")
+                replaced += 1
+            else:
+                card.log_change(f"UID assigned: {card.uid}")
+                assigned += 1
+    _autosave_checkpoint()
+    return {"ok": True, "replaced": replaced, "assigned": assigned,
+            "total": len(cards)}
+
+
 def _api_search_orgs(params: dict) -> dict:
     """Search org/group KIND cards for the MEMBER picker."""
     q = params.get("q", [""])[0].lower().strip()
@@ -1137,6 +1162,8 @@ class VCardHandler(BaseHTTPRequestHandler):
             self._send_json(_api_export(body))
         elif path == "/api/export_individual":
             self._send_json(_api_export_individual(body))
+        elif path == "/api/reissue_uids":
+            self._send_json(_api_reissue_uids(body))
         elif path == "/api/export_csv":
             self._send_json(_api_export_csv(body))
         elif path == "/api/update_card":

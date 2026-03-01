@@ -326,8 +326,25 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
   </div>
 
   <hr class="divider">
+  <div class="sec-lbl">UID CLEANUP
+    <span style="color:var(--dim);font-weight:400"> — replace vendor-issued UIDs with clean vCard Studio ones</span>
+  </div>
+  <div style="color:var(--dim);font-size:10px;line-height:1.9;margin-bottom:9px">
+    Proton, Apple, and Google generate their own proprietary UIDs
+    (e.g. <code style="color:var(--text)">proton-web-9726a5f6…</code>, <code style="color:var(--text)">AB3F2C…</code>).
+    This replaces them all with clean <code style="color:var(--text)">vcard-studio-&lt;uuid&gt;</code> identifiers
+    and assigns UIDs to any card that has none. The change is saved to the checkpoint immediately.
+  </div>
+  <div class="row" style="gap:8px;align-items:center">
+    <button class="btn btn-c" id="btn-reissue-uids" onclick="doReissueUids()">⟳ reissue all UIDs</button>
+    <span id="reissue-hint" style="font-size:10px;color:var(--dim)"></span>
+  </div>
+  <div id="reissue-result" style="display:none;margin-top:8px;background:rgba(0,224,64,.06);
+       border:1px solid var(--green2);padding:8px 12px;font-size:10px;color:var(--green)"></div>
+
+  <hr class="divider">
   <div class="sec-lbl">WHAT CLEAN DID</div>
-  <div style="color:var(--dim);font-size:10px;line-height:2.2">· Phones normalised to E.164 (country inferred from address)<br>· Contacts classified as individual or organisation<br>· Rule-based auto-tagging from local/vcard.conf patterns<br>· Proprietary Apple/Google fields stripped</div>
+  <div style="color:var(--dim);font-size:10px;line-height:2.2">· Phones normalised to E.164 (country inferred from address)<br>· Contacts classified as individual or organisation<br>· Rule-based auto-tagging from local/vcard.conf patterns<br>· Proprietary Apple/Google fields stripped<br>· Vendor UIDs (Proton, Apple, Google) replaced on import with vcard-studio-&lt;uuid&gt;</div>
 </div>
 
 <!-- §3 SPLIT -->
@@ -3178,6 +3195,34 @@ function showRelLinkedConfirm(gridId, fromName, toName, relType, recipType) {
       </div>
     </div>`;
 }
+
+// ══ UID reissue ═══════════════════════════════════════════════════════════════
+async function doReissueUids() {
+  const btn    = document.getElementById('btn-reissue-uids');
+  const hint   = document.getElementById('reissue-hint');
+  const result = document.getElementById('reissue-result');
+  btn.disabled = true;
+  hint.textContent = 'reissuing…';
+  result.style.display = 'none';
+  try {
+    const d = await post('/api/reissue_uids', {});
+    btn.disabled = false;
+    hint.textContent = '';
+    if (!d.ok) { toast(d.error || 'Failed', true); return; }
+    result.style.display = '';
+    result.innerHTML =
+      `✓ <strong>${d.replaced}</strong> vendor UIDs replaced` +
+      (d.assigned ? ` · <strong>${d.assigned}</strong> new UIDs assigned` : '') +
+      ` · <strong>${d.total}</strong> contacts total<br>` +
+      `<span style="color:var(--dim)">All UIDs now follow the <code>vcard-studio-&lt;uuid&gt;</code> format. Checkpoint saved.</span>`;
+    toast(`✓ ${d.replaced} UIDs reissued`);
+  } catch(e) {
+    btn.disabled = false;
+    hint.textContent = '';
+    toast('Reissue failed', true);
+  }
+}
+
 
 // ══ Individual export ════════════════════════════════════════════════════════
 async function doExportIndividual() {
