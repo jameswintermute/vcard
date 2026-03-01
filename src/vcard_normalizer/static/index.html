@@ -1012,7 +1012,7 @@ function flashSaved(filename) {
 
 let S = { status:'idle', total_cards:0, dup_count:0, source_counts:{},
           category_counts:{}, sources_present:[], output_files:[], message:'', progress:0 };
-let revPage=1, revSearch='', revCat='', revKind='';
+let revPage=1, revSearch='', revCat='', revKind='', revQuality='';
 let _lastKnownCardCount = -1;  // track to avoid spurious table rebuilds
 let splitSel = new Set();
 // For modal prev/next navigation
@@ -1196,13 +1196,17 @@ async function loadRevCards(page) {
   p.set('sort_order', _PREFS.sort_order);
   try {
     const d = await (await fetch('/api/cards?'+p)).json();
-    _currentPageCards = d.cards;
+    _currentPageCards = d.cards || [];
     collectPrefixes();
     renderRevTable(d);
     const filterDesc = revQuality ? ` · quality: ${revQuality.replace('_',' ')}` : '';
-    document.getElementById('rev-sub').textContent = `${d.total} contact${d.total!==1?'s':''}${filterDesc}`;
+    const subEl = document.getElementById('rev-sub');
+    if (subEl) subEl.textContent = `${d.total} contact${d.total!==1?'s':''}${filterDesc}`;
     updateClearBtn();
-  } catch(e){ console.error('loadRevCards:', e); }
+  } catch(e){
+    console.error('loadRevCards error:', e);
+    toast('Review load error: ' + e.message, true);
+  }
 }
 
 // ══ Review — row selection & manual merge ═════════════════════════════════════
@@ -1221,6 +1225,9 @@ function renderRevTable(d) {
   updateRevMergeBar();
   document.getElementById('rev-body').innerHTML = d.cards.map((c,pi)=>{
     const kindIcon = c.kind==='org' ? '🏢' : c.kind==='self' ? '⭐' : '👤';
+    const emails = c.emails || [];
+    const tels = c.tels || [];
+    const categories = c.categories || [];
     return `
     <tr id="rev-row-${pi}" ondblclick="openEdit(${pi})" class="${_revSelected.has(pi)?'rev-row-sel':''}">
       <td style="width:28px;text-align:center">
@@ -1236,9 +1243,9 @@ function renderRevTable(d) {
         ${esc(c.fn||'—')}
       </td>
       <td class="td-o">${esc(c.org||'')}</td>
-      <td class="td-d">${esc(c.emails[0]||'')}</td>
-      <td class="td-d">${esc(c.tels[0]||'')}</td>
-      <td>${c.categories.map(cat=>`<span class="pill ${pc(cat)}">${esc(cat)}</span>`).join('')||'<span style="color:var(--dim)">—</span>'}${c.note?`<span title="${esc(c.note)}" style="color:var(--dim);margin-left:6px;cursor:help;font-size:12px">📝</span>`:''}</td>
+      <td class="td-d">${esc(emails[0]||'')}</td>
+      <td class="td-d">${esc(tels[0]||'')}</td>
+      <td>${categories.map(cat=>`<span class="pill ${pc(cat)}">${esc(cat)}</span>`).join('')||'<span style="color:var(--dim)">—</span>'}${c.note?`<span title="${esc(c.note)}" style="color:var(--dim);margin-left:6px;cursor:help;font-size:12px">📝</span>`:''}</td>
       <td>
         <div class="row-actions">
           <button class="row-btn" onclick="openEdit(${pi})">edit</button>
