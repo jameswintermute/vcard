@@ -3463,7 +3463,7 @@ function buildPrintDocument(cards, opts) {
     if (inclAddress && addrs.length) {
       const a = addrs[0];
       const parts = [a.street, a.locality, a.region, a.postal_code, a.country].filter(Boolean);
-      if (parts.length) details += `<div class="pc-row"><span class="pc-lbl">⌂</span> ${parts.map(esc).join(', ')}</div>`;
+      if (parts.length) details += `<div class="pc-row pc-addr"><span class="pc-lbl">⌂</span><span>${parts.map(esc).join(', ')}</span></div>`;
     }
     if (inclNote && c.note)
       details += `<div class="pc-row pc-note"><span class="pc-lbl">✎</span> ${esc(c.note)}</div>`;
@@ -3512,8 +3512,15 @@ body{font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9pt;color
 .pc-details{margin-top:1.5mm;border-top:0.5pt solid #eee;padding-top:1.5mm}
 .pc-row{font-size:7.5pt;color:#333;padding:0.2mm 0;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
-.pc-lbl{color:#ccc;font-size:6.5pt;width:4mm;display:inline-block}
+.pc-row.pc-addr{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.5}
+.pc-lbl{color:#ccc;font-size:6.5pt;width:4mm;display:inline-block;vertical-align:top;margin-top:0.3mm}
 .pc-note{color:#888;font-style:italic}
+.self-section{column-span:all;margin-bottom:5mm;padding-bottom:4mm;border-bottom:2pt solid #00c060}
+.self-section .pc{border-left:3pt solid #e8a000;max-width:80mm}
+.self-label{font-size:7pt;font-weight:700;color:#00c060;letter-spacing:.12em;
+  text-transform:uppercase;margin-bottom:2.5mm}
+.section-rule{column-span:all;border:none;border-top:0.5pt solid #ccc;
+  margin:4mm 0 4mm 0}
 .back-page{page-break-before:always;display:flex;flex-direction:column;
   justify-content:flex-end;height:100vh;padding-bottom:20mm}
 .bp-rule{width:20mm;height:2px;background:#00c060;margin-bottom:7mm}
@@ -3543,7 +3550,16 @@ body{font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9pt;color
   <span class="ph-right">${esc(subtitle)} · ${esc(generated)}</span>
 </div>
 <div class="contacts-grid">
-${cards.map(cardHtml).join('\n')}
+${(()=>{
+  const selfCards = cards.filter(c => c.kind === 'self');
+  const otherCards = cards.filter(c => c.kind !== 'self');
+  let html = '';
+  if (selfCards.length) {
+    html += `<div class="self-section"><div class="self-label">⭐ My Details</div>${selfCards.map(cardHtml).join('')}</div>`;
+  }
+  html += otherCards.map(cardHtml).join('\n');
+  return html;
+})()}
 </div>
 <div class="back-page">
   <div class="bp-rule"></div>
