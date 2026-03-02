@@ -329,7 +329,7 @@ def _api_cards(params: dict) -> dict:
     if quality:
         indexed = [(i,c) for i,c in indexed if _quality_match(c)]
 
-    # Sort the results
+    # Sort the results — all kinds integrated lexicographically, no KIND bucketing
     def _sort_key(pair):
         _, c = pair
         fn = (c.fn or "").strip()
@@ -338,18 +338,20 @@ def _api_cards(params: dict) -> dict:
         name = getattr(c, "name", None)
         family = (name.family or "").strip() if name and name.family else ""
         given  = (name.given  or "").strip() if name and name.given  else ""
-        # For orgs, sort by org name
-        if c.kind == "org":
-            return (0, org.lower() or fn.lower(), "")
+
         if sort_order == "first_name":
-            return (1, given.lower() or fn.lower(), family.lower())
-        else:  # last_name (default) — also handles org lexicographically
+            primary = given.lower() or fn.lower() or org.lower()
+            secondary = family.lower()
+        else:  # last_name (default)
             if family:
-                return (1, family.lower(), given.lower())
-            # No structured name — fall back to fn, treating org-like entries last
-            if org and not fn:
-                return (0, org.lower(), "")
-            return (1, fn.lower(), "")
+                primary = family.lower()
+                secondary = given.lower()
+            else:
+                # No structured name — use fn, or org for org-kind cards
+                primary = fn.lower() or org.lower()
+                secondary = ""
+
+        return (primary, secondary)
 
     indexed.sort(key=_sort_key)
 
