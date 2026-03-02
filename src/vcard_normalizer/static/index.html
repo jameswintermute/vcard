@@ -201,6 +201,18 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
 .rel-remove:hover{color:var(--red)}
 .clone-banner{display:none;align-items:center;gap:8px;padding:7px 10px;background:rgba(0,204,196,.07);border:1px solid var(--cyan);margin-top:8px;font-size:10px;color:var(--cyan)}
 .clone-banner.show{display:flex}
+/* Birthday panel */
+.bday-month-hdr{font-size:10px;font-weight:700;color:var(--cyan);letter-spacing:.08em;text-transform:uppercase;margin:18px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--border)}
+.bday-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:11px}
+.bday-row:hover{background:var(--bg2)}
+.bday-icon{font-size:14px;flex-shrink:0}
+.bday-name{min-width:160px;color:var(--text);cursor:pointer;text-decoration-color:var(--dim)}
+.bday-name:hover{color:var(--green);text-decoration:underline}
+.bday-date{flex:1;color:var(--mid)}
+/* Type label badge */
+.type-badge{font-size:8px;font-weight:700;letter-spacing:.06em;background:rgba(0,204,196,.1);color:var(--cyan);border:1px solid rgba(0,204,196,.2);padding:1px 5px;vertical-align:middle;margin-right:2px}
+.type-badge.work{background:rgba(232,160,0,.1);color:var(--amber);border-color:rgba(232,160,0,.2)}
+.type-badge.cell{background:rgba(0,224,64,.08);color:var(--green);border-color:rgba(0,224,64,.2)}
 </style>
 </head>
 <body>
@@ -233,6 +245,7 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
     <div class="nav-item"        data-p="export"   onclick="show('export')">  <span class="nav-step">6</span> Export</div>
     <div class="nav-item"        data-p="viewer"   onclick="show('viewer')">  <span class="nav-step">◈</span> Raw Viewer</div>
     <div class="nav-item"        data-p="print"    onclick="show('print')">   <span class="nav-step">⎙</span> Print</div>
+    <div class="nav-item"        data-p="birthdays" onclick="show('birthdays')"><span class="nav-step">🎂</span> Birthdays</div>
     <div class="nav-item"        data-p="prefs"    onclick="show('prefs')">   <span class="nav-step">⚙</span> Preferences</div>
   </div>
   <div class="sb-footer">
@@ -373,6 +386,24 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
     <div class="stats-grid" id="review-stats"></div>
     <div id="review-issues"></div>
   </div>
+
+  <hr class="divider">
+  <div class="sec-lbl" style="color:var(--amber)">⚠ VENDOR CLEANUP
+    <span style="color:var(--dim);font-weight:400;color:var(--text)"> — remove all proprietary traces</span>
+  </div>
+  <div style="color:var(--dim);font-size:10px;line-height:1.9;margin-bottom:9px">
+    Strips all vendor-specific <code style="color:var(--text)">X-*</code> properties and <code style="color:var(--text)">PRODID</code> from every card,
+    including any traces left by Apple, Google, Proton, or vCard Studio itself.
+    This makes the output truly vendor-neutral. Optionally also resets any "not required" field markers you have set.
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+    <button class="btn" style="background:rgba(200,140,0,.15);border:1px solid var(--amber);color:var(--amber);font-size:10px;padding:3px 12px"
+            onclick="doStripProprietary(false)">⚠ strip all proprietary fields</button>
+    <button class="btn" style="background:rgba(200,140,0,.15);border:1px solid var(--amber);color:var(--amber);font-size:10px;padding:3px 12px"
+            onclick="doStripProprietary(true)">⚠ strip + reset not-required markers</button>
+  </div>
+  <div id="strip-proprietary-result" style="display:none;margin-top:8px;background:rgba(0,224,64,.06);
+       border:1px solid var(--green2);padding:8px 12px;font-size:10px;color:var(--green)"></div>
 
   <hr class="divider">
   <div class="sec-lbl">WHAT CLEAN DID</div>
@@ -893,6 +924,14 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
   </div>
 
   <hr class="divider">
+  <div class="sec-lbl">BIRTHDAYS &amp; ANNIVERSARIES</div>
+  <div style="font-size:10px;color:var(--dim);margin-bottom:8px">Which categories are included in the Birthdays view and printed birthday calendar.</div>
+  <div id="pref-bday-cats" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">
+    <div style="font-size:10px;color:var(--dim);font-style:italic">Loading categories…</div>
+  </div>
+  <div style="font-size:10px;color:var(--dim)">Default: <code style="color:var(--text)">friends, family, familyextended</code>. Tick any additional categories to include them.</div>
+
+  <hr class="divider">
   <div class="sec-lbl">WARNINGS</div>
   <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px">
     <label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:11px;color:var(--text)">
@@ -901,6 +940,24 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
       <span><strong style="color:var(--bright)">Ignore multiple self cards</strong>
         <span style="color:var(--dim)"> — suppress the warning in Preferences</span></span>
     </label>
+  </div>
+</div>
+
+<!-- §8 BIRTHDAYS -->
+<div id="panel-birthdays" class="panel" style="display:none">
+  <div class="ph">
+    <div class="ph-title" style="color:var(--green)">🎂 birthdays_and_anniversaries</div>
+    <div class="ph-sub">month-by-month · age calculations · print calendar</div>
+  </div>
+
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+    <button class="btn btn-c" onclick="loadBirthdays()">⟳ refresh</button>
+    <button class="btn btn-d" style="font-size:10px;padding:3px 10px" onclick="printBirthdays()">⎙ print birthday calendar</button>
+    <span id="bday-cats-hint" style="font-size:10px;color:var(--dim)">Showing: friends, family, familyextended</span>
+  </div>
+
+  <div id="bday-results">
+    <div style="color:var(--dim);font-size:10px;padding:16px 0">Click refresh to load birthdays and anniversaries.</div>
   </div>
 </div>
 
@@ -974,18 +1031,20 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
       </div>
 
       <div class="section-divider">CONTACT</div>
-      <div class="form-row">
-        <span class="form-lbl">emails</span>
-        <div style="flex:1;max-width:320px">
-          <textarea class="form-ta" id="edit-emails" placeholder="jane@example.com" rows="2"></textarea>
-          <div class="field-hint">One per line</div>
+      <!-- Typed email entries — each row has value + HOME/WORK/OTHER type picker -->
+      <div class="form-row" style="align-items:flex-start">
+        <span class="form-lbl" style="padding-top:4px">emails</span>
+        <div style="flex:1;max-width:380px">
+          <div id="edit-emails-list" style="display:flex;flex-direction:column;gap:4px"></div>
+          <button class="btn btn-d" style="font-size:10px;padding:2px 8px;margin-top:5px" onclick="addTypedEmailRow()">+ add email</button>
         </div>
       </div>
-      <div class="form-row">
-        <span class="form-lbl">phones</span>
-        <div style="flex:1;max-width:320px">
-          <textarea class="form-ta" id="edit-tels" placeholder="+44 7980 123 456" rows="2"></textarea>
-          <div class="field-hint">One per line · will be normalised on save</div>
+      <!-- Typed phone entries — each row has value + HOME/WORK/CELL/OTHER type picker -->
+      <div class="form-row" style="align-items:flex-start">
+        <span class="form-lbl" style="padding-top:4px">phones</span>
+        <div style="flex:1;max-width:380px">
+          <div id="edit-tels-list" style="display:flex;flex-direction:column;gap:4px"></div>
+          <button class="btn btn-d" style="font-size:10px;padding:2px 8px;margin-top:5px" onclick="addTypedTelRow()">+ add phone</button>
         </div>
       </div>
 
@@ -1171,6 +1230,7 @@ async function poll() {
 
 function applyState(d) {
   S = d;
+  window._lastStatus = d;  // store for other components (e.g. birthday category prefs)
   document.getElementById('dot').className = 'dot ' + d.status;
   const msgs = { idle:'idle', loaded:`${d.total_cards} contacts loaded`,
                  processing:`processing… ${d.progress}%`, error:'error' };
@@ -1674,6 +1734,10 @@ function openEdit(pageIdx) {
   if (mg) mg.innerHTML = '<div class="rel-no-results">Type a name above to search contacts</div>';
 
   document.getElementById('edit-modal-title').textContent = 'Edit: ' + (c.fn||c.org||'Contact');
+  // Typed emails — build dynamic rows
+  renderTypedEmailRows(c.typed_emails && c.typed_emails.length ? c.typed_emails : c.emails.map(v=>({value:v,type:''})));
+  // Typed tels — build dynamic rows
+  renderTypedTelRows(c.typed_tels && c.typed_tels.length ? c.typed_tels : c.tels.map(v=>({value:v,type:''})));
   updateEditNav();
   _editFnManual = false;
   document.getElementById('edit-modal').classList.add('open');
@@ -1729,8 +1793,10 @@ async function saveEdit(silent) {
     anniversary: document.getElementById('edit-anniversary').value,
     note:        document.getElementById('edit-note').value,
     kind:        document.getElementById('edit-kind').value,
-    emails:      document.getElementById('edit-emails').value,
-    tels:        document.getElementById('edit-tels').value,
+    typed_emails: collectTypedEmailRows(),
+    typed_tels:   collectTypedTelRows(),
+    emails:      collectTypedEmailRows().map(x=>x.value).join('\n'),
+    tels:        collectTypedTelRows().map(x=>x.value).join('\n'),
     categories:  document.getElementById('edit-cats').value,
     street:      document.getElementById('edit-street').value,
     city:        document.getElementById('edit-city').value,
@@ -2049,9 +2115,10 @@ function show(id) {
   document.getElementById('panel-'+id).classList.add('active');
   document.querySelector(`[data-p="${id}"]`).classList.add('active');
   if (id==='review') loadRevCards(revPage||1);
-  if (id==='prefs') { checkSelfCards(); loadPrefCountry(); }
+  if (id==='prefs') { checkSelfCards(); loadPrefCountry(); loadBdayCatPrefs(); }
   if (id==='viewer') renderViewerPage(1);
   if (id==='print') populatePrintCats();
+  if (id==='birthdays') loadBirthdays();
 }
 
 async function loadPrefCountry() {
@@ -2639,6 +2706,8 @@ async function unwaiveField(cardIdx, field) {
     toast(`✓ "${field}" requirement restored`);
   } catch(e) { toast('Failed', true); }
 }
+
+function toggleGroupSelect(key, checked) {
   const list = _issueData[key] || [];
   list.forEach((c, i) => {
     const id = `${key}:${i}`;
