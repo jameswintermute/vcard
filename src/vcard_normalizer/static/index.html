@@ -199,6 +199,8 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
 .ri-uid{font-size:9px;color:var(--green);opacity:.7}
 .rel-remove{background:none;border:none;color:var(--dim);cursor:pointer;font-size:11px;padding:0 2px}
 .rel-remove:hover{color:var(--red)}
+.clone-banner{display:none;align-items:center;gap:8px;padding:7px 10px;background:rgba(0,204,196,.07);border:1px solid var(--cyan);margin-top:8px;font-size:10px;color:var(--cyan)}
+.clone-banner.show{display:flex}
 </style>
 </head>
 <body>
@@ -600,7 +602,36 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
   <div class="sec-lbl">COMPLETENESS</div><div id="ins-completeness" style="margin-bottom:12px"></div>
   <div class="sec-lbl">CATEGORY BREAKDOWN</div><div id="ins-cat-bars" style="margin-bottom:12px"></div>
   <div class="sec-lbl">SOURCE FILES</div><div id="ins-sources" style="margin-bottom:12px"></div>
-  <div class="sec-lbl">CONTACTS BY COUNTRY</div><div id="ins-countries" style="margin-bottom:12px"></div>
+  <div class="sec-lbl">CONTACTS BY COUNTRY
+    <span style="color:var(--dim);font-weight:400;font-size:9px"> — click a row to rename or merge</span>
+  </div>
+  <div id="ins-countries" style="margin-bottom:8px"></div>
+  <div class="row" style="gap:8px;margin-bottom:12px">
+    <button class="btn btn-c" style="font-size:10px;padding:2px 10px" onclick="openCountryNormaliser()">⟳ normalise country names</button>
+    <span id="cn-hint" style="font-size:10px;color:var(--dim)"></span>
+  </div>
+</div>
+
+<!-- Country Normaliser Modal -->
+<div class="modal-backdrop" id="country-modal">
+  <div class="modal" style="width:620px;max-height:85vh;display:flex;flex-direction:column">
+    <div class="modal-header">
+      <div class="modal-title">Normalise Country Names</div>
+      <button class="modal-close" onclick="closeCountryModal()">✕</button>
+    </div>
+    <div class="modal-body" style="flex:1;overflow-y:auto">
+      <div style="font-size:10px;color:var(--dim);margin-bottom:12px;line-height:1.8">
+        Review each country value in your contacts. Edit the <strong style="color:var(--bright)">Target</strong> field to set what it should become, then click Apply.
+        Rows in <span style="color:var(--amber)">amber</span> have a suggested fix.
+      </div>
+      <div id="cn-table"></div>
+    </div>
+    <div class="modal-footer" style="gap:8px">
+      <span id="cn-status" style="font-size:10px;color:var(--dim);flex:1"></span>
+      <button class="btn btn-d" onclick="closeCountryModal()">close</button>
+      <button class="btn btn-g" id="cn-apply-btn" onclick="applyCountryNorm()">✓ apply all changes</button>
+    </div>
+  </div>
 </div>
 
 <!-- §6 EXPORT -->
@@ -1012,8 +1043,9 @@ function flashSaved(filename) {
 
 let S = { status:'idle', total_cards:0, dup_count:0, source_counts:{},
           category_counts:{}, sources_present:[], output_files:[], message:'', progress:0 };
-let revPage=1, revSearch='', revCat='', revKind='';
+let revPage=1, revSearch='', revCat='', revKind='', revQuality='';
 let _lastKnownCardCount = -1;  // track to avoid spurious table rebuilds
+let _isFirstPoll = true;       // used to auto-navigate to Review on resume
 let splitSel = new Set();
 // For modal prev/next navigation
 let _currentPageCards = [];  // [{card, _idx, position_in_page}]
@@ -1075,7 +1107,12 @@ function applyState(d) {
       if (_revSelected.size === 0) {
         loadRevCards();
       }
+      // On first load from checkpoint (page just opened), auto-navigate to Review
+      if (_isFirstPoll && d.total_cards > 0) {
+        setTimeout(() => show('review'), 200);
+      }
     }
+    _isFirstPoll = false;
     // If we were processing (just finished), auto-advance to Clean
     if (S.status === 'processing') {
       setTimeout(() => show('clean'), 600);
@@ -1186,7 +1223,7 @@ async function loadRevCards(page) {
         <button class="btn btn-d" style="font-size:9px;padding:1px 7px;margin-left:8px"
                 onclick="clearRevPin()">✕ clear filter</button>`;
       updateClearBtn();
-    } catch(e){}
+    } catch(e){ console.error('loadRevCards (pinned):', e); }
     return;
   }
 
@@ -1196,18 +1233,27 @@ async function loadRevCards(page) {
   p.set('sort_order', _PREFS.sort_order);
   try {
     const d = await (await fetch('/api/cards?'+p)).json();
-    _currentPageCards = d.cards;
+    _currentPageCards = d.cards || [];
     collectPrefixes();
     renderRevTable(d);
     const filterDesc = revQuality ? ` · quality: ${revQuality.replace('_',' ')}` : '';
-    document.getElementById('rev-sub').textContent = `${d.total} contact${d.total!==1?'s':''}${filterDesc}`;
+    const subEl = document.getElementById('rev-sub');
+    if (subEl) subEl.textContent = `${d.total} contact${d.total!==1?'s':''}${filterDesc}`;
     updateClearBtn();
-  } catch(e){}
+  } catch(e){
+    console.error('loadRevCards error:', e);
+    toast('Review load error: ' + e.message, true);
+  }
 }
+
+// ══ Review — row selection & manual merge ═════════════════════════════════════
+const _revSelected = new Set(); // Set of page indices (pi)
+let _revPinnedIds   = null;     // Set of _idx — when set, Review shows only these
+let _revPinnedLabel = '';       // amber subtitle shown when pinned
 
 function renderRevTable(d) {
   const empty=document.getElementById('rev-empty'), tbl=document.getElementById('rev-tbl');
-  if (!d.total && !S.total_cards) { empty.style.display=''; tbl.style.display='none'; return; }
+  if (!d || !d.cards || (!d.total && !S.total_cards)) { empty.style.display=''; tbl.style.display='none'; return; }
   empty.style.display='none'; tbl.style.display='';
 
   const pc=cat=>{const l=cat.toLowerCase();return l.includes('work')||l.includes('business')?'pc':l.includes('fam')?'pa':l.includes('med')?'pp':'pg';};
@@ -1216,6 +1262,9 @@ function renderRevTable(d) {
   updateRevMergeBar();
   document.getElementById('rev-body').innerHTML = d.cards.map((c,pi)=>{
     const kindIcon = c.kind==='org' ? '🏢' : c.kind==='self' ? '⭐' : '👤';
+    const emails = c.emails || [];
+    const tels = c.tels || [];
+    const categories = c.categories || [];
     return `
     <tr id="rev-row-${pi}" ondblclick="openEdit(${pi})" class="${_revSelected.has(pi)?'rev-row-sel':''}">
       <td style="width:28px;text-align:center">
@@ -1231,9 +1280,9 @@ function renderRevTable(d) {
         ${esc(c.fn||'—')}
       </td>
       <td class="td-o">${esc(c.org||'')}</td>
-      <td class="td-d">${esc(c.emails[0]||'')}</td>
-      <td class="td-d">${esc(c.tels[0]||'')}</td>
-      <td>${c.categories.map(cat=>`<span class="pill ${pc(cat)}">${esc(cat)}</span>`).join('')||'<span style="color:var(--dim)">—</span>'}${c.note?`<span title="${esc(c.note)}" style="color:var(--dim);margin-left:6px;cursor:help;font-size:12px">📝</span>`:''}</td>
+      <td class="td-d">${esc(emails[0]||'')}</td>
+      <td class="td-d">${esc(tels[0]||'')}</td>
+      <td>${categories.map(cat=>`<span class="pill ${pc(cat)}">${esc(cat)}</span>`).join('')||'<span style="color:var(--dim)">—</span>'}${c.note?`<span title="${esc(c.note)}" style="color:var(--dim);margin-left:6px;cursor:help;font-size:12px">📝</span>`:''}</td>
       <td>
         <div class="row-actions">
           <button class="row-btn" onclick="openEdit(${pi})">edit</button>
@@ -1252,10 +1301,6 @@ function renderRevTable(d) {
 }
 
 let _rst;
-// ══ Review — row selection & manual merge ═════════════════════════════════════
-const _revSelected = new Set(); // Set of page indices (pi)
-let _revPinnedIds   = null;     // Set of _idx — when set, Review shows only these
-let _revPinnedLabel = '';       // amber subtitle shown when pinned
 
 function clearRevPin() {
   _revPinnedIds   = null;
@@ -1483,6 +1528,13 @@ function openEdit(pageIdx) {
   // Related
   _editRelated = (c.related||[]).map(r=>({...r}));
   renderRelList('edit');
+  // Reset rel picker between cards — clear search, grid, and reset type to spouse
+  const relSearch = document.getElementById('edit-rel-search');
+  if (relSearch) relSearch.value = '';
+  const relGrid = document.getElementById('edit-rel-picker-grid');
+  if (relGrid) relGrid.innerHTML = '<div class="rel-no-results">Type a name above to search contacts</div>';
+  const relType = document.getElementById('edit-rel-type');
+  if (relType) relType.value = 'spouse';
   // Show clone banner if any linked person has an address
   checkCloneBanner(c);
 
@@ -1529,8 +1581,9 @@ function updateEditNav() {
 function editNav(dir) {
   const newPos = _editPagePos + dir;
   if (newPos < 0 || newPos >= _currentPageCards.length) return;
-  // Save current first
-  saveEdit(/*silent=*/true).then(() => { openEdit(newPos); });
+  // Navigate without auto-saving — avoids overwriting the next card with stale form data.
+  // User can save explicitly or on close.
+  openEdit(newPos);
 }
 
 function closeEditModal() {
@@ -1750,7 +1803,10 @@ function renderInsights(d) {
       ? Object.entries(ccounts).sort((a,b)=>b[1]-a[1]).map(([country,n])=>{
           const flag = countryFlag(country);
           const pct = Math.round(n/maxC*100);
-          return `<div class="bar-row">
+          return `<div class="bar-row" onclick="openCountryNormaliser('${esc(country)}')"
+                       style="cursor:pointer;border-radius:2px"
+                       onmouseover="this.style.background='rgba(255,255,255,.04)'"
+                       onmouseout="this.style.background=''">
             <div class="bar-lbl">${flag?`<span style="margin-right:5px">${flag}</span>`:''}${esc(country)}</div>
             <div class="bar-trk"><div class="bar-fill" style="width:${pct}%;background:var(--cyan);box-shadow:1px 0 5px var(--cyan)"></div></div>
             <div class="bar-n">${n}</div>
@@ -2123,14 +2179,23 @@ function cloneAddress() {
 }
 
 function checkCloneBanner(card) {
-  // When opening edit modal: if there's a linked person with an address in the dataset,
-  // offer to clone. We only show it if the current card has NO address.
   dismissClone();
+  // Only offer if this card has NO address
   const hasAdr = card.addresses && card.addresses.length > 0 &&
     Object.values(card.addresses[0]).some(Boolean);
-  if (hasAdr) return; // already has an address
-  // Check if any related person exists with an address (need to search state)
-  // This will show via pickRel when user selects a linked contact
+  if (hasAdr) return;
+  // Check if any related UID-linked person has an address in our loaded state
+  const related = card.related || [];
+  for (const r of related) {
+    if (!r.uid) continue;
+    const linked = _state_cards_by_uid[r.uid];
+    if (linked && linked.addresses && linked.addresses[0] &&
+        Object.values(linked.addresses[0]).some(Boolean)) {
+      showCloneBanner('edit', linked.fn || linked.org || r.text || 'linked contact',
+                      linked.addresses[0]);
+      return;
+    }
+  }
 }
 
 function dismissClone() {
@@ -3195,6 +3260,159 @@ function showRelLinkedConfirm(gridId, fromName, toName, relType, recipType) {
       </div>
     </div>`;
 }
+
+// ══ Country Normaliser ═══════════════════════════════════════════════════════
+let _cnData = [];   // [{raw, count, suggested, needs_fix}]
+
+async function openCountryNormaliser(highlight) {
+  document.getElementById('country-modal').classList.add('open');
+  document.getElementById('cn-table').innerHTML = '<div style="color:var(--dim);font-size:10px;padding:16px">Loading…</div>';
+  document.getElementById('cn-status').textContent = '';
+
+  try {
+    const d = await post('/api/normalise_countries', {});
+    if (!d.ok) { toast(d.error || 'Failed to load countries', true); return; }
+    _cnData = d.countries || [];
+    renderCnTable(highlight || null);
+  } catch(e) {
+    toast('Failed to load country data', true);
+  }
+}
+
+function closeCountryModal() {
+  document.getElementById('country-modal').classList.remove('open');
+}
+
+function renderCnTable(highlight) {
+  const el = document.getElementById('cn-table');
+  if (!_cnData.length) {
+    el.innerHTML = '<div style="color:var(--dim);font-size:10px">No address data found.</div>';
+    return;
+  }
+
+  // Sort: needs_fix first, then highlighted, then alphabetical
+  const sorted = [..._cnData].sort((a, b) => {
+    if (a.needs_fix !== b.needs_fix) return b.needs_fix - a.needs_fix;
+    if (highlight) {
+      if (a.raw === highlight) return -1;
+      if (b.raw === highlight) return 1;
+    }
+    return a.raw.localeCompare(b.raw);
+  });
+
+  el.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:11px">
+      <thead>
+        <tr style="color:var(--dim);font-size:9px;text-transform:uppercase;border-bottom:1px solid var(--border)">
+          <th style="text-align:left;padding:4px 8px">Current value</th>
+          <th style="text-align:center;padding:4px 6px;width:50px">Count</th>
+          <th style="text-align:left;padding:4px 8px">Target (editable)</th>
+          <th style="text-align:center;padding:4px 6px;width:60px">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${sorted.map((row, i) => {
+          const isHighlighted = highlight && row.raw === highlight;
+          const rowBg = isHighlighted ? 'background:rgba(72,152,248,.08);' :
+                        row.needs_fix ? 'background:rgba(255,170,0,.05);' : '';
+          const inputBorder = row.needs_fix ? 'border-color:var(--amber)' :
+                              row.raw === row.suggested ? 'border-color:var(--border)' : 'border-color:var(--green)';
+          const flag = countryFlag(row.suggested || row.raw);
+          return `<tr style="${rowBg}border-bottom:1px solid rgba(255,255,255,.04)" id="cn-row-${i}">
+            <td style="padding:6px 8px;color:${row.needs_fix?'var(--amber)':'var(--text)'}">
+              ${countryFlag(row.raw) || '⚠'} ${esc(row.raw)}
+            </td>
+            <td style="padding:6px;text-align:center;color:var(--dim)">${row.count}</td>
+            <td style="padding:4px 8px">
+              <div style="display:flex;align-items:center;gap:6px">
+                <span id="cn-flag-${i}" style="font-size:14px;width:20px">${flag}</span>
+                <input class="form-in" id="cn-input-${i}" value="${esc(row.suggested || row.raw)}"
+                       style="flex:1;${inputBorder}"
+                       oninput="onCnInput(${i})"
+                       list="cn-datalist">
+              </div>
+            </td>
+            <td style="padding:4px 6px;text-align:center">
+              ${row.needs_fix || row.raw !== (row.suggested||row.raw)
+                ? `<button class="btn btn-g" style="font-size:9px;padding:1px 8px" onclick="applySingleCountry(${i})">apply</button>`
+                : `<span style="color:var(--green);font-size:10px">✓ ok</span>`}
+            </td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+    <datalist id="cn-datalist">
+      ${CANONICAL_COUNTRIES.map(c => `<option value="${esc(c)}">`).join('')}
+    </datalist>`;
+
+  // Update status
+  const needsFix = _cnData.filter(r => r.needs_fix).length;
+  document.getElementById('cn-status').textContent =
+    needsFix ? `${needsFix} value${needsFix!==1?'s':''} with suggested fixes` : 'All country values look good';
+}
+
+function onCnInput(i) {
+  const val = document.getElementById(`cn-input-${i}`)?.value || '';
+  const flagEl = document.getElementById(`cn-flag-${i}`);
+  if (flagEl) flagEl.textContent = countryFlag(val) || '🌐';
+  _cnData[i]._editedTarget = val;
+}
+
+async function applySingleCountry(i) {
+  const row = _cnData[i];
+  const target = document.getElementById(`cn-input-${i}`)?.value.trim() || row.suggested || row.raw;
+  if (target === row.raw) { toast('No change — target same as current', true); return; }
+  const d = await post('/api/normalise_countries', {apply: true, replacements: {[row.raw]: target}});
+  if (!d.ok) { toast(d.error || 'Failed', true); return; }
+  toast(`✓ "${row.raw}" → "${target}" applied to ${d.changed} contact${d.changed!==1?'s':''}`);
+  row.raw = target;
+  row.suggested = target;
+  row.needs_fix = false;
+  renderCnTable();
+  poll();
+}
+
+async function applyCountryNorm() {
+  // Collect all rows where target differs from raw
+  const replacements = {};
+  _cnData.forEach((row, i) => {
+    const input = document.getElementById(`cn-input-${i}`);
+    const target = (input?.value || row.suggested || row.raw).trim();
+    if (target && target !== row.raw) replacements[row.raw] = target;
+  });
+
+  if (!Object.keys(replacements).length) {
+    toast('No changes to apply', true); return;
+  }
+
+  const btn = document.getElementById('cn-apply-btn');
+  btn.disabled = true;
+  const d = await post('/api/normalise_countries', {apply: true, replacements});
+  btn.disabled = false;
+
+  if (!d.ok) { toast(d.error || 'Failed', true); return; }
+  toast(`✓ ${d.changed} address${d.changed!==1?'es':''} updated`);
+  closeCountryModal();
+  poll();
+}
+
+// Canonical country names for datalist autocomplete
+const CANONICAL_COUNTRIES = [
+  'Afghanistan','Albania','Algeria','Andorra','Angola','Argentina','Armenia','Australia',
+  'Austria','Azerbaijan','Bahrain','Bangladesh','Belarus','Belgium','Bolivia','Bosnia and Herzegovina',
+  'Brazil','Bulgaria','Cambodia','Cameroon','Canada','Chile','China','Colombia','Croatia',
+  'Cuba','Cyprus','Czech Republic','Denmark','Ecuador','Egypt','Estonia','Ethiopia',
+  'Finland','France','Georgia','Germany','Ghana','Greece','Guatemala','Honduras','Hungary',
+  'Iceland','India','Indonesia','Iran','Iraq','Ireland','Israel','Italy','Jamaica','Japan',
+  'Jordan','Kazakhstan','Kenya','Kuwait','Latvia','Lebanon','Libya','Lithuania','Luxembourg',
+  'Malaysia','Malta','Mexico','Moldova','Morocco','Netherlands','New Zealand','Nigeria','Norway',
+  'Pakistan','Panama','Paraguay','Peru','Philippines','Poland','Portugal','Qatar','Romania',
+  'Russia','Saudi Arabia','Serbia','Singapore','Slovakia','Slovenia','South Africa','South Korea',
+  'Spain','Sri Lanka','Sweden','Switzerland','Syria','Taiwan','Tanzania','Thailand','Tunisia',
+  'Turkey','Uganda','Ukraine','United Arab Emirates','United Kingdom','United States',
+  'Uruguay','Uzbekistan','Venezuela','Vietnam','Yemen','Zimbabwe'
+];
+
 
 // ══ UID reissue ═══════════════════════════════════════════════════════════════
 async function doReissueUids() {
