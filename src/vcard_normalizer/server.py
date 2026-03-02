@@ -119,6 +119,7 @@ def _card_to_dict(card) -> dict:
         "member": list(getattr(card, "member", None) or []),
         "changes": card._changes,
         "sources": card._source_files,
+        "waived": list(getattr(card, "_waived", set()) or set()),
     }
 
 
@@ -309,11 +310,12 @@ def _api_cards(params: dict) -> dict:
     sort_order = params.get("sort_order",  ["last_name"])[0]  # last_name|first_name|org
 
     def _quality_match(c) -> bool:
-        if quality == "no_email":    return not c.emails
-        if quality == "no_phone":    return not c.tels
-        if quality == "no_category": return not c.categories
-        if quality == "no_org":      return not c.org and c.kind != "org"
-        if quality == "no_address":  return not c.addresses
+        waived = getattr(c, "_waived", set()) or set()
+        if quality == "no_email":    return not c.emails and "email" not in waived
+        if quality == "no_phone":    return not c.tels and "phone" not in waived
+        if quality == "no_category": return not c.categories and "category" not in waived
+        if quality == "no_org":      return not c.org and c.kind != "org" and "org" not in waived
+        if quality == "no_address":  return not c.addresses and "address" not in waived
         if quality == "num_prefix":  import re; return bool(re.match(r"^\d", c.fn or ""))
         return True
 
@@ -801,19 +803,30 @@ def _api_full_update_card(body: dict) -> dict:
         )
         card.addresses = [adr]
 
-    # Related people — merge incoming with existing to preserve server-side bidirectional links
-    # Rule: keep any existing server-side links that are NOT in the incoming list,
-    # plus all incoming entries. This prevents saveEdit() clobbering link_related() results.
+    # Related people — server state is authoritative; only link_related() mutates this.
+    # The edit modal sends _editRelated as a convenience display, but we never let it
+    # overwrite the server's RELATED list (which may contain bidirectional links
+    # created by link_related on the OTHER card that the modal knows nothing about).
+    # Exception: if a rel entry has no UID (text-only), it was added manually in the
+    # modal and must be preserved. We merge: keep all server UIDs, add any new text-only.
     incoming_related = []
     for r in body.get("related", []):
-        rt = r.get("rel_type","spouse")
+        rt = r.get("rel_type", "spouse")
         incoming_related.append(Related(rel_type=rt, uid=r.get("uid") or None, text=r.get("text") or None))
 
-    # If the edit modal sent a non-empty list, use it as authoritative (user may have removed links)
-    # If it sent an empty list, preserve existing (modal opened before links were added server-side)
-    if incoming_related:
-        card.related = incoming_related
-    # else: leave card.related untouched — empty list from modal = stale, not intentional clear
+    # Merge: server UID-links are authoritative; absorb new text-only entries from modal
+    server_related = list(card.related or [])
+    server_uids = {r.uid for r in server_related if r.uid}
+    for r in incoming_related:
+        if not r.uid:
+            # Text-only entry — add if not already present
+            if not any(x.text == r.text and x.rel_type == r.rel_type for x in server_related):
+                server_related.append(r)
+        # UID-linked entries: only add if server doesn't already have this UID
+        elif r.uid not in server_uids:
+            server_related.append(r)
+            server_uids.add(r.uid)
+    card.related = server_related
 
     # MEMBER — list of UID strings (org/group cards)
     card.member = [m.strip() for m in body.get("member", []) if m and m.strip()]
@@ -827,6 +840,80 @@ def _api_full_update_card(body: dict) -> dict:
     return {"ok": True, "normalised_tels": normalised}
 
 
+
+
+def _api_waive_field(body: dict) -> dict:
+    """Mark a field as 'not required' for a card — removes it from quality scan.
+
+    body: {index, field}  field is one of: email phone address category org
+    """
+    cards = _state["cards"]
+    try:
+        idx = int(body["index"])
+        field = str(body.get("field", "")).strip().lower()
+        valid = {"email", "phone", "address", "category", "org"}
+        if field not in valid:
+            return {"ok": False, "error": f"Unknown field '{field}'"}
+        if idx < 0 or idx >= len(cards):
+            return {"ok": False, "error": "Invalid index"}
+        card = cards[idx]
+        if not hasattr(card, "_waived") or card._waived is None:
+            card._waived = set()
+        card._waived.add(field)
+        card.log_change(f"Marked '{field}' as not required")
+        _autosave_checkpoint()
+        return {"ok": True, "waived": list(card._waived)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _api_unwaive_field(body: dict) -> dict:
+    """Remove a 'not required' marker from a field."""
+    cards = _state["cards"]
+    try:
+        idx = int(body["index"])
+        field = str(body.get("field", "")).strip().lower()
+        if idx < 0 or idx >= len(cards):
+            return {"ok": False, "error": "Invalid index"}
+        card = cards[idx]
+        if hasattr(card, "_waived") and card._waived:
+            card._waived.discard(field)
+        _autosave_checkpoint()
+        return {"ok": True, "waived": list(getattr(card, "_waived", set()) or set())}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _api_unlink_related(body: dict) -> dict:
+    """Remove a bidirectional RELATED link between two cards.
+
+    body: {from_idx, uid}  — uid is the UID of the card to unlink from from_idx.
+    Removes the link on both cards.
+    """
+    cards = _state["cards"]
+    try:
+        fi = int(body["from_idx"])
+        target_uid = str(body.get("uid", "")).strip()
+        if not target_uid or fi < 0 or fi >= len(cards):
+            return {"ok": False, "error": "Invalid parameters"}
+
+        from_card = cards[fi]
+        from_card.related = [r for r in (from_card.related or [])
+                             if r.uid != target_uid]
+
+        # Remove reciprocal link on the target card
+        from_uid = from_card.uid or ""
+        for card in cards:
+            if (card.uid == target_uid) or any(r.uid == target_uid for r in (card.related or [])):
+                if card.uid == target_uid:
+                    card.related = [r for r in (card.related or [])
+                                   if r.uid != from_uid]
+
+        from_card.log_change(f"Unlinked UID {target_uid}")
+        _autosave_checkpoint()
+        return {"ok": True}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
 
 
 def _api_link_related(body: dict) -> dict:
@@ -1381,6 +1468,12 @@ class VCardHandler(BaseHTTPRequestHandler):
             self._send_json(_api_delete_card(body))
         elif path == "/api/link_related":
             self._send_json(_api_link_related(body))
+        elif path == "/api/unlink_related":
+            self._send_json(_api_unlink_related(body))
+        elif path == "/api/waive_field":
+            self._send_json(_api_waive_field(body))
+        elif path == "/api/unwaive_field":
+            self._send_json(_api_unwaive_field(body))
         elif path == "/api/merge_cards":
             self._send_json(_api_merge_cards(body))
         elif path == "/api/save_settings":

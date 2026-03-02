@@ -93,6 +93,9 @@ class Card:
     # ── Audit / reporting ─────────────────────────────────────────────────────
     _changes: list[str] = field(default_factory=list, repr=False)
     _source_files: list[str] = field(default_factory=list, repr=False)
+    # Fields the user has explicitly marked as "not required" (excluded from quality scan)
+    # Values: 'email', 'phone', 'address', 'category', 'org'
+    _waived: set = field(default_factory=set, repr=False)
 
     def log_change(self, msg: str) -> None:
         self._changes.append(msg)

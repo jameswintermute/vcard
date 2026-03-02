@@ -314,22 +314,8 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
     <button class="btn btn-c" style="font-size:10px;padding:3px 10px" onclick="show('unify')">→ go to Unify to add files</button>
   </div>
   <hr class="divider">
-  <div class="sec-lbl">AUTO-REVIEW
-    <span style="color:var(--dim);font-weight:400"> — flag contacts that may need attention</span>
-  </div>
 
-  <div class="row" style="margin-bottom:10px;gap:6px">
-    <button class="btn btn-c" id="btn-review-run" onclick="runAutoReview()">⟳ scan contacts</button>
-    <span style="font-size:10px;color:var(--dim)" id="review-run-hint">Checks all loaded contacts for common data quality issues</span>
-  </div>
-
-  <div id="review-results" style="display:none">
-    <div class="stats-grid" id="review-stats"></div>
-    <div id="review-issues"></div>
-  </div>
-
-  <hr class="divider">
-  <div class="sec-lbl">UID CLEANUP
+  <div class="sec-lbl">STEP 1 — UID CLEANUP
     <span style="color:var(--dim);font-weight:400"> — replace vendor-issued UIDs with clean vCard Studio ones</span>
   </div>
   <div style="color:var(--dim);font-size:10px;line-height:1.9;margin-bottom:9px">
@@ -346,11 +332,11 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
        border:1px solid var(--green2);padding:8px 12px;font-size:10px;color:var(--green)"></div>
 
   <hr class="divider">
-  <div class="sec-lbl">PHONE FORMATTING
+  <div class="sec-lbl">STEP 2 — PHONE FORMATTING
     <span style="color:var(--dim);font-weight:400"> — reformat all numbers to international spacing</span>
   </div>
   <div style="color:var(--dim);font-size:10px;line-height:1.9;margin-bottom:9px">
-    Converts stored numbers to <code style="color:var(--text)">+44 20 1234 5678</code> format (spaces, no brackets).
+    Converts stored numbers to <code style="color:var(--text)">+44 1932 269627</code> format (GOV.UK style, no brackets).
     Run after import if your source had inconsistent formatting.
   </div>
   <div class="row" style="gap:8px;align-items:center;margin-bottom:4px">
@@ -359,6 +345,34 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
   </div>
   <div id="reformat-phones-result" style="display:none;margin-top:8px;background:rgba(0,224,64,.06);
        border:1px solid var(--green2);padding:8px 12px;font-size:10px;color:var(--green)"></div>
+
+  <hr class="divider">
+  <div class="sec-lbl">STEP 3 — COUNTRY NAMES
+    <span style="color:var(--dim);font-weight:400"> — normalise to standard country names</span>
+  </div>
+  <div style="color:var(--dim);font-size:10px;line-height:1.9;margin-bottom:9px">
+    Merges variants like <code style="color:var(--text)">UK</code>, <code style="color:var(--text)">England</code>, <code style="color:var(--text)">Britain</code> → <code style="color:var(--text)">United Kingdom</code>.
+    Full editor is also available in Insights.
+  </div>
+  <div class="row" style="gap:8px;align-items:center;margin-bottom:4px">
+    <button class="btn btn-c" style="font-size:10px;padding:3px 12px" onclick="openCountryNormaliser()">⟳ normalise country names</button>
+    <span id="cn-hint-clean" style="font-size:10px;color:var(--dim)"></span>
+  </div>
+
+  <hr class="divider">
+  <div class="sec-lbl">STEP 4 — AUTO-REVIEW
+    <span style="color:var(--dim);font-weight:400"> — scan for contacts that may need attention</span>
+  </div>
+
+  <div class="row" style="margin-bottom:10px;gap:6px">
+    <button class="btn btn-c" id="btn-review-run" onclick="runAutoReview()">⟳ scan contacts</button>
+    <span style="font-size:10px;color:var(--dim)" id="review-run-hint">Checks all loaded contacts for common data quality issues</span>
+  </div>
+
+  <div id="review-results" style="display:none">
+    <div class="stats-grid" id="review-stats"></div>
+    <div id="review-issues"></div>
+  </div>
 
   <hr class="divider">
   <div class="sec-lbl">WHAT CLEAN DID</div>
@@ -1619,9 +1633,11 @@ function openEdit(pageIdx) {
   // Check if street looks like a single-line full address (city/postal already empty)
   detectSingleLineAddress(document.getElementById('edit-street'), !(adr.locality) && !(adr.postal_code));
 
-  // Related
+  // Related — always reload from server to get latest bidirectional links
   _editRelated = (c.related||[]).map(r=>({...r}));
   renderRelList('edit');
+  // Also kick off a fresh server fetch in background to catch any links added since last page load
+  reloadEditRelated(c._idx);
   // Reset rel picker between cards — clear search, grid, and reset type to spouse
   const relSearch = document.getElementById('edit-rel-search');
   if (relSearch) relSearch.value = '';
@@ -2156,11 +2172,29 @@ function renderRelList(ctx) {
   if (!list.length) { el.innerHTML = `<div style="color:var(--dim);font-size:10px;padding:3px 0 6px;">No linked people yet.</div>`; return; }
   el.innerHTML = list.map((r, i) => `
     <div class="rel-item">
-      <span class="ri-type">${r.rel_type}</span>
+      <span class="ri-type">${esc(r.rel_type)}</span>
       <span class="ri-name">${esc(r.text || r.uid || '?')}</span>
-      ${r.uid ? `<span class="ri-uid" title="Linked by UID">⊕ linked</span>` : `<span class="ri-uid">text only</span>`}
-      <button class="rel-remove" onmousedown="removeRel('${ctx}',${i})">✕</button>
+      ${r.uid ? `<span class="ri-uid" title="Linked by UID — bidirectional">⊕ linked</span>` : `<span class="ri-uid">text only</span>`}
+      <button class="rel-remove" onmousedown="${r.uid && ctx==='edit' ? `removeRelUid('${ctx}','${r.uid}',${i})` : `removeRel('${ctx}',${i})`}">✕</button>
     </div>`).join('');
+}
+
+async function removeRelUid(ctx, uid, i) {
+  // For UID-linked entries in the edit modal, remove via server (bidirectional unlink)
+  if (ctx !== 'edit') { removeRel(ctx, i); return; }
+  const fromIdx = parseInt(document.getElementById('edit-idx').value);
+  if (isNaN(fromIdx)) { removeRel(ctx, i); return; }
+  try {
+    const d = await post('/api/unlink_related', { from_idx: fromIdx, uid });
+    if (d.ok) {
+      toast(`✓ Unlinked`);
+      await reloadEditRelated(fromIdx);
+    } else {
+      toast(d.error || 'Unlink failed', true);
+    }
+  } catch(e) {
+    toast('Unlink failed', true);
+  }
 }
 
 function removeRel(ctx, i) {
@@ -2448,17 +2482,18 @@ function analyseCards(cards) {
 
   cards.forEach(c => {
     const fn = (c.fn||'').trim();
+    const waived = new Set(c.waived || []);
 
     if (!fn || /^\d/.test(fn))
       issues.numPrefix.push(c);
 
-    if (!c.emails.length)
+    if (!c.emails.length && !waived.has('email'))
       issues.noEmail.push(c);
 
-    if (!c.tels.length)
+    if (!c.tels.length && !waived.has('phone'))
       issues.noPhone.push(c);
 
-    if (!c.categories.length)
+    if (!c.categories.length && !waived.has('category'))
       issues.noCategory.push(c);
 
     c.emails.forEach(e => {
@@ -2544,14 +2579,22 @@ function renderReviewResults(issues, total) {
         <span style="color:var(--dim);font-weight:400;font-size:9px;flex:1">— ${g.desc}</span>
         ${g.bulkActions.map(a => `<button class="ig-selall" onclick="${a.fn}('${g.key}')">${a.label}</button>`).join('')}
       </div>
-      ${visible.map((c,i) => `
+      ${visible.map((c,i) => {
+        const waiveField = {noEmail:'email', noPhone:'phone', noCategory:'category'}[g.key];
+        const isWaived = waiveField && (c.waived||[]).includes(waiveField);
+        return `
         <div class="issue-card ${g.sev}" id="ic-${g.key}-${i}">
           <input type="checkbox" class="issue-cb" data-key="${g.key}" data-i="${i}" data-idx="${c._idx}"
                  onchange="toggleIssueSelect('${g.key}',${i},this.checked)">
           <span class="issue-name">${esc(c.fn||'—')}</span>
           <span class="issue-desc">${issueDetail(g.key, c)}</span>
           <button class="issue-fix" onclick="openEditFromIssue(${c._idx})">edit →</button>
-        </div>`).join('')}
+          ${waiveField ? `<button class="issue-fix" style="background:none;border:1px solid var(--border);color:var(--dim);margin-left:4px"
+            onclick="waiveField(${c._idx},'${waiveField}','${g.key}',${i})"
+            title="Mark as intentionally absent — removes from this report">
+            ${isWaived ? '✓ not required' : '— not required'}
+          </button>` : ''}
+        </div>`}).join('')}
       ${list.length > 50 ? `<div style="color:var(--dim);font-size:10px;padding:4px 10px">… and ${list.length - 50} more — fix these first, then rescan</div>` : ''}
     </div>`;
   }).join('') + `<div class="bulk-bar" id="bulk-bar">
@@ -2562,7 +2605,40 @@ function renderReviewResults(issues, total) {
   </div>`;
 }
 
-function toggleGroupSelect(key, checked) {
+// Mark a field as "not required" for a specific card — removes it from quality scan
+async function waiveField(cardIdx, field, groupKey, issueI) {
+  try {
+    const d = await post('/api/waive_field', { index: cardIdx, field });
+    if (!d.ok) { toast(d.error || 'Failed', true); return; }
+    // Remove this row from the issue list visually
+    const row = document.getElementById(`ic-${groupKey}-${issueI}`);
+    if (row) {
+      row.style.transition = 'opacity .3s';
+      row.style.opacity = '0';
+      setTimeout(() => row.remove(), 320);
+    }
+    toast(`✓ "${field}" marked as not required — won't appear in future scans`);
+    // Update the issue count badge
+    const countEl = document.querySelector(`#ig-${groupKey} .ig-count`);
+    if (countEl) {
+      const n = parseInt(countEl.textContent) - 1;
+      countEl.textContent = n;
+      if (n <= 0) {
+        const group = document.getElementById(`ig-${groupKey}`);
+        if (group) { group.style.opacity='0'; setTimeout(()=>group.remove(),320); }
+      }
+    }
+  } catch(e) {
+    toast('Failed to mark as not required', true);
+  }
+}
+
+async function unwaiveField(cardIdx, field) {
+  try {
+    await post('/api/unwaive_field', { index: cardIdx, field });
+    toast(`✓ "${field}" requirement restored`);
+  } catch(e) { toast('Failed', true); }
+}
   const list = _issueData[key] || [];
   list.forEach((c, i) => {
     const id = `${key}:${i}`;
@@ -3581,66 +3657,130 @@ ${(()=>{
 }
 
 // Format E.164 phone numbers for human reading: +447980220220 → +44 7980 220 220
+// Format E.164 phone numbers in GOV.UK style: +441932269627 → +44 1932 269627
+// UK numbers use variable-length area codes; other countries use fixed patterns.
+// Reference: https://design-system.service.gov.uk/patterns/phone-numbers/
+// Examples: 01632 960 001, 07700 900 982, +44 808 157 0192
 function fmtTel(t) {
   if (!t) return '';
   t = t.trim();
-  if (!t.startsWith('+')) return t;  // not E.164, return as-is
-  // Strip the leading +, then insert spaces based on country prefix length
-  const digits = t.slice(1);
-  // UK: +44 — 2 digit cc, then 4+6 or 2+4+4 etc.
-  // US/CA: +1 — 1 digit cc, then 3+3+4
-  // Most others: 2-3 digit cc, then chunks of ~3-4
-  // Simple readable heuristic: cc + space + groups of 3-4
+  if (!t.startsWith('+')) return t;
+
+  const digits = t.slice(1); // strip leading +
+
+  // ── UK (+44) — variable area code lengths ───────────────────────────────────
+  // Area code length (after leading 0 / international 44) determines split point.
+  // We work on the national number: digits after '44'
+  if (digits.startsWith('44')) {
+    const nat = digits.slice(2); // national number without leading 0 (already dropped)
+    // UK mobile: 07xxx → stored as 447xxx (7 digit after 44)
+    // 07xxx mobiles: 3-digit network code + 7-digit subscriber → NNNNN NNN NNN
+    if (/^7\d{9}$/.test(nat)) {
+      // e.g. 7857390662 → 7857 390 662 (Ofcom mobile style)
+      return `+44 ${nat.slice(0,4)} ${nat.slice(4,7)} ${nat.slice(7)}`;
+    }
+    // 08xx / 09xx non-geographic: treat as 4-digit area code
+    if (/^[89]0\d/.test(nat)) {
+      const area = nat.slice(0, 3); // e.g. 808
+      const sub  = nat.slice(3);    // remaining subscriber
+      const s1 = sub.slice(0, 3), s2 = sub.slice(3);
+      return `+44 ${area}${s2 ? ` ${s1} ${s2}` : ` ${s1}`}`;
+    }
+    // Geographic area codes — length encoded in first digits per Ofcom numbering plan
+    // 5-digit area codes (01xxx): 01xxx NNN NNNN → area(5) sub(6) [split 3+3]
+    // 4-digit area codes (02x): 02x NNNN NNNN
+    // 3-digit area codes (011x/01x1): 011x NNN NNNN
+    // Key UK area code lengths (digits AFTER dropping leading 0):
+    const d2 = nat.slice(0, 2);
+    const d3 = nat.slice(0, 3);
+    const d4 = nat.slice(0, 4);
+    // 2-digit areas: 20 (London), 23 (Southampton/Portsmouth), 24 (Coventry),
+    //   28 (N.Ireland), 29 (Cardiff)
+    const twoDigitAreas = new Set(['20','23','24','28','29']);
+    // 3-digit areas: 113-118 (Leeds,Sheff,Liverpool,Brum,Bristol,Glasgow),
+    //   121,131,141,151,161,191 + others
+    const threeDigitAreas = new Set([
+      '113','114','115','116','117','118',
+      '121','131','141','151','161','191',
+      '116','300','330','345','370','371',
+      '800','808','844','845','870','871',
+    ]);
+    if (twoDigitAreas.has(d2)) {
+      // +44 20 NNNN NNNN
+      const sub = nat.slice(2);
+      return `+44 ${d2} ${sub.slice(0,4)} ${sub.slice(4)}`;
+    }
+    if (threeDigitAreas.has(d3)) {
+      // +44 113 NNN NNNN
+      const sub = nat.slice(3);
+      return `+44 ${d3} ${sub.slice(0,3)} ${sub.slice(3)}`;
+    }
+    // Default: 4-digit area code (most 01xxx numbers)
+    // e.g. 1932 269627 → +44 1932 269627 (GOV.UK style: area then subscriber run-on)
+    // Subscriber number may be 5 or 6 digits
+    const area = nat.slice(0, 4);
+    const sub  = nat.slice(4);
+    if (sub.length <= 6) return `+44 ${area} ${sub}`;
+    return `+44 ${area} ${sub.slice(0,3)} ${sub.slice(3)}`;
+  }
+
+  // ── Non-UK international numbers ────────────────────────────────────────────
+  // Fixed-pattern table: [cc_digits, [group_lengths]]
+  // Group lengths do NOT include the cc — they describe the national number chunks
   const patterns = {
-    '1':  [1, 3, 3, 4],   // US/CA
-    '7':  [1, 3, 3, 4],   // Russia
-    '20': [2, 2, 8],       // Egypt
-    '27': [2, 2, 3, 4],   // South Africa
-    '30': [2, 3, 7],       // Greece
-    '31': [2, 1, 8],       // Netherlands
-    '32': [2, 1, 3, 5],   // Belgium
-    '33': [2, 1, 2, 2, 2, 2], // France
-    '34': [2, 3, 3, 3],   // Spain
-    '36': [2, 2, 3, 4],   // Hungary
-    '39': [2, 2, 4, 4],   // Italy
-    '40': [2, 3, 6],       // Romania
-    '41': [2, 2, 3, 2, 2], // Switzerland
-    '43': [2, 1, 4, 4],   // Austria
-    '44': [2, 4, 6],       // UK
-    '45': [2, 2, 2, 2, 2], // Denmark
-    '46': [2, 2, 3, 4],   // Sweden
-    '47': [2, 3, 2, 3],   // Norway
-    '48': [2, 3, 3, 3],   // Poland
-    '49': [2, 3, 4, 4],   // Germany
-    '61': [2, 1, 4, 4],   // Australia
-    '64': [2, 1, 3, 4],   // NZ
-    '65': [2, 4, 4],       // Singapore
-    '81': [2, 2, 4, 4],   // Japan
-    '82': [2, 2, 4, 4],   // South Korea
-    '86': [2, 3, 4, 4],   // China
-    '91': [2, 5, 5],       // India
+    '1':   [3, 3, 4],        // US/CA: +1 NXX NXX XXXX
+    '7':   [3, 3, 4],        // Russia
+    '33':  [1, 2, 2, 2, 2],  // France: +33 N NN NN NN NN
+    '34':  [3, 3, 3],        // Spain
+    '39':  [2, 4, 4],        // Italy
+    '41':  [2, 3, 2, 2],     // Switzerland
+    '43':  [1, 4, 4],        // Austria
+    '45':  [2, 2, 2, 2],     // Denmark
+    '46':  [2, 3, 4],        // Sweden
+    '47':  [3, 2, 3],        // Norway
+    '48':  [3, 3, 3],        // Poland
+    '49':  [3, 4, 4],        // Germany
+    '31':  [2, 8],           // Netherlands
+    '32':  [1, 3, 2, 2],     // Belgium
+    '36':  [2, 3, 4],        // Hungary
+    '40':  [3, 6],           // Romania
+    '61':  [1, 4, 4],        // Australia
+    '64':  [1, 3, 4],        // New Zealand
+    '65':  [4, 4],           // Singapore
+    '81':  [2, 4, 4],        // Japan
+    '82':  [2, 4, 4],        // South Korea
+    '86':  [3, 4, 4],        // China
+    '91':  [5, 5],           // India
+    '27':  [2, 3, 4],        // South Africa
+    '20':  [2, 8],           // Egypt
+    '30':  [3, 7],           // Greece
   };
-  // Try 2-digit prefix first, then 1-digit
+  // Try 2-digit country code first, then 1-digit
   const cc2 = digits.slice(0, 2);
   const cc1 = digits.slice(0, 1);
-  const pat = patterns[cc2] || patterns[cc1];
-  if (pat) {
+  let cc, natPat;
+  if (patterns[cc2]) { cc = cc2; natPat = patterns[cc2]; }
+  else if (patterns[cc1]) { cc = cc1; natPat = patterns[cc1]; }
+
+  if (cc && natPat) {
+    const nat = digits.slice(cc.length);
     let pos = 0;
-    const parts = [];
-    for (const len of pat) {
-      const chunk = digits.slice(pos, pos + len);
+    const parts = [cc];
+    for (const len of natPat) {
+      const chunk = nat.slice(pos, pos + len);
       if (chunk) parts.push(chunk);
       pos += len;
     }
-    const remainder = digits.slice(pos);
-    if (remainder) parts.push(remainder);
+    const rem = nat.slice(pos);
+    if (rem) parts.push(rem);
     return '+' + parts.join(' ');
   }
-  // Fallback: +cc + space + rest in groups of 3
-  const cc = digits.length > 10 ? digits.slice(0, 3) : digits.slice(0, 2);
-  const rest = digits.slice(cc.length);
-  const groups = rest.match(/.{1,3}/g) || [rest];
-  return '+' + cc + ' ' + groups.join(' ');
+
+  // Ultimate fallback: country code + rest in groups of 4
+  const cc3 = digits.length > 11 ? digits.slice(0,3) : digits.length > 10 ? digits.slice(0,2) : digits.slice(0,1);
+  const rem = digits.slice(cc3.length);
+  const groups = rem.match(/.{1,4}/g) || [rem];
+  return '+' + cc3 + ' ' + groups.join(' ');
 }
 let _cnData = [];   // [{raw, count, suggested, needs_fix}]
 

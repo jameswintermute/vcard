@@ -123,6 +123,11 @@ def _serialise_one(c: Card, target_version: str = "4.0") -> str:
         # PRODID — identifies vCard Studio
         v.add("prodid").value = PRODID
 
+        # _waived fields — persist as X- property so they survive checkpoint round-trips
+        waived = getattr(c, "_waived", None)
+        if waived:
+            v.add("x-vcard-studio-waived").value = ",".join(sorted(waived))
+
         # REV — card's own revision timestamp if set, else now
         v.add("rev").value = c.rev or now_iso
 
