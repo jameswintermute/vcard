@@ -1,0 +1,27 @@
+# vCard Studio — Python dependencies
+# ─────────────────────────────────────────────────────────────────────────────
+# Quickstart (installs everything):
+#   pip install -r requirements.txt
+#
+# Or install the package directly (recommended — includes CLI entry points):
+#   pip install -e .                          # core only
+#   pip install -e ".[phonenumbers]"          # + international phone validation
+#
+# Python 3.11+ required.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Core vCard parsing (vCard 2.1 / 3.0 / 4.0)
+vobject>=0.9.7
+
+# CLI interface
+typer>=0.12
+rich>=13.7
+
+# Fuzzy duplicate detection
+rapidfuzz>=3.9
+
+# International phone number parsing, validation, and formatting
+# This wraps Google's libphonenumber — ensures correct E.164 normalisation
+# and proper display formatting (e.g. +44 1932 269627 for Weybridge, UK).
+# Optional but strongly recommended; graceful fallback if not installed.
+phonenumbers>=8.13

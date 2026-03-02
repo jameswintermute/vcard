@@ -105,25 +105,161 @@ Your address book stays exactly where it belongs — with you.
 
 ## 🚀 Getting Started
 
+### Dependencies
+
+**Python 3.11 or later** is required.
+
+| Package | Required | Purpose |
+|---------|----------|---------|
+| `vobject` | ✅ Required | vCard 2.1 / 3.0 / 4.0 parsing |
+| `typer` | ✅ Required | CLI interface |
+| `rich` | ✅ Required | Terminal output |
+| `rapidfuzz` | ✅ Required | Fuzzy duplicate detection |
+| `phonenumbers` | ✅ Strongly recommended | Google's libphonenumber for correct E.164 normalisation and international display formatting. Graceful fallback if missing. |
+
+---
+
+### Ubuntu / Debian Linux
+
 ```bash
+# Install Python 3.11+ and git (usually already present)
+sudo apt update && sudo apt install python3 python3-pip git
+
+# Clone the project
 git clone https://github.com/jameswintermute/vcard.git
 cd vcard
-pip install -e .
+
+# Install all dependencies (recommended)
+pip install -e ".[phonenumbers]"
+# Ubuntu 23.04+ may require: pip install --break-system-packages -e ".[phonenumbers]"
+# Or use a virtual environment (see Troubleshooting below)
+# Alternatively — plain requirements file:
+# pip install -r requirements.txt
+
+# Launch
+python3 start-webui.py
+```
+
+Then open: **http://localhost:8421**
+
+---
+
+### macOS
+
+macOS ships with Python 2.7. You need Python 3.11+.
+
+```bash
+# Install Homebrew if not already present
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Install Python 3.12
+brew install python@3.12
+
+# Clone the project
+git clone https://github.com/jameswintermute/vcard.git
+cd vcard
+
+# Install dependencies
+pip3 install -e ".[phonenumbers]"
+
+# Launch
+python3 start-webui.py
+```
+
+Then open: **http://localhost:8421**
+
+> **Apple Silicon:** All dependencies have native ARM wheels — no Rosetta needed.
+
+---
+
+### Windows
+
+WSL2 is strongly recommended. Native Windows is supported but has minor limitations.
+
+**Option A — WSL2 (recommended):**
+
+```powershell
+# In PowerShell (as Administrator):
+wsl --install
+
+# Restart, then open Ubuntu from the Start menu.
+# Follow the Ubuntu instructions above from inside WSL.
+```
+
+**Option B — Native Windows:**
+
+```powershell
+# 1. Install Python 3.12 from https://python.org
+#    Check "Add Python to PATH" during installation.
+# 2. Install Git from https://git-scm.com
+
+git clone https://github.com/jameswintermute/vcard.git
+cd vcard
+pip install -e ".[phonenumbers]"
 python start-webui.py
 ```
 
-Then open your browser to:
+> **Windows note:** If the server fails to start ("address already in use"), close the previous  
+> terminal window and try again. WSL2 avoids this limitation.
 
-    http://localhost:8421
+---
+
+### Troubleshooting
+
+**The browser opens but shows no contacts / cards-in not recognised**
+
+Always run from the project root directory:
+```bash
+cd /path/to/vcard
+python3 start-webui.py
+```
+If files in `cards-in/` are still not recognised, check the terminal for error output.
+
+**Port 8421 already in use**
+
+```bash
+# Linux / macOS:
+lsof -i :8421
+kill <PID shown>
+python3 start-webui.py
+```
+
+**"Quit" button does nothing**
+
+Some browsers block `confirm()` dialogs on localhost. Check your browser's popup settings  
+for `localhost`, or stop the server from the terminal with `Ctrl-C`.
+
+**`ModuleNotFoundError: No module named 'vcard_normalizer'`**
+
+Run from the project root with the package installed:
+```bash
+cd /path/to/vcard
+pip install -e .
+python3 start-webui.py
+```
+
+**`externally-managed-environment` error (Ubuntu 23.04+)**
+
+```bash
+# Option A — override the guard (simple):
+pip install --break-system-packages -e ".[phonenumbers]"
+
+# Option B — use a virtual environment (cleaner):
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[phonenumbers]"
+python3 start-webui.py
+```
 
 ---
 
 ## ⚙ Features
 
 - **vCard 3.0 & 4.0** parsing and standards-compliant 4.0 export
-- **Proprietary field stripping** — removes `X-AB*`, `X-GOOGLE*`, photos, and vendor clutter
+- **Proprietary field stripping** — removes all `X-*` vendor fields, `PRODID`, and traces from Apple, Google, Proton, or vCard Studio itself. One-click from the Clean panel.
 - **Cross-source duplicate detection** via email, phone, and fuzzy name matching
-- **Phone number normalisation** to E.164 international format, inferred from address or home country setting
+- **Phone number normalisation** to E.164 international format, with GOV.UK style display spacing (e.g. `+44 1932 269627`). Optional `phonenumbers` package for global number validation.
+- **Typed email and phone fields** — tag each email or phone as HOME, WORK, MOBILE, or OTHER; label is exported as the vCard TYPE parameter and shown in the print view.
 - **Category tagging** — rule-based auto-tagging via `local/vcard.conf`, with interactive review
 - **KIND classification** — individual, organisation, self
 - **Self / profile card** — tag your own card as KIND=self; skipped in duplicate checks and quality reports
@@ -131,7 +267,8 @@ Then open your browser to:
 - **MEMBER linking** — assign individuals as members of an organisation card (vCard 4.0 MEMBER)
 - **UID, REV, PRODID** — every card carries a stable unique identifier, a last-modified timestamp (UTC ISO 8601), and a PRODID identifying this tool
 - **Address normalisation** — single-line address detection and structured field parsing
-- **Quality review** — scan contacts for missing emails, phones, addresses, categories
+- **Quality review** — scan contacts for missing emails, phones, addresses, categories; mark any field as "not required" to permanently exclude it from future scans
+- **Birthdays & Anniversaries tab** — month-by-month view of birthdays and anniversaries with age calculation; configurable category filter; printable birthday calendar
 - **Raw vCard viewer** — inspect the full vCard source of any contact with syntax highlighting
 - **Export options** — combined `.vcf`, per-category `.vcf`, individual file per contact (named `vcard-<ISO8601>-<LastName>-<FirstName>.vcf`), and `.csv`
 - **Checkpoint autosave** — every edit is immediately persisted; resume exactly where you left off after a restart
