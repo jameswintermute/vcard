@@ -161,9 +161,18 @@ def normalize_cards(
         related: list[Related] = []
         for rel_prop in getattr(vc, "related_list", []):
             try:
+                # type_param may be a string, a list, or absent depending on vobject version
                 rel_type = "contact"
+                tp = None
                 if hasattr(rel_prop, "type_param"):
-                    rel_type = str(rel_prop.type_param).lower()
+                    tp = rel_prop.type_param
+                elif hasattr(rel_prop, "params"):
+                    tp = rel_prop.params.get("TYPE", None)
+                if tp is not None:
+                    if isinstance(tp, list):
+                        rel_type = str(tp[0]).lower().strip() if tp else "contact"
+                    else:
+                        rel_type = str(tp).lower().strip()
                 val = str(rel_prop.value).strip()
                 if val.startswith("urn:uuid:"):
                     related.append(Related(rel_type=rel_type, uid=val[9:]))
@@ -189,6 +198,12 @@ def normalize_cards(
 
         note = _get_text(getattr(vc, "note", None))
 
+        # Parse X-VCARD-STUDIO-WAIVED — "not required" field markers
+        waived_raw = _get_text(getattr(vc, "x-vcard-studio-waived", None))
+        waived: set = set()
+        if waived_raw:
+            waived = {f.strip() for f in waived_raw.split(",") if f.strip()}
+
         card = Card(
             raw=vc,
             fn=fn,
@@ -206,6 +221,7 @@ def normalize_cards(
             related=related,
             note=note,
             _source_files=[source_label],
+            _waived=waived,
         )
         if photo_count:
             card.log_change(f"Stripped {photo_count} photo/logo/sound property(ies)")

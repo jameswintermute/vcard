@@ -22,7 +22,7 @@ from urllib.parse import parse_qs, urlparse
 # ── Resolve project root (2 levels up from this file: src/vcard_normalizer/) ──
 _HERE = Path(__file__).resolve().parent
 _ROOT = _HERE.parent.parent   # project root
-_VERSION = "3.1.5"
+_VERSION = "3.1.6"
 _STATIC = _HERE / "static"    # HTML/CSS/JS lives here
 
 PORT = 8421
@@ -83,11 +83,25 @@ def _card_to_dict(card) -> dict:
     # Guard against old checkpoint cards that predate NameComponents
     from .model import NameComponents
     name = getattr(card, "name", None) or NameComponents()
+
+    # Format phone numbers using libphonenumber for display
+    def _fmt_tel(t: str) -> str:
+        try:
+            import phonenumbers as _pn
+            n = _pn.parse(t, None)  # E.164 doesn't need region hint
+            return _pn.format_number(n, _pn.PhoneNumberFormat.INTERNATIONAL)
+        except Exception:
+            return t
+
     return {
         "fn": card.fn or "",
         "org": card.org or "",
         "emails": card.emails,
         "tels": card.tels,
+        "tels_fmt": [_fmt_tel(t) for t in card.tels],  # formatted for display only
+        # TYPE-labelled parallel lists: [{value, type}] — type is HOME|WORK|CELL|""
+        "typed_emails": [{"value": tv.value, "type": tv.type} for tv in (getattr(card, "typed_emails", None) or [])],
+        "typed_tels":   [{"value": tv.value, "type": tv.type} for tv in (getattr(card, "typed_tels",   None) or [])],
         "categories": card.categories,
         "kind": card.kind or "individual",
         "title": card.title or "",
@@ -119,6 +133,7 @@ def _card_to_dict(card) -> dict:
         "member": list(getattr(card, "member", None) or []),
         "changes": card._changes,
         "sources": card._source_files,
+        "waived": list(getattr(card, "_waived", set()) or set()),
     }
 
 
@@ -150,8 +165,10 @@ def _load_existing_output() -> None:
                 f"(saved {meta.get('saved_at','?')[:10]})"
             )
             return
-    except Exception:
-        pass
+    except Exception as _e:
+        import logging
+        logging.getLogger(__name__).warning("Checkpoint load failed: %s", _e)
+        _state["message"] = f"⚠ Checkpoint load error: {_e}"
 
     # 2. Legacy: any named .vcf in cards-wip/ (old installs used dated filenames)
     if wip_dir.is_dir():
@@ -309,11 +326,12 @@ def _api_cards(params: dict) -> dict:
     sort_order = params.get("sort_order",  ["last_name"])[0]  # last_name|first_name|org
 
     def _quality_match(c) -> bool:
-        if quality == "no_email":    return not c.emails
-        if quality == "no_phone":    return not c.tels
-        if quality == "no_category": return not c.categories
-        if quality == "no_org":      return not c.org and c.kind != "org"
-        if quality == "no_address":  return not c.addresses
+        waived = getattr(c, "_waived", set()) or set()
+        if quality == "no_email":    return not c.emails and "email" not in waived
+        if quality == "no_phone":    return not c.tels and "phone" not in waived
+        if quality == "no_category": return not c.categories and "category" not in waived
+        if quality == "no_org":      return not c.org and c.kind != "org" and "org" not in waived
+        if quality == "no_address":  return not c.addresses and "address" not in waived
         if quality == "num_prefix":  import re; return bool(re.match(r"^\d", c.fn or ""))
         return True
 
@@ -329,7 +347,7 @@ def _api_cards(params: dict) -> dict:
     if quality:
         indexed = [(i,c) for i,c in indexed if _quality_match(c)]
 
-    # Sort the results
+    # Sort the results — all kinds integrated lexicographically, no KIND bucketing
     def _sort_key(pair):
         _, c = pair
         fn = (c.fn or "").strip()
@@ -338,18 +356,20 @@ def _api_cards(params: dict) -> dict:
         name = getattr(c, "name", None)
         family = (name.family or "").strip() if name and name.family else ""
         given  = (name.given  or "").strip() if name and name.given  else ""
-        # For orgs, sort by org name
-        if c.kind == "org":
-            return (0, org.lower() or fn.lower(), "")
+
         if sort_order == "first_name":
-            return (1, given.lower() or fn.lower(), family.lower())
-        else:  # last_name (default) — also handles org lexicographically
+            primary = given.lower() or fn.lower() or org.lower()
+            secondary = family.lower()
+        else:  # last_name (default)
             if family:
-                return (1, family.lower(), given.lower())
-            # No structured name — fall back to fn, treating org-like entries last
-            if org and not fn:
-                return (0, org.lower(), "")
-            return (1, fn.lower(), "")
+                primary = family.lower()
+                secondary = given.lower()
+            else:
+                # No structured name — use fn, or org for org-kind cards
+                primary = fn.lower() or org.lower()
+                secondary = ""
+
+        return (primary, secondary)
 
     indexed.sort(key=_sort_key)
 
@@ -760,32 +780,66 @@ def _api_full_update_card(body: dict) -> dict:
         suffix=body.get("name_suffix","").strip(),
     )
 
-    # Emails
-    raw_emails = re.split(r"[,\n]+", body.get("emails",""))
-    card.emails = [e.strip().lower() for e in raw_emails if e.strip()]
+    # Emails — support typed format [{value, type}] or plain list/string
+    from .model import TypedValue
+    raw_emails_typed = body.get("typed_emails", [])  # [{value, type}]
+    if raw_emails_typed:
+        typed_emails = []
+        for item in raw_emails_typed:
+            if isinstance(item, dict):
+                val = item.get("value", "").strip().lower()
+                if val:
+                    typed_emails.append(TypedValue(value=val, type=item.get("type","").upper()))
+        card.emails = [tv.value for tv in typed_emails]
+        card.typed_emails = typed_emails
+    else:
+        raw_emails = re.split(r"[,\n]+", body.get("emails",""))
+        card.emails = [e.strip().lower() for e in raw_emails if e.strip()]
+        card.typed_emails = [TypedValue(value=e, type="") for e in card.emails]
 
-    # Phones — normalise each
-    raw_tels = re.split(r"[,\n]+", body.get("tels",""))
-    normalised = []
-    for raw in raw_tels:
-        raw = raw.strip()
-        if not raw:
-            continue
-        try:
-            import phonenumbers
-            p = _get_pipeline()
-            _, settings = p["ensure_workspace"](_ROOT)
-            parsed = phonenumbers.parse(raw, settings.default_region)
-            if phonenumbers.is_valid_number(parsed):
-                normalised.append(phonenumbers.format_number(
-                    parsed, phonenumbers.PhoneNumberFormat.INTERNATIONAL))
-            else:
+    # Phones — support typed format [{value, type}] or plain list/string
+    raw_tels_typed = body.get("typed_tels", [])  # [{value, type}]
+    if raw_tels_typed:
+        typed_tels = []
+        for item in raw_tels_typed:
+            if isinstance(item, dict):
+                raw = item.get("value", "").strip()
+                if not raw:
+                    continue
+                ttype = item.get("type","").upper()
+                try:
+                    import phonenumbers
+                    p2 = _get_pipeline()
+                    _, settings = p2["ensure_workspace"](_ROOT)
+                    parsed = phonenumbers.parse(raw, settings.default_region)
+                    if phonenumbers.is_valid_number(parsed):
+                        raw = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.INTERNATIONAL)
+                except Exception:
+                    pass
+                typed_tels.append(TypedValue(value=raw, type=ttype))
+        card.tels = [tv.value for tv in typed_tels]
+        card.typed_tels = typed_tels
+    else:
+        raw_tels = re.split(r"[,\n]+", body.get("tels",""))
+        normalised = []
+        for raw in raw_tels:
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                import phonenumbers
+                p3 = _get_pipeline()
+                _, settings = p3["ensure_workspace"](_ROOT)
+                parsed = phonenumbers.parse(raw, settings.default_region)
+                if phonenumbers.is_valid_number(parsed):
+                    normalised.append(phonenumbers.format_number(
+                        parsed, phonenumbers.PhoneNumberFormat.INTERNATIONAL))
+                else:
+                    normalised.append(raw)
+            except Exception:
                 normalised.append(raw)
-        except Exception:
-            normalised.append(raw)
-    card.tels = normalised
-
-    # Categories
+        card.tels = normalised
+        card.typed_tels = [TypedValue(value=t, type="") for t in normalised]
     card.categories = [c.strip() for c in body.get("categories","").split(",") if c.strip()]
 
     # Address
@@ -799,12 +853,30 @@ def _api_full_update_card(body: dict) -> dict:
         )
         card.addresses = [adr]
 
-    # Related people
-    related = []
+    # Related people — server state is authoritative; only link_related() mutates this.
+    # The edit modal sends _editRelated as a convenience display, but we never let it
+    # overwrite the server's RELATED list (which may contain bidirectional links
+    # created by link_related on the OTHER card that the modal knows nothing about).
+    # Exception: if a rel entry has no UID (text-only), it was added manually in the
+    # modal and must be preserved. We merge: keep all server UIDs, add any new text-only.
+    incoming_related = []
     for r in body.get("related", []):
-        rt = r.get("rel_type","spouse")
-        related.append(Related(rel_type=rt, uid=r.get("uid") or None, text=r.get("text") or None))
-    card.related = related
+        rt = r.get("rel_type", "spouse")
+        incoming_related.append(Related(rel_type=rt, uid=r.get("uid") or None, text=r.get("text") or None))
+
+    # Merge: server UID-links are authoritative; absorb new text-only entries from modal
+    server_related = list(card.related or [])
+    server_uids = {r.uid for r in server_related if r.uid}
+    for r in incoming_related:
+        if not r.uid:
+            # Text-only entry — add if not already present
+            if not any(x.text == r.text and x.rel_type == r.rel_type for x in server_related):
+                server_related.append(r)
+        # UID-linked entries: only add if server doesn't already have this UID
+        elif r.uid not in server_uids:
+            server_related.append(r)
+            server_uids.add(r.uid)
+    card.related = server_related
 
     # MEMBER — list of UID strings (org/group cards)
     card.member = [m.strip() for m in body.get("member", []) if m and m.strip()]
@@ -818,6 +890,204 @@ def _api_full_update_card(body: dict) -> dict:
     return {"ok": True, "normalised_tels": normalised}
 
 
+
+
+def _api_waive_field(body: dict) -> dict:
+    """Mark a field as 'not required' for a card — removes it from quality scan.
+
+    body: {index, field}  field is one of: email phone address category org
+    """
+    cards = _state["cards"]
+    try:
+        idx = int(body["index"])
+        field = str(body.get("field", "")).strip().lower()
+        valid = {"email", "phone", "address", "category", "org"}
+        if field not in valid:
+            return {"ok": False, "error": f"Unknown field '{field}'"}
+        if idx < 0 or idx >= len(cards):
+            return {"ok": False, "error": "Invalid index"}
+        card = cards[idx]
+        if not hasattr(card, "_waived") or card._waived is None:
+            card._waived = set()
+        card._waived.add(field)
+        card.log_change(f"Marked '{field}' as not required")
+        _autosave_checkpoint()
+        return {"ok": True, "waived": list(card._waived)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _api_unwaive_field(body: dict) -> dict:
+    """Remove a 'not required' marker from a field."""
+    cards = _state["cards"]
+    try:
+        idx = int(body["index"])
+        field = str(body.get("field", "")).strip().lower()
+        if idx < 0 or idx >= len(cards):
+            return {"ok": False, "error": "Invalid index"}
+        card = cards[idx]
+        if hasattr(card, "_waived") and card._waived:
+            card._waived.discard(field)
+        _autosave_checkpoint()
+        return {"ok": True, "waived": list(getattr(card, "_waived", set()) or set())}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _api_strip_proprietary(body: dict) -> dict:
+    """Strip all proprietary/vendor X- fields from all cards and optionally reset waived markers.
+
+    body: {reset_waived: bool}
+    Removes: all X-* properties, PRODID, and optionally _waived.
+    """
+    cards = _state["cards"]
+    try:
+        reset_waived = bool(body.get("reset_waived", False))
+        stripped_cards = 0
+        stripped_fields = 0
+
+        # Proprietary X- field names to always strip (added by various vendors)
+        _VENDOR_X = re.compile(
+            r"^X-(?!VCARD-STUDIO)",  # keep our own X-VCARD-STUDIO-* fields
+            re.I,
+        )
+
+        for card in cards:
+            changed = False
+            # Strip vendor X- properties from the raw vobject
+            if card.raw is not None:
+                try:
+                    to_remove = [
+                        child for child in list(card.raw.getChildren())
+                        if _VENDOR_X.match(getattr(child, "name", "") or "")
+                        or getattr(child, "name", "").upper() == "PRODID"
+                    ]
+                    for child in to_remove:
+                        card.raw.remove(child)
+                        stripped_fields += 1
+                        changed = True
+                except Exception:
+                    pass
+            if reset_waived:
+                if hasattr(card, "_waived") and card._waived:
+                    card._waived = set()
+                    changed = True
+            if changed:
+                stripped_cards += 1
+                card.log_change("Proprietary fields stripped" + (" + waived reset" if reset_waived else ""))
+
+        if stripped_cards:
+            _autosave_checkpoint()
+        return {
+            "ok": True,
+            "stripped_cards": stripped_cards,
+            "stripped_fields": stripped_fields,
+            "waived_reset": reset_waived,
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def _api_birthdays(body: dict) -> dict:
+    """Return all contacts that have a birthday or anniversary, sorted month-first.
+
+    Returns list of {fn, bday, anniversary, categories, _idx} dicts.
+    Optionally filtered to specific categories.
+    """
+    cards = _state["cards"]
+    import re as _re
+    filter_cats = set(body.get("categories", []))  # empty = all
+
+    def _parse_date(ds: str) -> tuple[int, int, int | None]:
+        """Parse vCard date → (month, day, year|None). Returns (0,0,None) on failure."""
+        if not ds:
+            return (0, 0, None)
+        ds = ds.strip()
+        # --MMDD format (no year)
+        m = _re.match(r"^--(\d{2})(\d{2})$", ds)
+        if m:
+            return (int(m.group(1)), int(m.group(2)), None)
+        # YYYYMMDD
+        m = _re.match(r"^(\d{4})(\d{2})(\d{2})$", ds)
+        if m:
+            return (int(m.group(2)), int(m.group(3)), int(m.group(1)))
+        # YYYY-MM-DD
+        m = _re.match(r"^(\d{4})-(\d{2})-(\d{2})", ds)
+        if m:
+            return (int(m.group(2)), int(m.group(3)), int(m.group(1)))
+        # YYYYMM
+        m = _re.match(r"^(\d{4})(\d{2})$", ds)
+        if m:
+            return (int(m.group(2)), 0, int(m.group(1)))
+        return (0, 0, None)
+
+    import datetime as _dt
+    this_year = _dt.date.today().year
+
+    events = []
+    for idx, card in enumerate(cards):
+        # Apply category filter if specified
+        if filter_cats:
+            card_cats = {c.lower() for c in (card.categories or [])}
+            if not card_cats.intersection({c.lower() for c in filter_cats}):
+                continue
+
+        for date_str, event_type in [(card.bday, "birthday"), (card.anniversary, "anniversary")]:
+            if not date_str:
+                continue
+            month, day, year = _parse_date(date_str)
+            if month < 1 or month > 12:
+                continue
+            age = None
+            if year and year > 1800 and year < this_year + 1:
+                age = this_year - year
+            events.append({
+                "_idx": idx,
+                "fn": card.fn or card.org or "Unknown",
+                "categories": card.categories,
+                "event_type": event_type,
+                "date_str": date_str,
+                "month": month,
+                "day": day,
+                "year": year,
+                "age": age,
+            })
+
+    # Sort by month, then day
+    events.sort(key=lambda e: (e["month"], e["day"] or 0))
+    return {"ok": True, "events": events, "total": len(events)}
+
+
+def _api_unlink_related(body: dict) -> dict:
+    """Remove a bidirectional RELATED link between two cards.
+
+    body: {from_idx, uid}  — uid is the UID of the card to unlink from from_idx.
+    Removes the link on both cards.
+    """
+    cards = _state["cards"]
+    try:
+        fi = int(body["from_idx"])
+        target_uid = str(body.get("uid", "")).strip()
+        if not target_uid or fi < 0 or fi >= len(cards):
+            return {"ok": False, "error": "Invalid parameters"}
+
+        from_card = cards[fi]
+        from_card.related = [r for r in (from_card.related or [])
+                             if r.uid != target_uid]
+
+        # Remove reciprocal link on the target card
+        from_uid = from_card.uid or ""
+        for card in cards:
+            if (card.uid == target_uid) or any(r.uid == target_uid for r in (card.related or [])):
+                if card.uid == target_uid:
+                    card.related = [r for r in (card.related or [])
+                                   if r.uid != from_uid]
+
+        from_card.log_change(f"Unlinked UID {target_uid}")
+        _autosave_checkpoint()
+        return {"ok": True}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
 
 
 def _api_link_related(body: dict) -> dict:
@@ -1247,8 +1517,14 @@ class VCardHandler(BaseHTTPRequestHandler):
             self._send_json(_api_settings())
         elif path == "/api/card_raw":
             self._send_json(_api_card_raw(params))
+        elif path == "/api/print_cards":
+            self._send_json(_api_print_cards(params))
         elif path == "/api/search_orgs":
             self._send_json(_api_search_orgs(params))
+        elif path == "/api/birthdays":
+            # Support GET with query param categories=friends,family etc
+            cats = [c for c in params.get("categories", [""])[0].split(",") if c.strip()]
+            self._send_json(_api_birthdays({"categories": cats}))
         elif path == "/api/quit":
             self._send_json(_api_quit())
         elif path.startswith("/static/"):
@@ -1289,6 +1565,16 @@ class VCardHandler(BaseHTTPRequestHandler):
             self._send_json(_api_delete_card(body))
         elif path == "/api/link_related":
             self._send_json(_api_link_related(body))
+        elif path == "/api/unlink_related":
+            self._send_json(_api_unlink_related(body))
+        elif path == "/api/waive_field":
+            self._send_json(_api_waive_field(body))
+        elif path == "/api/unwaive_field":
+            self._send_json(_api_unwaive_field(body))
+        elif path == "/api/strip_proprietary":
+            self._send_json(_api_strip_proprietary(body))
+        elif path == "/api/birthdays":
+            self._send_json(_api_birthdays(body))
         elif path == "/api/merge_cards":
             self._send_json(_api_merge_cards(body))
         elif path == "/api/save_settings":
@@ -1303,6 +1589,22 @@ class VCardHandler(BaseHTTPRequestHandler):
 
 def main():
     global _server_ref
+
+    # ── Startup diagnostics ────────────────────────────────────────────────────
+    print(f"\n  vCard Studio v{_VERSION}")
+    print(f"  Project root : {_ROOT}")
+    print(f"  cards-in     : {_ROOT / 'cards-in'}")
+    print(f"  cards-wip    : {_ROOT / 'cards-wip'}")
+    print(f"  cards-out    : {_ROOT / 'cards-out'}")
+    _ckpt = _ROOT / "cards-wip" / "checkpoint.vcf"
+    if _ckpt.exists():
+        print(f"  checkpoint   : {_ckpt.stat().st_size // 1024} KB")
+    else:
+        _in_vcfs = list((_ROOT / "cards-in").glob("*.vcf")) if (_ROOT / "cards-in").is_dir() else []
+        if _in_vcfs:
+            print(f"  source files : {', '.join(f.name for f in _in_vcfs)}")
+        else:
+            print(f"  source files : (none — drop .vcf files into cards-in/)")
 
     # Ensure static dir exists
     _STATIC.mkdir(parents=True, exist_ok=True)
@@ -1338,7 +1640,7 @@ def main():
     class _Server(HTTPServer):
         allow_reuse_address = True
 
-    print(f"\n  vCard Studio  ·  http://localhost:{PORT}\n")
+    print(f"\n  http://localhost:{PORT}\n")
     print("  Press Ctrl-C to stop\n")
 
     server = _Server(("127.0.0.1", PORT), VCardHandler)

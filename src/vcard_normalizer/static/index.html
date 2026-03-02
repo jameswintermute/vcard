@@ -199,6 +199,8 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
 .ri-uid{font-size:9px;color:var(--green);opacity:.7}
 .rel-remove{background:none;border:none;color:var(--dim);cursor:pointer;font-size:11px;padding:0 2px}
 .rel-remove:hover{color:var(--red)}
+.clone-banner{display:none;align-items:center;gap:8px;padding:7px 10px;background:rgba(0,204,196,.07);border:1px solid var(--cyan);margin-top:8px;font-size:10px;color:var(--cyan)}
+.clone-banner.show{display:flex}
 </style>
 </head>
 <body>
@@ -230,6 +232,7 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
     <div class="nav-item"        data-p="insights" onclick="show('insights')"><span class="nav-step">5</span> Insights</div>
     <div class="nav-item"        data-p="export"   onclick="show('export')">  <span class="nav-step">6</span> Export</div>
     <div class="nav-item"        data-p="viewer"   onclick="show('viewer')">  <span class="nav-step">◈</span> Raw Viewer</div>
+    <div class="nav-item"        data-p="print"    onclick="show('print')">   <span class="nav-step">⎙</span> Print</div>
     <div class="nav-item"        data-p="prefs"    onclick="show('prefs')">   <span class="nav-step">⚙</span> Preferences</div>
   </div>
   <div class="sb-footer">
@@ -311,22 +314,8 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
     <button class="btn btn-c" style="font-size:10px;padding:3px 10px" onclick="show('unify')">→ go to Unify to add files</button>
   </div>
   <hr class="divider">
-  <div class="sec-lbl">AUTO-REVIEW
-    <span style="color:var(--dim);font-weight:400"> — flag contacts that may need attention</span>
-  </div>
 
-  <div class="row" style="margin-bottom:10px;gap:6px">
-    <button class="btn btn-c" id="btn-review-run" onclick="runAutoReview()">⟳ scan contacts</button>
-    <span style="font-size:10px;color:var(--dim)" id="review-run-hint">Checks all loaded contacts for common data quality issues</span>
-  </div>
-
-  <div id="review-results" style="display:none">
-    <div class="stats-grid" id="review-stats"></div>
-    <div id="review-issues"></div>
-  </div>
-
-  <hr class="divider">
-  <div class="sec-lbl">UID CLEANUP
+  <div class="sec-lbl">STEP 1 — UID CLEANUP
     <span style="color:var(--dim);font-weight:400"> — replace vendor-issued UIDs with clean vCard Studio ones</span>
   </div>
   <div style="color:var(--dim);font-size:10px;line-height:1.9;margin-bottom:9px">
@@ -341,6 +330,49 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
   </div>
   <div id="reissue-result" style="display:none;margin-top:8px;background:rgba(0,224,64,.06);
        border:1px solid var(--green2);padding:8px 12px;font-size:10px;color:var(--green)"></div>
+
+  <hr class="divider">
+  <div class="sec-lbl">STEP 2 — PHONE FORMATTING
+    <span style="color:var(--dim);font-weight:400"> — reformat all numbers to international spacing</span>
+  </div>
+  <div style="color:var(--dim);font-size:10px;line-height:1.9;margin-bottom:9px">
+    Converts stored numbers to <code style="color:var(--text)">+44 1932 269627</code> format (GOV.UK style, no brackets).
+    Run after import if your source had inconsistent formatting.
+  </div>
+  <div class="row" style="gap:8px;align-items:center;margin-bottom:4px">
+    <button class="btn btn-c" id="btn-reformat-phones" onclick="doReformatPhones()">⟳ reformat all phones</button>
+    <span id="reformat-phones-hint" style="font-size:10px;color:var(--dim)"></span>
+  </div>
+  <div id="reformat-phones-result" style="display:none;margin-top:8px;background:rgba(0,224,64,.06);
+       border:1px solid var(--green2);padding:8px 12px;font-size:10px;color:var(--green)"></div>
+
+  <hr class="divider">
+  <div class="sec-lbl">STEP 3 — COUNTRY NAMES
+    <span style="color:var(--dim);font-weight:400"> — normalise to standard country names</span>
+  </div>
+  <div style="color:var(--dim);font-size:10px;line-height:1.9;margin-bottom:9px">
+    Merges variants like <code style="color:var(--text)">UK</code>, <code style="color:var(--text)">England</code>, <code style="color:var(--text)">Britain</code> → <code style="color:var(--text)">United Kingdom</code>.
+    Full editor is also available in Insights.
+  </div>
+  <div class="row" style="gap:8px;align-items:center;margin-bottom:4px">
+    <button class="btn btn-c" style="font-size:10px;padding:3px 12px" onclick="openCountryNormaliser()">⟳ normalise country names</button>
+    <span id="cn-hint-clean" style="font-size:10px;color:var(--dim)"></span>
+  </div>
+
+  <hr class="divider">
+  <div class="sec-lbl">STEP 4 — AUTO-REVIEW
+    <span style="color:var(--dim);font-weight:400"> — scan for contacts that may need attention</span>
+  </div>
+
+  <div class="row" style="margin-bottom:10px;gap:6px">
+    <button class="btn btn-c" id="btn-review-run" onclick="runAutoReview()">⟳ scan contacts</button>
+    <span style="font-size:10px;color:var(--dim)" id="review-run-hint">Checks all loaded contacts for common data quality issues</span>
+  </div>
+
+  <div id="review-results" style="display:none">
+    <div class="stats-grid" id="review-stats"></div>
+    <div id="review-issues"></div>
+  </div>
 
   <hr class="divider">
   <div class="sec-lbl">WHAT CLEAN DID</div>
@@ -702,6 +734,60 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
 </div>
 
 
+<!-- §9 PRINT -->
+<div id="panel-print" class="panel">
+  <div class="ph">
+    <div class="ph-title" style="color:var(--cyan)"><span style="color:var(--cyan);margin-right:5px">⎙</span>print_contacts</div>
+    <div class="ph-sub">generate a printable address book · PDF-ready</div>
+  </div>
+
+  <div class="sec-lbl">PRINT OPTIONS</div>
+  <div class="form-row">
+    <span class="form-lbl">category</span>
+    <select class="form-sel" id="print-cat" style="flex:1;max-width:240px">
+      <option value="">all contacts</option>
+    </select>
+  </div>
+  <div class="form-row" style="margin-top:8px">
+    <span class="form-lbl">paper size</span>
+    <select class="form-sel" id="print-paper" style="flex:1;max-width:240px">
+      <option value="A5">A5 — compact address book</option>
+      <option value="A4">A4 — standard portrait</option>
+      <option value="Letter">US Letter</option>
+    </select>
+  </div>
+  <div class="form-row" style="margin-top:8px">
+    <span class="form-lbl">include</span>
+    <div style="display:flex;flex-direction:column;gap:6px;margin-top:2px">
+      <label style="display:flex;align-items:center;gap:7px;font-size:11px;cursor:pointer">
+        <input type="checkbox" id="print-incl-email" checked style="accent-color:var(--cyan)"> email addresses
+      </label>
+      <label style="display:flex;align-items:center;gap:7px;font-size:11px;cursor:pointer">
+        <input type="checkbox" id="print-incl-phone" checked style="accent-color:var(--cyan)"> phone numbers
+      </label>
+      <label style="display:flex;align-items:center;gap:7px;font-size:11px;cursor:pointer">
+        <input type="checkbox" id="print-incl-address" checked style="accent-color:var(--cyan)"> addresses
+      </label>
+      <label style="display:flex;align-items:center;gap:7px;font-size:11px;cursor:pointer">
+        <input type="checkbox" id="print-incl-org" checked style="accent-color:var(--cyan)"> organisation / title
+      </label>
+      <label style="display:flex;align-items:center;gap:7px;font-size:11px;cursor:pointer">
+        <input type="checkbox" id="print-incl-note" style="accent-color:var(--cyan)"> notes
+      </label>
+      <label style="display:flex;align-items:center;gap:7px;font-size:11px;cursor:pointer">
+        <input type="checkbox" id="print-incl-cats" checked style="accent-color:var(--cyan)"> categories
+      </label>
+    </div>
+  </div>
+
+  <div class="row" style="gap:8px;margin-top:16px">
+    <button class="btn btn-a" id="btn-print-preview" onclick="openPrintPreview()">⎙ open print preview</button>
+    <span style="font-size:10px;color:var(--dim)">Opens in a new window — use browser Print (Ctrl+P / ⌘P)</span>
+  </div>
+  <div id="print-status" style="display:none;margin-top:8px;font-size:10px;color:var(--dim)"></div>
+</div>
+
+
 <!-- §7 PREFERENCES -->
 <div id="panel-prefs" class="panel">
   <div class="ph">
@@ -779,6 +865,30 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
       <input type="radio" name="pref-flags" value="hide"
              onchange="savePref('show_flags',this.value)" style="accent-color:var(--green)">
       <span><strong style="color:var(--bright)">Hide flags</strong></span>
+    </label>
+  </div>
+
+  <hr class="divider">
+  <div class="sec-lbl">PRINT OUTPUT</div>
+  <div style="font-size:10px;color:var(--dim);margin-bottom:10px">Paper size for the print / PDF view.</div>
+  <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
+    <label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:11px;color:var(--text)">
+      <input type="radio" name="pref-paper" value="A5" checked
+             onchange="savePref('paper_size',this.value)" style="accent-color:var(--green)">
+      <span><strong style="color:var(--bright)">A5</strong>
+        <span style="color:var(--dim)"> — compact, ideal for a printed address book (default)</span></span>
+    </label>
+    <label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:11px;color:var(--text)">
+      <input type="radio" name="pref-paper" value="A4"
+             onchange="savePref('paper_size',this.value)" style="accent-color:var(--green)">
+      <span><strong style="color:var(--bright)">A4</strong>
+        <span style="color:var(--dim)"> — standard portrait, fits more per page</span></span>
+    </label>
+    <label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:11px;color:var(--text)">
+      <input type="radio" name="pref-paper" value="Letter"
+             onchange="savePref('paper_size',this.value)" style="accent-color:var(--green)">
+      <span><strong style="color:var(--bright)">US Letter</strong>
+        <span style="color:var(--dim)"> — 8.5 × 11 in</span></span>
     </label>
   </div>
 
@@ -1043,6 +1153,7 @@ let S = { status:'idle', total_cards:0, dup_count:0, source_counts:{},
           category_counts:{}, sources_present:[], output_files:[], message:'', progress:0 };
 let revPage=1, revSearch='', revCat='', revKind='', revQuality='';
 let _lastKnownCardCount = -1;  // track to avoid spurious table rebuilds
+let _isFirstPoll = true;       // used to auto-navigate to Review on resume
 let splitSel = new Set();
 // For modal prev/next navigation
 let _currentPageCards = [];  // [{card, _idx, position_in_page}]
@@ -1104,7 +1215,12 @@ function applyState(d) {
       if (_revSelected.size === 0) {
         loadRevCards();
       }
+      // On first load from checkpoint (page just opened), auto-navigate to Review
+      if (_isFirstPoll && d.total_cards > 0) {
+        setTimeout(() => show('review'), 200);
+      }
     }
+    _isFirstPoll = false;
     // If we were processing (just finished), auto-advance to Clean
     if (S.status === 'processing') {
       setTimeout(() => show('clean'), 600);
@@ -1517,9 +1633,18 @@ function openEdit(pageIdx) {
   // Check if street looks like a single-line full address (city/postal already empty)
   detectSingleLineAddress(document.getElementById('edit-street'), !(adr.locality) && !(adr.postal_code));
 
-  // Related
+  // Related — always reload from server to get latest bidirectional links
   _editRelated = (c.related||[]).map(r=>({...r}));
   renderRelList('edit');
+  // Also kick off a fresh server fetch in background to catch any links added since last page load
+  reloadEditRelated(c._idx);
+  // Reset rel picker between cards — clear search, grid, and reset type to spouse
+  const relSearch = document.getElementById('edit-rel-search');
+  if (relSearch) relSearch.value = '';
+  const relGrid = document.getElementById('edit-rel-picker-grid');
+  if (relGrid) relGrid.innerHTML = '<div class="rel-no-results">Type a name above to search contacts</div>';
+  const relType = document.getElementById('edit-rel-type');
+  if (relType) relType.value = 'spouse';
   // Show clone banner if any linked person has an address
   checkCloneBanner(c);
 
@@ -1566,8 +1691,9 @@ function updateEditNav() {
 function editNav(dir) {
   const newPos = _editPagePos + dir;
   if (newPos < 0 || newPos >= _currentPageCards.length) return;
-  // Save current first
-  saveEdit(/*silent=*/true).then(() => { openEdit(newPos); });
+  // Navigate without auto-saving — avoids overwriting the next card with stale form data.
+  // User can save explicitly or on close.
+  openEdit(newPos);
 }
 
 function closeEditModal() {
@@ -1925,6 +2051,7 @@ function show(id) {
   if (id==='review') loadRevCards(revPage||1);
   if (id==='prefs') { checkSelfCards(); loadPrefCountry(); }
   if (id==='viewer') renderViewerPage(1);
+  if (id==='print') populatePrintCats();
 }
 
 async function loadPrefCountry() {
@@ -2045,11 +2172,29 @@ function renderRelList(ctx) {
   if (!list.length) { el.innerHTML = `<div style="color:var(--dim);font-size:10px;padding:3px 0 6px;">No linked people yet.</div>`; return; }
   el.innerHTML = list.map((r, i) => `
     <div class="rel-item">
-      <span class="ri-type">${r.rel_type}</span>
+      <span class="ri-type">${esc(r.rel_type)}</span>
       <span class="ri-name">${esc(r.text || r.uid || '?')}</span>
-      ${r.uid ? `<span class="ri-uid" title="Linked by UID">⊕ linked</span>` : `<span class="ri-uid">text only</span>`}
-      <button class="rel-remove" onmousedown="removeRel('${ctx}',${i})">✕</button>
+      ${r.uid ? `<span class="ri-uid" title="Linked by UID — bidirectional">⊕ linked</span>` : `<span class="ri-uid">text only</span>`}
+      <button class="rel-remove" onmousedown="${r.uid && ctx==='edit' ? `removeRelUid('${ctx}','${r.uid}',${i})` : `removeRel('${ctx}',${i})`}">✕</button>
     </div>`).join('');
+}
+
+async function removeRelUid(ctx, uid, i) {
+  // For UID-linked entries in the edit modal, remove via server (bidirectional unlink)
+  if (ctx !== 'edit') { removeRel(ctx, i); return; }
+  const fromIdx = parseInt(document.getElementById('edit-idx').value);
+  if (isNaN(fromIdx)) { removeRel(ctx, i); return; }
+  try {
+    const d = await post('/api/unlink_related', { from_idx: fromIdx, uid });
+    if (d.ok) {
+      toast(`✓ Unlinked`);
+      await reloadEditRelated(fromIdx);
+    } else {
+      toast(d.error || 'Unlink failed', true);
+    }
+  } catch(e) {
+    toast('Unlink failed', true);
+  }
 }
 
 function removeRel(ctx, i) {
@@ -2163,14 +2308,23 @@ function cloneAddress() {
 }
 
 function checkCloneBanner(card) {
-  // When opening edit modal: if there's a linked person with an address in the dataset,
-  // offer to clone. We only show it if the current card has NO address.
   dismissClone();
+  // Only offer if this card has NO address
   const hasAdr = card.addresses && card.addresses.length > 0 &&
     Object.values(card.addresses[0]).some(Boolean);
-  if (hasAdr) return; // already has an address
-  // Check if any related person exists with an address (need to search state)
-  // This will show via pickRel when user selects a linked contact
+  if (hasAdr) return;
+  // Check if any related UID-linked person has an address in our loaded state
+  const related = card.related || [];
+  for (const r of related) {
+    if (!r.uid) continue;
+    const linked = _state_cards_by_uid[r.uid];
+    if (linked && linked.addresses && linked.addresses[0] &&
+        Object.values(linked.addresses[0]).some(Boolean)) {
+      showCloneBanner('edit', linked.fn || linked.org || r.text || 'linked contact',
+                      linked.addresses[0]);
+      return;
+    }
+  }
 }
 
 function dismissClone() {
@@ -2328,17 +2482,18 @@ function analyseCards(cards) {
 
   cards.forEach(c => {
     const fn = (c.fn||'').trim();
+    const waived = new Set(c.waived || []);
 
     if (!fn || /^\d/.test(fn))
       issues.numPrefix.push(c);
 
-    if (!c.emails.length)
+    if (!c.emails.length && !waived.has('email'))
       issues.noEmail.push(c);
 
-    if (!c.tels.length)
+    if (!c.tels.length && !waived.has('phone'))
       issues.noPhone.push(c);
 
-    if (!c.categories.length)
+    if (!c.categories.length && !waived.has('category'))
       issues.noCategory.push(c);
 
     c.emails.forEach(e => {
@@ -2424,14 +2579,22 @@ function renderReviewResults(issues, total) {
         <span style="color:var(--dim);font-weight:400;font-size:9px;flex:1">— ${g.desc}</span>
         ${g.bulkActions.map(a => `<button class="ig-selall" onclick="${a.fn}('${g.key}')">${a.label}</button>`).join('')}
       </div>
-      ${visible.map((c,i) => `
+      ${visible.map((c,i) => {
+        const waiveField = {noEmail:'email', noPhone:'phone', noCategory:'category'}[g.key];
+        const isWaived = waiveField && (c.waived||[]).includes(waiveField);
+        return `
         <div class="issue-card ${g.sev}" id="ic-${g.key}-${i}">
           <input type="checkbox" class="issue-cb" data-key="${g.key}" data-i="${i}" data-idx="${c._idx}"
                  onchange="toggleIssueSelect('${g.key}',${i},this.checked)">
           <span class="issue-name">${esc(c.fn||'—')}</span>
           <span class="issue-desc">${issueDetail(g.key, c)}</span>
           <button class="issue-fix" onclick="openEditFromIssue(${c._idx})">edit →</button>
-        </div>`).join('')}
+          ${waiveField ? `<button class="issue-fix" style="background:none;border:1px solid var(--border);color:var(--dim);margin-left:4px"
+            onclick="waiveField(${c._idx},'${waiveField}','${g.key}',${i})"
+            title="Mark as intentionally absent — removes from this report">
+            ${isWaived ? '✓ not required' : '— not required'}
+          </button>` : ''}
+        </div>`}).join('')}
       ${list.length > 50 ? `<div style="color:var(--dim);font-size:10px;padding:4px 10px">… and ${list.length - 50} more — fix these first, then rescan</div>` : ''}
     </div>`;
   }).join('') + `<div class="bulk-bar" id="bulk-bar">
@@ -2442,7 +2605,40 @@ function renderReviewResults(issues, total) {
   </div>`;
 }
 
-function toggleGroupSelect(key, checked) {
+// Mark a field as "not required" for a specific card — removes it from quality scan
+async function waiveField(cardIdx, field, groupKey, issueI) {
+  try {
+    const d = await post('/api/waive_field', { index: cardIdx, field });
+    if (!d.ok) { toast(d.error || 'Failed', true); return; }
+    // Remove this row from the issue list visually
+    const row = document.getElementById(`ic-${groupKey}-${issueI}`);
+    if (row) {
+      row.style.transition = 'opacity .3s';
+      row.style.opacity = '0';
+      setTimeout(() => row.remove(), 320);
+    }
+    toast(`✓ "${field}" marked as not required — won't appear in future scans`);
+    // Update the issue count badge
+    const countEl = document.querySelector(`#ig-${groupKey} .ig-count`);
+    if (countEl) {
+      const n = parseInt(countEl.textContent) - 1;
+      countEl.textContent = n;
+      if (n <= 0) {
+        const group = document.getElementById(`ig-${groupKey}`);
+        if (group) { group.style.opacity='0'; setTimeout(()=>group.remove(),320); }
+      }
+    }
+  } catch(e) {
+    toast('Failed to mark as not required', true);
+  }
+}
+
+async function unwaiveField(cardIdx, field) {
+  try {
+    await post('/api/unwaive_field', { index: cardIdx, field });
+    toast(`✓ "${field}" requirement restored`);
+  } catch(e) { toast('Failed', true); }
+}
   const list = _issueData[key] || [];
   list.forEach((c, i) => {
     const id = `${key}:${i}`;
@@ -2885,7 +3081,7 @@ function countryFlag(name) {
 }
 
 // ══ Preferences ═══════════════════════════════════════════════════════════════
-const _PREFS = { sort_order: 'last_name', show_flags: 'show', ignore_multi_self: false };
+const _PREFS = { sort_order: 'last_name', show_flags: 'show', ignore_multi_self: false, paper_size: 'A5' };
 
 function savePref(key, value) {
   _PREFS[key] = value;
@@ -2899,12 +3095,17 @@ function loadPrefs() {
     const so = sessionStorage.getItem('vcard_pref_sort_order');
     const sf = sessionStorage.getItem('vcard_pref_show_flags');
     const ims = sessionStorage.getItem('vcard_pref_ignore_multi_self');
+    const ps = sessionStorage.getItem('vcard_pref_paper_size');
     if (so) _PREFS.sort_order = so;
     if (sf) _PREFS.show_flags = sf;
     if (ims) _PREFS.ignore_multi_self = ims === 'true';
+    if (ps) _PREFS.paper_size = ps;
   } catch(e) {}
   document.querySelectorAll('input[name="pref-sort"]').forEach(r => r.checked = r.value === _PREFS.sort_order);
   document.querySelectorAll('input[name="pref-flags"]').forEach(r => r.checked = r.value === _PREFS.show_flags);
+  document.querySelectorAll('input[name="pref-paper"]').forEach(r => r.checked = r.value === _PREFS.paper_size);
+  const paperSel = document.getElementById('print-paper');
+  if (paperSel) paperSel.value = _PREFS.paper_size;
   const imsCb = document.getElementById('pref-ignore-multi-self');
   if (imsCb) imsCb.checked = !!_PREFS.ignore_multi_self;
 }

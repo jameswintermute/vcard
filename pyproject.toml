@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vcard-normalizer"
-version = "3.1.4"
+version = "3.1.6"
 description = "Normalize, dedupe, and export vCards (strip proprietary fields, phone/country formatting)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -28,6 +28,9 @@ vcard-ui       = "vcard_normalizer.server:main"
 # dev extras for `-e .[dev]`
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "mypy>=1.11", "ruff>=0.6"]
+# Optional: Google's libphonenumber for better international phone normalisation.
+# When installed, phone numbers are validated before saving to E.164 format.
+phonenumbers = ["phonenumbers>=8.13"]
 
 # Ruff config (new location)
 [tool.ruff]
