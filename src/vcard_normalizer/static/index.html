@@ -232,6 +232,7 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
     <div class="nav-item"        data-p="insights" onclick="show('insights')"><span class="nav-step">5</span> Insights</div>
     <div class="nav-item"        data-p="export"   onclick="show('export')">  <span class="nav-step">6</span> Export</div>
     <div class="nav-item"        data-p="viewer"   onclick="show('viewer')">  <span class="nav-step">◈</span> Raw Viewer</div>
+    <div class="nav-item"        data-p="print"    onclick="show('print')">   <span class="nav-step">⎙</span> Print</div>
     <div class="nav-item"        data-p="prefs"    onclick="show('prefs')">   <span class="nav-step">⚙</span> Preferences</div>
   </div>
   <div class="sb-footer">
@@ -342,6 +343,21 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
     <span id="reissue-hint" style="font-size:10px;color:var(--dim)"></span>
   </div>
   <div id="reissue-result" style="display:none;margin-top:8px;background:rgba(0,224,64,.06);
+       border:1px solid var(--green2);padding:8px 12px;font-size:10px;color:var(--green)"></div>
+
+  <hr class="divider">
+  <div class="sec-lbl">PHONE FORMATTING
+    <span style="color:var(--dim);font-weight:400"> — reformat all numbers to international spacing</span>
+  </div>
+  <div style="color:var(--dim);font-size:10px;line-height:1.9;margin-bottom:9px">
+    Converts stored numbers to <code style="color:var(--text)">+44 20 1234 5678</code> format (spaces, no brackets).
+    Run after import if your source had inconsistent formatting.
+  </div>
+  <div class="row" style="gap:8px;align-items:center;margin-bottom:4px">
+    <button class="btn btn-c" id="btn-reformat-phones" onclick="doReformatPhones()">⟳ reformat all phones</button>
+    <span id="reformat-phones-hint" style="font-size:10px;color:var(--dim)"></span>
+  </div>
+  <div id="reformat-phones-result" style="display:none;margin-top:8px;background:rgba(0,224,64,.06);
        border:1px solid var(--green2);padding:8px 12px;font-size:10px;color:var(--green)"></div>
 
   <hr class="divider">
@@ -704,6 +720,60 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
 </div>
 
 
+<!-- §9 PRINT -->
+<div id="panel-print" class="panel">
+  <div class="ph">
+    <div class="ph-title" style="color:var(--cyan)"><span style="color:var(--cyan);margin-right:5px">⎙</span>print_contacts</div>
+    <div class="ph-sub">generate a printable address book · PDF-ready</div>
+  </div>
+
+  <div class="sec-lbl">PRINT OPTIONS</div>
+  <div class="form-row">
+    <span class="form-lbl">category</span>
+    <select class="form-sel" id="print-cat" style="flex:1;max-width:240px">
+      <option value="">all contacts</option>
+    </select>
+  </div>
+  <div class="form-row" style="margin-top:8px">
+    <span class="form-lbl">paper size</span>
+    <select class="form-sel" id="print-paper" style="flex:1;max-width:240px">
+      <option value="A5">A5 — compact address book</option>
+      <option value="A4">A4 — standard portrait</option>
+      <option value="Letter">US Letter</option>
+    </select>
+  </div>
+  <div class="form-row" style="margin-top:8px">
+    <span class="form-lbl">include</span>
+    <div style="display:flex;flex-direction:column;gap:6px;margin-top:2px">
+      <label style="display:flex;align-items:center;gap:7px;font-size:11px;cursor:pointer">
+        <input type="checkbox" id="print-incl-email" checked style="accent-color:var(--cyan)"> email addresses
+      </label>
+      <label style="display:flex;align-items:center;gap:7px;font-size:11px;cursor:pointer">
+        <input type="checkbox" id="print-incl-phone" checked style="accent-color:var(--cyan)"> phone numbers
+      </label>
+      <label style="display:flex;align-items:center;gap:7px;font-size:11px;cursor:pointer">
+        <input type="checkbox" id="print-incl-address" checked style="accent-color:var(--cyan)"> addresses
+      </label>
+      <label style="display:flex;align-items:center;gap:7px;font-size:11px;cursor:pointer">
+        <input type="checkbox" id="print-incl-org" checked style="accent-color:var(--cyan)"> organisation / title
+      </label>
+      <label style="display:flex;align-items:center;gap:7px;font-size:11px;cursor:pointer">
+        <input type="checkbox" id="print-incl-note" style="accent-color:var(--cyan)"> notes
+      </label>
+      <label style="display:flex;align-items:center;gap:7px;font-size:11px;cursor:pointer">
+        <input type="checkbox" id="print-incl-cats" checked style="accent-color:var(--cyan)"> categories
+      </label>
+    </div>
+  </div>
+
+  <div class="row" style="gap:8px;margin-top:16px">
+    <button class="btn btn-a" id="btn-print-preview" onclick="openPrintPreview()">⎙ open print preview</button>
+    <span style="font-size:10px;color:var(--dim)">Opens in a new window — use browser Print (Ctrl+P / ⌘P)</span>
+  </div>
+  <div id="print-status" style="display:none;margin-top:8px;font-size:10px;color:var(--dim)"></div>
+</div>
+
+
 <!-- §7 PREFERENCES -->
 <div id="panel-prefs" class="panel">
   <div class="ph">
@@ -781,6 +851,30 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
       <input type="radio" name="pref-flags" value="hide"
              onchange="savePref('show_flags',this.value)" style="accent-color:var(--green)">
       <span><strong style="color:var(--bright)">Hide flags</strong></span>
+    </label>
+  </div>
+
+  <hr class="divider">
+  <div class="sec-lbl">PRINT OUTPUT</div>
+  <div style="font-size:10px;color:var(--dim);margin-bottom:10px">Paper size for the print / PDF view.</div>
+  <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
+    <label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:11px;color:var(--text)">
+      <input type="radio" name="pref-paper" value="A5" checked
+             onchange="savePref('paper_size',this.value)" style="accent-color:var(--green)">
+      <span><strong style="color:var(--bright)">A5</strong>
+        <span style="color:var(--dim)"> — compact, ideal for a printed address book (default)</span></span>
+    </label>
+    <label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:11px;color:var(--text)">
+      <input type="radio" name="pref-paper" value="A4"
+             onchange="savePref('paper_size',this.value)" style="accent-color:var(--green)">
+      <span><strong style="color:var(--bright)">A4</strong>
+        <span style="color:var(--dim)"> — standard portrait, fits more per page</span></span>
+    </label>
+    <label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:11px;color:var(--text)">
+      <input type="radio" name="pref-paper" value="Letter"
+             onchange="savePref('paper_size',this.value)" style="accent-color:var(--green)">
+      <span><strong style="color:var(--bright)">US Letter</strong>
+        <span style="color:var(--dim)"> — 8.5 × 11 in</span></span>
     </label>
   </div>
 
@@ -1941,6 +2035,7 @@ function show(id) {
   if (id==='review') loadRevCards(revPage||1);
   if (id==='prefs') { checkSelfCards(); loadPrefCountry(); }
   if (id==='viewer') renderViewerPage(1);
+  if (id==='print') populatePrintCats();
 }
 
 async function loadPrefCountry() {
@@ -2910,7 +3005,7 @@ function countryFlag(name) {
 }
 
 // ══ Preferences ═══════════════════════════════════════════════════════════════
-const _PREFS = { sort_order: 'last_name', show_flags: 'show', ignore_multi_self: false };
+const _PREFS = { sort_order: 'last_name', show_flags: 'show', ignore_multi_self: false, paper_size: 'A5' };
 
 function savePref(key, value) {
   _PREFS[key] = value;
@@ -2924,12 +3019,17 @@ function loadPrefs() {
     const so = sessionStorage.getItem('vcard_pref_sort_order');
     const sf = sessionStorage.getItem('vcard_pref_show_flags');
     const ims = sessionStorage.getItem('vcard_pref_ignore_multi_self');
+    const ps = sessionStorage.getItem('vcard_pref_paper_size');
     if (so) _PREFS.sort_order = so;
     if (sf) _PREFS.show_flags = sf;
     if (ims) _PREFS.ignore_multi_self = ims === 'true';
+    if (ps) _PREFS.paper_size = ps;
   } catch(e) {}
   document.querySelectorAll('input[name="pref-sort"]').forEach(r => r.checked = r.value === _PREFS.sort_order);
   document.querySelectorAll('input[name="pref-flags"]').forEach(r => r.checked = r.value === _PREFS.show_flags);
+  document.querySelectorAll('input[name="pref-paper"]').forEach(r => r.checked = r.value === _PREFS.paper_size);
+  const paperSel = document.getElementById('print-paper');
+  if (paperSel) paperSel.value = _PREFS.paper_size;
   const imsCb = document.getElementById('pref-ignore-multi-self');
   if (imsCb) imsCb.checked = !!_PREFS.ignore_multi_self;
 }
@@ -3259,6 +3359,209 @@ function showRelLinkedConfirm(gridId, fromName, toName, relType, recipType) {
         </div>
       </div>
     </div>`;
+}
+
+// ══ Phone Reformat ════════════════════════════════════════════════════════════
+async function doReformatPhones() {
+  const btn  = document.getElementById('btn-reformat-phones');
+  const hint = document.getElementById('reformat-phones-hint');
+  const res  = document.getElementById('reformat-phones-result');
+  btn.disabled = true;
+  hint.textContent = 'reformatting…';
+  res.style.display = 'none';
+  try {
+    const d = await post('/api/reformat_phones', {});
+    btn.disabled = false;
+    hint.textContent = '';
+    if (!d.ok) { toast(d.error || 'Failed', true); return; }
+    res.style.display = '';
+    res.innerHTML = `✓ <strong>${d.reformatted}</strong> number${d.reformatted!==1?'s':''} reformatted`
+      + (d.unchanged ? ` · ${d.unchanged} already correct` : '')
+      + (d.failed    ? ` · <span style="color:var(--amber)">${d.failed} could not be parsed</span>` : '')
+      + `<br><span style="color:var(--dim)">All numbers now use +CC NNN NNN NNNN spacing. Checkpoint saved.</span>`;
+    toast(`✓ ${d.reformatted} phones reformatted`);
+    loadRevCards(revPage || 1);
+  } catch(e) { btn.disabled=false; hint.textContent=''; toast('Reformat failed', true); }
+}
+
+// ══ Print / PDF ════════════════════════════════════════════════════════════════
+function populatePrintCats() {
+  const sel = document.getElementById('print-cat');
+  if (!sel) return;
+  const cats = Object.keys(S.category_counts || {}).sort();
+  sel.innerHTML = '<option value="">all contacts</option>' +
+    cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  const paper = document.getElementById('print-paper');
+  if (paper) paper.value = _PREFS.paper_size || 'A5';
+}
+
+async function openPrintPreview() {
+  const btn = document.getElementById('btn-print-preview');
+  const status = document.getElementById('print-status');
+  btn.disabled = true;
+  status.style.display = '';
+  status.textContent = 'Loading contacts…';
+
+  const cat      = document.getElementById('print-cat').value;
+  const paper    = document.getElementById('print-paper').value || _PREFS.paper_size || 'A5';
+  const inclEmail   = document.getElementById('print-incl-email').checked;
+  const inclPhone   = document.getElementById('print-incl-phone').checked;
+  const inclAddress = document.getElementById('print-incl-address').checked;
+  const inclOrg     = document.getElementById('print-incl-org').checked;
+  const inclNote    = document.getElementById('print-incl-note').checked;
+  const inclCats    = document.getElementById('print-incl-cats').checked;
+
+  try {
+    const params = new URLSearchParams({ sort_order: _PREFS.sort_order });
+    if (cat) params.set('category', cat);
+    const d = await (await fetch('/api/print_cards?' + params)).json();
+    if (!d.ok || !d.cards.length) {
+      toast('No contacts to print', true);
+      btn.disabled = false; status.style.display = 'none'; return;
+    }
+
+    const html = buildPrintDocument(d.cards, {
+      paper, inclEmail, inclPhone, inclAddress, inclOrg, inclNote, inclCats,
+      generated: d.generated, version: d.version, total: d.total, category: cat
+    });
+
+    const w = window.open('', '_blank');
+    if (!w) { toast('Pop-up blocked — allow pop-ups for localhost', true); btn.disabled=false; status.style.display='none'; return; }
+    w.document.write(html);
+    w.document.close();
+    status.style.display = 'none';
+    btn.disabled = false;
+  } catch(e) {
+    toast('Print preview failed', true);
+    btn.disabled = false; status.style.display = 'none';
+  }
+}
+
+function buildPrintDocument(cards, opts) {
+  const {paper, inclEmail, inclPhone, inclAddress, inclOrg, inclNote, inclCats,
+         generated, version, total, category} = opts;
+
+  const paperCSS = {
+    'A5':     '@page { size: A5 portrait; margin: 14mm 12mm; }',
+    'A4':     '@page { size: A4 portrait; margin: 20mm 18mm; }',
+    'Letter': '@page { size: letter portrait; margin: 20mm 18mm; }',
+  }[paper] || '@page { size: A5 portrait; margin: 14mm 12mm; }';
+
+  function cardHtml(c) {
+    const name = c.fn || c.org || '—';
+    const emails = c.emails || []; const tels = c.tels || [];
+    const cats   = c.categories || []; const addrs = c.addresses || [];
+    const orgLine = inclOrg && c.org && c.org !== c.fn
+      ? `<div class="pc-org">${esc(c.org)}${c.title ? ` <span class="pc-title">· ${esc(c.title)}</span>` : ''}</div>` : '';
+    const catLine = inclCats && cats.length
+      ? `<div class="pc-cats">${cats.map(x=>`<span class="pc-cat">${esc(x)}</span>`).join('')}</div>` : '';
+    let details = '';
+    if (inclPhone && tels.length)
+      details += tels.map(t=>`<div class="pc-row"><span class="pc-lbl">☏</span> ${esc(t)}</div>`).join('');
+    if (inclEmail && emails.length)
+      details += emails.map(e=>`<div class="pc-row"><span class="pc-lbl">@</span> ${esc(e)}</div>`).join('');
+    if (inclAddress && addrs.length) {
+      const a = addrs[0];
+      const parts = [a.street, a.locality, a.region, a.postal_code, a.country].filter(Boolean);
+      if (parts.length) details += `<div class="pc-row"><span class="pc-lbl">⌂</span> ${parts.map(esc).join(', ')}</div>`;
+    }
+    if (inclNote && c.note)
+      details += `<div class="pc-row pc-note"><span class="pc-lbl">✎</span> ${esc(c.note)}</div>`;
+    const kindMark = c.kind==='org' ? '🏢' : c.kind==='self' ? '⭐' : '';
+    return `<div class="pc">
+      <div class="pc-name">${kindMark?`<span class="pc-kind">${kindMark}</span> `:''}${esc(name)}</div>
+      ${orgLine}${catLine}${details?`<div class="pc-details">${details}</div>`:''}
+    </div>`;
+  }
+
+  const catLabel = category ? ` — ${category}` : '';
+  const subtitle = `${total} contact${total!==1?'s':''}${catLabel}`;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>vCard Studio — Address Book</title>
+<style>
+${paperCSS}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9pt;color:#1a1a1a;background:#fff;line-height:1.4}
+.title-page{display:flex;flex-direction:column;justify-content:flex-start;padding-top:30mm;
+  height:100vh;page-break-after:always}
+.tp-rule{width:40mm;height:3px;background:#00c060;margin-bottom:12mm}
+.tp-wordmark{font-size:28pt;font-weight:900;color:#111;letter-spacing:-.02em;line-height:1}
+.tp-wordmark .v{color:#00c060}
+.tp-subtitle{font-size:10pt;color:#555;margin-top:4mm;margin-bottom:10mm;letter-spacing:.04em;text-transform:uppercase}
+.tp-meta{font-size:8.5pt;color:#444;line-height:2.2}
+.tp-meta strong{color:#111;font-weight:600}
+.tp-tagline{margin-top:16mm;font-size:7.5pt;color:#aaa;font-style:italic;border-top:1px solid #e8e8e8;padding-top:5mm}
+.page-header{display:flex;justify-content:space-between;align-items:baseline;
+  border-bottom:1.5px solid #111;padding-bottom:2mm;margin-bottom:5mm}
+.ph-left{font-size:8pt;font-weight:700;color:#111;letter-spacing:.08em;text-transform:uppercase}
+.ph-right{font-size:7pt;color:#999}
+.contacts-grid{columns:2;column-gap:4mm}
+.pc{break-inside:avoid;border:0.5pt solid #ddd;border-left:2pt solid #00c060;
+    padding:2.5mm 3mm;margin-bottom:2.5mm;background:#fff}
+.pc-name{font-size:9.5pt;font-weight:700;color:#111;margin-bottom:0.8mm}
+.pc-kind{font-size:8pt}
+.pc-org{font-size:7.5pt;color:#555;margin-bottom:0.8mm}
+.pc-title{color:#999;font-style:italic}
+.pc-cats{margin-bottom:1.5mm}
+.pc-cat{display:inline-block;font-size:6pt;color:#00a050;border:0.5pt solid #b8e4c8;
+  padding:0.3mm 1.5mm;border-radius:2px;margin-right:1mm;margin-bottom:0.5mm}
+.pc-details{margin-top:1.5mm;border-top:0.5pt solid #eee;padding-top:1.5mm}
+.pc-row{font-size:7.5pt;color:#333;padding:0.2mm 0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.pc-lbl{color:#ccc;font-size:6.5pt;width:4mm;display:inline-block}
+.pc-note{color:#888;font-style:italic}
+.back-page{page-break-before:always;display:flex;flex-direction:column;
+  justify-content:flex-end;height:100vh;padding-bottom:20mm}
+.bp-rule{width:20mm;height:2px;background:#00c060;margin-bottom:7mm}
+.bp-title{font-size:13pt;font-weight:700;color:#111;margin-bottom:5mm}
+.bp-body{font-size:8pt;color:#444;line-height:1.9;max-width:110mm}
+.bp-body p{margin-bottom:3mm}
+.bp-url{font-size:7.5pt;color:#00a050;margin-top:4mm;font-family:monospace}
+.bp-lic{margin-top:6mm;font-size:7pt;color:#aaa;border-top:0.5pt solid #e8e8e8;padding-top:4mm}
+@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style>
+</head>
+<body>
+<div class="title-page">
+  <div class="tp-rule"></div>
+  <div class="tp-wordmark"><span class="v">v</span>card studio</div>
+  <div class="tp-subtitle">Address Book${catLabel ? ` · ${esc(catLabel.replace(' — ',''))}` : ''}</div>
+  <div class="tp-meta">
+    <div><strong>Contacts</strong> &nbsp; ${total}</div>
+    <div><strong>Generated</strong> &nbsp; ${esc(generated)}</div>
+    <div><strong>Version</strong> &nbsp; ${esc(version)}</div>
+    <div><strong>Format</strong> &nbsp; ${esc(paper)}</div>
+  </div>
+  <div class="tp-tagline">local · no cloud · offline-first · GNU GPL v3</div>
+</div>
+<div class="page-header">
+  <span class="ph-left">Address Book</span>
+  <span class="ph-right">${esc(subtitle)} · ${esc(generated)}</span>
+</div>
+<div class="contacts-grid">
+${cards.map(cardHtml).join('\n')}
+</div>
+<div class="back-page">
+  <div class="bp-rule"></div>
+  <div class="bp-title">About vCard Studio</div>
+  <div class="bp-body">
+    <p>vCard Studio is a free, offline-first tool for reclaiming control of your address book.
+    Before the internet became commercial infrastructure, a contact list was something deeply personal —
+    the names and numbers of the people who mattered. It was private. It was trusted. It was yours.</p>
+    <p>This tool consolidates and de-duplicates multiple exports from Apple, Google, Proton, and
+    Outlook into a single clean standards-compliant vCard 4.0 dataset. It runs entirely on your
+    machine — no remote server, no background syncing, no data leaving your device.</p>
+    <p>Your contacts are not a product. They are relationships. Own them. Protect them.</p>
+  </div>
+  <div class="bp-url">https://github.com/jameswintermute/vcard</div>
+  <div class="bp-lic">Released under the GNU General Public License (GPL-3.0-or-later) · Free to use, study, modify and share.</div>
+</div>
+<script>window.onload=function(){window.print();}<\/script>
+</body></html>`;
 }
 
 // ══ Country Normaliser ═══════════════════════════════════════════════════════

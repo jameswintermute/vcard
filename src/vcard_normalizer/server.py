@@ -22,7 +22,7 @@ from urllib.parse import parse_qs, urlparse
 # ── Resolve project root (2 levels up from this file: src/vcard_normalizer/) ──
 _HERE = Path(__file__).resolve().parent
 _ROOT = _HERE.parent.parent   # project root
-_VERSION = "3.1.5"
+_VERSION = "3.1.6"
 _STATIC = _HERE / "static"    # HTML/CSS/JS lives here
 
 PORT = 8421
@@ -1032,6 +1032,90 @@ def _api_card_raw(params: dict) -> dict:
         return {"ok": False, "error": str(exc)}
 
 
+def _api_print_cards(params: dict) -> dict:
+    """Return all cards formatted for the print/PDF view."""
+    cards = _state["cards"]
+    category = params.get("category", [""])[0]
+    sort_order = params.get("sort_order", ["last_name"])[0]
+
+    indexed = list(enumerate(cards))
+    if category:
+        indexed = [(i,c) for i,c in indexed if category in c.categories]
+
+    def _sk(pair):
+        _, c = pair
+        name = getattr(c, "name", None)
+        fn = (c.fn or "").strip()
+        org = (c.org or "").strip()
+        family = (name.family or "").strip() if name and name.family else ""
+        given  = (name.given  or "").strip() if name and name.given  else ""
+        if c.kind == "org":
+            return (0, org.lower() or fn.lower(), "")
+        if sort_order == "first_name":
+            return (1, given.lower() or fn.lower(), family.lower())
+        return (1, family.lower() or fn.lower(), given.lower())
+
+    indexed.sort(key=_sk)
+    result = [_card_to_dict(c) for _, c in indexed]
+    from datetime import datetime as _dt
+    return {
+        "ok": True,
+        "cards": result,
+        "total": len(result),
+        "generated": _dt.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
+        "version": _VERSION,
+    }
+
+
+def _api_reformat_phones(body: dict) -> dict:
+    """Reformat all phone numbers in loaded cards to E.164 international spacing.
+
+    Uses phonenumbers library with the configured default_region as fallback.
+    Returns count of numbers reformatted.
+    """
+    cards = _state["cards"]
+    try:
+        import phonenumbers
+        p = _get_pipeline()
+        _, settings = p["ensure_workspace"](_ROOT)
+        region = settings.default_region or "GB"
+
+        reformatted = 0
+        unchanged = 0
+        failed = 0
+        for card in cards:
+            new_tels = []
+            for raw in (card.tels or []):
+                raw = raw.strip()
+                if not raw:
+                    continue
+                try:
+                    parsed = phonenumbers.parse(raw, region)
+                    if phonenumbers.is_valid_number(parsed):
+                        formatted = phonenumbers.format_number(
+                            parsed, phonenumbers.PhoneNumberFormat.INTERNATIONAL
+                        )
+                        if formatted != raw:
+                            reformatted += 1
+                        else:
+                            unchanged += 1
+                        new_tels.append(formatted)
+                    else:
+                        new_tels.append(raw)
+                        failed += 1
+                except Exception:
+                    new_tels.append(raw)
+                    failed += 1
+            card.tels = new_tels
+        if reformatted:
+            _autosave_checkpoint()
+        return {"ok": True, "reformatted": reformatted, "unchanged": unchanged, "failed": failed}
+    except ImportError:
+        return {"ok": False, "error": "phonenumbers library not available"}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
 def _api_normalise_countries(body: dict) -> dict:
     """Analyse or apply country name normalisation.
 
@@ -1126,17 +1210,12 @@ def _api_normalise_countries(body: dict) -> dict:
     suggestions = []
     for raw, count in sorted(seen.items(), key=lambda x: -x[1]):
         lo = raw.lower().strip()
+        # Direct lookup only — no fuzzy/prefix matching (that caused wrong suggestions)
         canonical = CANONICAL.get(lo)
-        # If no direct match, try prefix/contains match
-        if not canonical:
-            for k, v in CANONICAL.items():
-                if lo.startswith(k) or k.startswith(lo):
-                    canonical = v
-                    break
         suggestions.append({
             "raw": raw,
             "count": count,
-            "suggested": canonical or raw,  # suggest self if no match (already canonical)
+            "suggested": canonical or raw,
             "needs_fix": canonical is not None and canonical != raw,
         })
 
@@ -1254,6 +1333,8 @@ class VCardHandler(BaseHTTPRequestHandler):
             self._send_json(_api_settings())
         elif path == "/api/card_raw":
             self._send_json(_api_card_raw(params))
+        elif path == "/api/print_cards":
+            self._send_json(_api_print_cards(params))
         elif path == "/api/search_orgs":
             self._send_json(_api_search_orgs(params))
         elif path == "/api/quit":
@@ -1284,6 +1365,8 @@ class VCardHandler(BaseHTTPRequestHandler):
             self._send_json(_api_reissue_uids(body))
         elif path == "/api/normalise_countries":
             self._send_json(_api_normalise_countries(body))
+        elif path == "/api/reformat_phones":
+            self._send_json(_api_reformat_phones(body))
         elif path == "/api/export_csv":
             self._send_json(_api_export_csv(body))
         elif path == "/api/update_card":
