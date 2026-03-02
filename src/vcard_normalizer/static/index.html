@@ -454,7 +454,7 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
   <div class="pag" id="rev-pag"></div>
   <!-- Merge bar — appears when 2+ rows are checked -->
   <div id="rev-merge-bar" style="display:none;position:sticky;bottom:0;background:var(--bg2);
-       border-top:1px solid var(--amber);padding:8px 12px;display:none;
+       border-top:1px solid var(--amber);padding:8px 12px;
        align-items:center;gap:12px;z-index:50">
     <span id="rev-merge-count" style="font-size:11px;color:var(--amber)">0 selected</span>
     <button class="btn" style="background:rgba(255,170,0,.1);border-color:var(--amber);color:var(--amber);font-size:10px"
@@ -944,7 +944,7 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
 </div>
 
 <!-- §8 BIRTHDAYS -->
-<div id="panel-birthdays" class="panel" style="display:none">
+<div id="panel-birthdays" class="panel">
   <div class="ph">
     <div class="ph-title" style="color:var(--green)">🎂 birthdays_and_anniversaries</div>
     <div class="ph-sub">month-by-month · age calculations · print calendar</div>
@@ -4022,6 +4022,116 @@ function parseSingleLineAddressAdd() {
 async function post(url,body){return(await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();}
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function toast(msg,err){const el=document.getElementById('toast');el.textContent=msg;el.className='show'+(err?' err':'');clearTimeout(el._t);el._t=setTimeout(()=>el.className='',3500);}
+
+// ══ Quality filter for Review panel ══════════════════════════════════════════
+function onRevQualityFilter() {
+  const sel = document.getElementById('rev-quality');
+  revQuality = sel ? sel.value : '';
+  revPage = 1;
+  loadRevCards(1);
+}
+
+// ══ Birthdays panel ═══════════════════════════════════════════════════════════
+const MONTH_NAMES = ['January','February','March','April','May','June',
+                     'July','August','September','October','November','December'];
+
+async function loadBirthdays() {
+  const resultsEl = document.getElementById('bday-results');
+  if (!resultsEl) return;
+  resultsEl.innerHTML = '<div style="color:var(--dim);font-size:10px;padding:16px 0">Loading\u2026</div>';
+
+  // Get birthday category prefs
+  const catBoxes = document.querySelectorAll('#pref-bday-cats input[type=checkbox]');
+  let cats = [];
+  if (catBoxes.length) {
+    catBoxes.forEach(cb => { if (cb.checked) cats.push(cb.value); });
+    if (!cats.length) cats = ['friends','family','familyextended'];
+  }
+
+  const hint = document.getElementById('bday-cats-hint');
+  if (hint) hint.textContent = cats.length ? 'Showing: ' + cats.join(', ') : 'Showing: all categories';
+
+  try {
+    const d = await post('/api/birthdays', cats.length ? {categories: cats} : {});
+    if (!d.ok || !d.events || !d.events.length) {
+      resultsEl.innerHTML = '<div style="color:var(--dim);font-size:10px;padding:16px 0">No birthdays or anniversaries found for the selected categories.</div>';
+      return;
+    }
+
+    const byMonth = {};
+    for (const ev of d.events) {
+      if (!byMonth[ev.month]) byMonth[ev.month] = [];
+      byMonth[ev.month].push(ev);
+    }
+
+    let html = '';
+    for (const month of Object.keys(byMonth).sort((a,b)=>+a-+b)) {
+      const mName = MONTH_NAMES[month-1] || 'Month ' + month;
+      html += `<div class="bday-month-hdr">${mName}</div>`;
+      for (const ev of byMonth[month]) {
+        const icon = ev.event_type === 'anniversary' ? '💍' : '🎂';
+        const dayStr = ev.day ? String(ev.day).padStart(2,'0') : '??';
+        const dateLabel = ev.year ? `${mName.slice(0,3)} ${dayStr}, ${ev.year}` : `${mName.slice(0,3)} ${dayStr}`;
+        const ageLabel = ev.age != null ? `<span style="color:var(--dim);font-size:10px"> (turns ${ev.age})</span>` : '';
+        const typeLabel = ev.event_type === 'anniversary'
+          ? `<span style="color:var(--purple);font-size:9px;margin-left:6px">anniversary</span>` : '';
+        html += `<div class="bday-row">
+          <span class="bday-icon">${icon}</span>
+          <span class="bday-name" onclick="jumpRevByName(${JSON.stringify(ev.fn)})" title="Open in Review">${esc(ev.fn)}</span>
+          <span class="bday-date">${dateLabel}${ageLabel}${typeLabel}</span>
+        </div>`;
+      }
+    }
+    resultsEl.innerHTML = html;
+  } catch(e) {
+    resultsEl.innerHTML = `<div style="color:var(--red);font-size:10px;padding:16px 0">Error loading birthdays: ${esc(e.message)}</div>`;
+    console.error('loadBirthdays error:', e);
+  }
+}
+
+function jumpRevByName(name) {
+  revSearch = name;
+  revCat = ''; revKind = ''; revQuality = ''; revPage = 1;
+  show('review');
+  const qEl = document.getElementById('rev-q');
+  if (qEl) qEl.value = name;
+  loadRevCards(1);
+}
+
+function printBirthdays() {
+  const resultsEl = document.getElementById('bday-results');
+  if (!resultsEl || !resultsEl.querySelector('.bday-row')) {
+    toast('Load birthdays first (click \u27f3 refresh)', true);
+    return;
+  }
+  const hint = document.getElementById('bday-cats-hint');
+  const subtitle = hint ? hint.textContent : '';
+  const w = window.open('', '_blank');
+  if (!w) { toast('Pop-up blocked — allow pop-ups and try again', true); return; }
+  const inner = resultsEl.innerHTML
+    .replace(/class="bday-month-hdr"/g, 'class="month"')
+    .replace(/class="bday-row"/g, 'class="row"')
+    .replace(/class="bday-icon"/g, 'class="icon"')
+    .replace(/class="bday-name"[^>]*>/g, 'class="name">')
+    .replace(/class="bday-date"/g, 'class="date"')
+    .replace(/onclick="[^"]*"/g, '');
+  w.document.write(`<!DOCTYPE html><html><head><title>Birthday Calendar</title>
+<style>
+body{font-family:monospace;font-size:12px;margin:30px;color:#111}
+h1{font-size:16px;margin-bottom:4px}.sub{font-size:10px;color:#666;margin-bottom:24px}
+.month{font-size:11px;font-weight:bold;text-transform:uppercase;letter-spacing:.1em;
+       color:#333;margin:18px 0 5px;border-bottom:1px solid #ccc;padding-bottom:3px}
+.row{display:flex;gap:12px;padding:4px 0;border-bottom:1px solid #eee}
+.icon{width:18px;flex-shrink:0}.name{width:220px}.date{color:#555}
+@media print{body{margin:15mm}}
+</style></head><body>
+<h1>&#127874; Birthday &amp; Anniversary Calendar</h1>
+<div class="sub">${esc(subtitle)} &middot; Generated ${new Date().toLocaleDateString()}</div>
+${inner}
+</body></html>`);
+  w.document.close();
+  setTimeout(() => w.print(), 400);
+}
 </script>
 </body>
 </html>
