@@ -22,7 +22,7 @@ from urllib.parse import parse_qs, urlparse
 # ── Resolve project root (2 levels up from this file: src/vcard_normalizer/) ──
 _HERE = Path(__file__).resolve().parent
 _ROOT = _HERE.parent.parent   # project root
-_VERSION = "3.1.6"
+_VERSION = "3.2.0"
 _STATIC = _HERE / "static"    # HTML/CSS/JS lives here
 
 PORT = 8421

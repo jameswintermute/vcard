@@ -5,6 +5,17 @@ from typing import Any
 
 
 @dataclass
+class TypedValue:
+    """A string value with an optional type label (HOME, WORK, CELL, FAX, etc.)"""
+    value: str
+    type: str = ""   # HOME | WORK | CELL | FAX | PAGER | OTHER | ""
+
+    def label(self) -> str:
+        """Human-readable label."""
+        return self.type.upper() if self.type else ""
+
+
+@dataclass
 class Address:
     po_box: str | None = None
     extended: str | None = None
@@ -76,6 +87,10 @@ class Card:
     # Keep n as a read-only alias for backward compat with old code
     emails: list[str] = field(default_factory=list)
     tels: list[str] = field(default_factory=list)
+    # Typed versions — parallel lists to emails/tels, same order, holding type label
+    # e.g. typed_emails[0].type = "WORK", typed_tels[1].type = "HOME"
+    typed_emails: list[TypedValue] = field(default_factory=list)
+    typed_tels: list[TypedValue] = field(default_factory=list)
     org: str | None = None
     title: str | None = None       # job title (TITLE field)
     bday: str | None = None        # BDAY — ISO date or --MMDD

@@ -5,7 +5,7 @@ import uuid as _uuid_mod
 
 import vobject
 
-from .model import Address, Card, NameComponents, Related
+from .model import Address, Card, NameComponents, Related, TypedValue
 
 # ── UID normalisation ─────────────────────────────────────────────────────────
 
@@ -96,6 +96,32 @@ def strip_photos(vc: vobject.base.Component) -> int:
     return len(to_remove)
 
 
+def _get_type_param(prop) -> str:
+    """Extract the TYPE parameter (HOME, WORK, CELL, etc.) from a vobject property.
+
+    Returns empty string if no type is set.
+    """
+    try:
+        tp = None
+        if hasattr(prop, "type_param"):
+            tp = prop.type_param
+        elif hasattr(prop, "params"):
+            tp = prop.params.get("TYPE", None)
+        if tp is None:
+            return ""
+        if isinstance(tp, list):
+            # vobject may return list — take first meaningful value
+            for v in tp:
+                s = str(v).upper().strip()
+                if s and s not in ("INTERNET", "PREF", "X400"):
+                    return s
+            return ""
+        s = str(tp).upper().strip()
+        return s if s not in ("INTERNET", "PREF", "X400") else ""
+    except Exception:
+        return ""
+
+
 def normalize_cards(
     vcards: list[tuple[vobject.base.Component, str]],
 ) -> list[Card]:
@@ -126,16 +152,24 @@ def normalize_cards(
                     name = NameComponents.from_vcard_str(raw)
 
         emails: list[str] = []
+        typed_emails: list[TypedValue] = []
         for e in getattr(vc, "email_list", []):
             val = _get_text(e)
             if val:
-                emails.append(val.lower())
+                val = val.lower()
+                emails.append(val)
+                # Extract TYPE parameter (HOME, WORK, etc.)
+                etype = _get_type_param(e)
+                typed_emails.append(TypedValue(value=val, type=etype))
 
         tels: list[str] = []
+        typed_tels: list[TypedValue] = []
         for t in getattr(vc, "tel_list", []):
             val = re.sub(r"\s+", "", _get_text(t, ""))
             if val:
                 tels.append(val)
+                ttype = _get_type_param(t)
+                typed_tels.append(TypedValue(value=val, type=ttype))
 
         org = None
         if getattr(vc, "org", None):
@@ -199,7 +233,8 @@ def normalize_cards(
         note = _get_text(getattr(vc, "note", None))
 
         # Parse X-VCARD-STUDIO-WAIVED — "not required" field markers
-        waived_raw = _get_text(getattr(vc, "x-vcard-studio-waived", None))
+        # vobject stores X- properties with hyphens converted to underscores
+        waived_raw = _get_text(getattr(vc, "x_vcard_studio_waived", None))
         waived: set = set()
         if waived_raw:
             waived = {f.strip() for f in waived_raw.split(",") if f.strip()}
@@ -210,6 +245,8 @@ def normalize_cards(
             name=name,
             emails=emails,
             tels=tels,
+            typed_emails=typed_emails,
+            typed_tels=typed_tels,
             org=org,
             title=title,
             bday=bday,
@@ -221,8 +258,10 @@ def normalize_cards(
             related=related,
             note=note,
             _source_files=[source_label],
-            _waived=waived,
         )
+        # Restore "not required" field markers (persisted as X-VCARD-STUDIO-WAIVED)
+        if waived:
+            card._waived = waived
         if photo_count:
             card.log_change(f"Stripped {photo_count} photo/logo/sound property(ies)")
         # Log UID replacement (old_uid set above if vendor UID was found)

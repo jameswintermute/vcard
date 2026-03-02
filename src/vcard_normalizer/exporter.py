@@ -59,13 +59,25 @@ def _serialise_one(c: Card, target_version: str = "4.0") -> str:
         if c.name.prefix and c.fn and not c.fn.startswith(c.name.prefix):
             v.fn.value = f"{c.name.prefix} {c.fn}"
 
+        # Emails — write with TYPE params (HOME/WORK) from typed_emails
+        typed_email_map = {tv.value: tv.type for tv in (c.typed_emails or [])}
         for e in sorted(set(c.emails)):
             it = v.add("email")
             it.value = e
-            it.type_param = "INTERNET"
+            etype = typed_email_map.get(e, "").upper()
+            if etype and etype not in ("INTERNET",):
+                it.type_param = [etype, "INTERNET"]
+            else:
+                it.type_param = "INTERNET"
 
+        # Tels — write with TYPE params (HOME/WORK/CELL) from typed_tels
+        typed_tel_map = {tv.value: tv.type for tv in (c.typed_tels or [])}
         for t in sorted(set(c.tels)):
-            v.add("tel").value = t
+            tel = v.add("tel")
+            tel.value = t
+            ttype = typed_tel_map.get(t, "").upper()
+            if ttype:
+                tel.type_param = ttype
 
         if c.org:
             try:
