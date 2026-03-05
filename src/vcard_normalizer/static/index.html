@@ -3549,7 +3549,24 @@ function addRelConfirmation(ctx, fromName, toName, relType, recipType) {
 function showRelLinkedConfirm(gridId, fromName, toName, relType, recipType) {
   const grid = document.getElementById(gridId);
   if (!grid) return;
-  grid.innerHTML = `<div class="rel-no-results">⊕ Linked as <strong>${esc(relType)}</strong>. Search to add more.</div>`;
+  const recip = recipType ? ` ↔ ${recipType} on their card` : '';
+  grid.innerHTML = `
+    <div style="grid-column:1/-1;background:rgba(0,224,64,.08);border:1px solid var(--green2);
+         padding:10px 12px;display:flex;align-items:center;gap:10px">
+      <span style="color:var(--green);font-size:16px">⊕</span>
+      <div>
+        <div style="color:var(--green);font-size:11px;font-weight:700">
+          ${fromName ? `${esc(fromName)} linked as <strong>${esc(relType)}</strong> of ${esc(toName)}` : `Linked as <strong>${esc(relType)}</strong> of ${esc(toName)}`}
+        </div>
+        ${recipType ? `<div style="font-size:10px;color:var(--dim);margin-top:2px">↔ ${esc(toName)} has been updated as <strong>${esc(recipType)}</strong> on their card automatically</div>` : ''}
+        <div style="margin-top:6px">
+          <button class="btn btn-d" style="font-size:10px;padding:2px 8px"
+            onclick="this.closest('[id]').innerHTML='<div class=\\'rel-no-results\\'>Type a name above to search contacts</div>'">
+            link another…
+          </button>
+        </div>
+      </div>
+    </div>`;
 }
 
 // ══ Country Normaliser ═══════════════════════════════════════════════════════
@@ -4069,149 +4086,6 @@ async function post(url,body){return(await fetch(url,{method:'POST',headers:{'Co
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function toast(msg,err){const el=document.getElementById('toast');el.textContent=msg;el.className='show'+(err?' err':'');clearTimeout(el._t);el._t=setTimeout(()=>el.className='',3500);}
 
-// ══ Typed email rows (edit modal) ════════════════════════════════════════════
-const EMAIL_TYPES = ['', 'HOME', 'WORK', 'OTHER'];
-const TEL_TYPES   = ['', 'HOME', 'WORK', 'CELL', 'OTHER'];
-
-function _typedRowHtml(listId, rowIdx, value, type, typeOptions) {
-  const opts = typeOptions.map(t => `<option value="${t}" ${t===type?'selected':''}>${t||'—'}</option>`).join('');
-  return `<div id="${listId}-row-${rowIdx}" style="display:flex;gap:4px;align-items:center;margin-bottom:3px">
-    <input class="form-in" style="flex:1;max-width:none" value="${esc(value)}" placeholder="value"
-           oninput="this.parentElement._dirty=true">
-    <select class="flt-sel" style="width:72px">${opts}</select>
-    <button class="row-btn del" style="padding:1px 7px" onclick="this.closest('[id]').remove()">✕</button>
-  </div>`;
-}
-
-function renderTypedEmailRows(items) {
-  const list = document.getElementById('edit-emails-list');
-  if (!list) return;
-  list.innerHTML = items.map((item, i) =>
-    _typedRowHtml('edit-emails-list', i, item.value||'', (item.type||'').toUpperCase(), EMAIL_TYPES)
-  ).join('');
-}
-
-function renderTypedTelRows(items) {
-  const list = document.getElementById('edit-tels-list');
-  if (!list) return;
-  list.innerHTML = items.map((item, i) =>
-    _typedRowHtml('edit-tels-list', i, item.value||'', (item.type||'').toUpperCase(), TEL_TYPES)
-  ).join('');
-}
-
-function addTypedEmailRow() {
-  const list = document.getElementById('edit-emails-list');
-  if (!list) return;
-  const i = list.children.length;
-  const div = document.createElement('div');
-  div.innerHTML = _typedRowHtml('edit-emails-list', i, '', '', EMAIL_TYPES);
-  list.appendChild(div.firstElementChild);
-  list.lastElementChild.querySelector('input').focus();
-}
-
-function addTypedTelRow() {
-  const list = document.getElementById('edit-tels-list');
-  if (!list) return;
-  const i = list.children.length;
-  const div = document.createElement('div');
-  div.innerHTML = _typedRowHtml('edit-tels-list', i, '', '', TEL_TYPES);
-  list.appendChild(div.firstElementChild);
-  list.lastElementChild.querySelector('input').focus();
-}
-
-function collectTypedEmailRows() {
-  const list = document.getElementById('edit-emails-list');
-  if (!list) return [];
-  return [...list.children].map(row => ({
-    value: row.querySelector('input').value.trim().toLowerCase(),
-    type:  row.querySelector('select').value,
-  })).filter(r => r.value);
-}
-
-function collectTypedTelRows() {
-  const list = document.getElementById('edit-tels-list');
-  if (!list) return [];
-  return [...list.children].map(row => ({
-    value: row.querySelector('input').value.trim(),
-    type:  row.querySelector('select').value,
-  })).filter(r => r.value);
-}
-
-// ══ Birthday category preferences ════════════════════════════════════════════
-const _DEFAULT_BDAY_CATS = ['friends', 'family', 'familyextended'];
-
-async function loadBdayCatPrefs() {
-  const container = document.getElementById('pref-bday-cats');
-  if (!container) return;
-
-  // Get all known categories from the current status
-  let allCats = [];
-  try {
-    const d = await (await fetch('/api/status')).json();
-    allCats = d.categories || [];
-  } catch(e) {}
-
-  // Load saved prefs from session storage
-  let savedCats;
-  try {
-    const raw = sessionStorage.getItem('vcard_bday_cats');
-    savedCats = raw ? JSON.parse(raw) : null;
-  } catch(e) { savedCats = null; }
-  const activeCats = new Set(savedCats || _DEFAULT_BDAY_CATS);
-
-  // Always show the default cats even if no contacts loaded
-  const displayCats = allCats.length ? allCats : [...new Set([..._DEFAULT_BDAY_CATS, ...activeCats])];
-
-  container.innerHTML = displayCats.map(cat => {
-    const checked = activeCats.has(cat) ? 'checked' : '';
-    return `<label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:11px;color:var(--text)">
-      <input type="checkbox" value="${esc(cat)}" ${checked}
-             onchange="saveBdayCatPref()" style="accent-color:var(--green)">
-      <span>${esc(cat)}</span>
-    </label>`;
-  }).join('');
-}
-
-function saveBdayCatPref() {
-  const boxes = document.querySelectorAll('#pref-bday-cats input[type=checkbox]');
-  const cats = [...boxes].filter(cb => cb.checked).map(cb => cb.value);
-  try { sessionStorage.setItem('vcard_bday_cats', JSON.stringify(cats)); } catch(e) {}
-}
-
-// ══ Phone reformatter ═════════════════════════════════════════════════════════
-async function doReformatPhones() {
-  const btn  = document.getElementById('btn-reformat-phones');
-  const hint = document.getElementById('reformat-phones-hint');
-  const res  = document.getElementById('reformat-phones-result');
-  if (btn)  btn.disabled = true;
-  if (hint) hint.textContent = 'Reformatting…';
-
-  try {
-    const d = await post('/api/reformat_phones', {});
-    if (d.ok) {
-      const n = d.changed || 0;
-      if (hint) hint.textContent = n ? `✓ ${n} number${n!==1?'s':''} updated` : '✓ All numbers already formatted';
-      if (res) {
-        res.style.display = '';
-        const lines = (d.log || []).slice(0, 20);
-        res.innerHTML = lines.length
-          ? lines.map(l => `<div style="font-size:10px;color:var(--text);padding:1px 0">${esc(l)}</div>`).join('')
-          : `<div style="font-size:10px;color:var(--dim)">No changes needed.</div>`;
-      }
-      flashSaved();
-      loadRevCards(revPage || 1);
-    } else {
-      if (hint) hint.textContent = d.error || 'Reformat failed';
-      toast(d.error || 'Reformat failed', true);
-    }
-  } catch(e) {
-    if (hint) hint.textContent = 'Error: ' + e.message;
-    toast('Reformat error: ' + e.message, true);
-  } finally {
-    if (btn) btn.disabled = false;
-  }
-}
-
 // ══ Quality filter for Review panel ══════════════════════════════════════════
 function onRevQualityFilter() {
   const sel = document.getElementById('rev-quality');
@@ -4258,14 +4132,12 @@ async function loadBirthdays() {
       const mName = MONTH_NAMES[month-1] || 'Month ' + month;
       html += `<div class="bday-month-hdr">${mName}</div>`;
       for (const ev of byMonth[month]) {
-        const icon = ev.event_type === 'anniversary' ? '<span style="color:var(--purple)">⬡</span>' : '<span style="color:var(--cyan)">◈</span>';
+        const icon = ev.event_type === 'anniversary' ? '💍' : '🎂';
         const dayStr = ev.day ? String(ev.day).padStart(2,'0') : '??';
         const dateLabel = ev.year ? `${mName.slice(0,3)} ${dayStr}, ${ev.year}` : `${mName.slice(0,3)} ${dayStr}`;
-        const ageLabel = ev.age != null
-          ? `<span style="color:var(--dim);font-size:10px"> (${ev.event_type==='anniversary' ? ev.age+'yr' : 'turns '+ev.age})</span>`
-          : '';
+        const ageLabel = ev.age != null ? `<span style="color:var(--dim);font-size:10px"> (turns ${ev.age})</span>` : '';
         const typeLabel = ev.event_type === 'anniversary'
-          ? `<span style="color:var(--purple);font-size:9px;margin-left:6px;letter-spacing:.05em">ANNIV</span>` : `<span style="color:var(--cyan);font-size:9px;margin-left:6px;letter-spacing:.05em">BDAY</span>`;
+          ? `<span style="color:var(--purple);font-size:9px;margin-left:6px">anniversary</span>` : '';
         html += `<div class="bday-row">
           <span class="bday-icon">${icon}</span>
           <span class="bday-name" onclick="jumpRevByName(${JSON.stringify(ev.fn)})" title="Open in Review">${esc(ev.fn)}</span>
@@ -4316,7 +4188,7 @@ h1{font-size:16px;margin-bottom:4px}.sub{font-size:10px;color:#666;margin-bottom
 .icon{width:18px;flex-shrink:0}.name{width:220px}.date{color:#555}
 @media print{body{margin:15mm}}
 </style></head><body>
-<h1>[ BIRTHDAYS &amp; ANNIVERSARIES ]</h1>
+<h1>&#127874; Birthday &amp; Anniversary Calendar</h1>
 <div class="sub">${esc(subtitle)} &middot; Generated ${new Date().toLocaleDateString()}</div>
 ${inner}
 </body></html>`);
