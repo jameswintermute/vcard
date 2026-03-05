@@ -103,7 +103,7 @@ def _card_to_dict(card) -> dict:
         "typed_emails": [{"value": tv.value, "type": tv.type} for tv in (getattr(card, "typed_emails", None) or [])],
         "typed_tels":   [{"value": tv.value, "type": tv.type} for tv in (getattr(card, "typed_tels",   None) or [])],
         "categories": card.categories,
-        "kind": card.kind or "individual",
+        "kind": card.kind or ("org" if (card.org and not card.fn) else "individual"),
         "title": card.title or "",
         "bday": card.bday or "",
         "anniversary": card.anniversary or "",
@@ -223,14 +223,20 @@ def _load_existing_output() -> None:
 
 def _api_status() -> dict:
     cards = _state["cards"]
+    print(f"  [status] cards={len(cards)} status={_state['status']}", flush=True)
     cats: dict[str, int] = {}
     countries: dict[str, int] = {}
     for c in cards:
-        for cat in c.categories:
-            cats[cat] = cats.get(cat, 0) + 1
-        country = (c.addresses[0].country or "").strip() if c.addresses else ""
-        if country:
-            countries[country] = countries.get(country, 0) + 1
+        try:
+            for cat in (c.categories or []):
+                cats[cat] = cats.get(cat, 0) + 1
+            country = ""
+            if c.addresses:
+                country = (c.addresses[0].country or "").strip()
+            if country:
+                countries[country] = countries.get(country, 0) + 1
+        except Exception:
+            pass
 
     # If we have cards but status is still "error" (e.g. stale from a failed re-merge),
     # report "loaded" so the header dot turns green and the UI isn't misleading.
@@ -799,6 +805,7 @@ def _api_full_update_card(body: dict) -> dict:
 
     # Phones — support typed format [{value, type}] or plain list/string
     raw_tels_typed = body.get("typed_tels", [])  # [{value, type}]
+    normalised = []  # always defined; populated by whichever branch runs
     if raw_tels_typed:
         typed_tels = []
         for item in raw_tels_typed:
@@ -819,6 +826,7 @@ def _api_full_update_card(body: dict) -> dict:
                 typed_tels.append(TypedValue(value=raw, type=ttype))
         card.tels = [tv.value for tv in typed_tels]
         card.typed_tels = typed_tels
+        normalised = card.tels  # return the formatted values
     else:
         raw_tels = re.split(r"[,\n]+", body.get("tels",""))
         normalised = []
@@ -1220,6 +1228,51 @@ def _api_settings() -> dict:
         return {"ok": False, "error": str(exc)}
 
 
+def _api_reformat_phones(body: dict) -> dict:
+    """Re-run phone normalisation on all loaded cards and return a log of changes.
+
+    Uses the same GOV.UK-style spaced-E.164 formatter as the normalise step,
+    so +44 193 2 2 69627 becomes +44 1932 269627, etc.
+    Marks the workspace as dirty so the next export/save picks up the changes.
+    """
+    cards = _state.get("cards")
+    if not cards:
+        return {"ok": False, "error": "No cards loaded"}
+
+    try:
+        from .formatters import normalize_phones_in_cards
+        p = _get_pipeline()
+        _, settings = p["ensure_workspace"](_ROOT)
+        region = settings.default_region or "GB"
+
+        # Snapshot before
+        before = {id(c): list(c.tels) for c in cards}
+
+        normalize_phones_in_cards(cards, default_region=region, infer_from_adr=True)
+
+        # Build change log
+        log = []
+        changed = 0
+        for card in cards:
+            old_tels = before[id(card)]
+            if old_tels != card.tels:
+                changed += 1
+                name = card.fn or card.org or "(unnamed)"
+                for old, new in zip(old_tels, card.tels):
+                    if old != new:
+                        log.append(f"{name}: {old!r} → {new!r}")
+                # Handle length differences
+                for extra in card.tels[len(old_tels):]:
+                    log.append(f"{name}: (new) {extra!r}")
+
+        # Mark dirty so next save/export picks up changes
+        _state["dirty"] = True
+
+        return {"ok": True, "changed": changed, "log": log}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
 def _api_save_settings(body: dict) -> dict:
     """Persist updated settings to local/vcard.conf."""
     import re
@@ -1291,90 +1344,6 @@ def _api_card_raw(params: dict) -> dict:
         from .exporter import card_to_vcf_text
         text = card_to_vcf_text(cards[idx], target_version=version)
         return {"ok": True, "text": text, "fn": cards[idx].fn or "", "idx": idx}
-    except Exception as exc:
-        return {"ok": False, "error": str(exc)}
-
-
-def _api_print_cards(params: dict) -> dict:
-    """Return all cards formatted for the print/PDF view."""
-    cards = _state["cards"]
-    category = params.get("category", [""])[0]
-    sort_order = params.get("sort_order", ["last_name"])[0]
-
-    indexed = list(enumerate(cards))
-    if category:
-        indexed = [(i,c) for i,c in indexed if category in c.categories]
-
-    def _sk(pair):
-        _, c = pair
-        name = getattr(c, "name", None)
-        fn = (c.fn or "").strip()
-        org = (c.org or "").strip()
-        family = (name.family or "").strip() if name and name.family else ""
-        given  = (name.given  or "").strip() if name and name.given  else ""
-        if c.kind == "org":
-            return (0, org.lower() or fn.lower(), "")
-        if sort_order == "first_name":
-            return (1, given.lower() or fn.lower(), family.lower())
-        return (1, family.lower() or fn.lower(), given.lower())
-
-    indexed.sort(key=_sk)
-    result = [_card_to_dict(c) for _, c in indexed]
-    from datetime import datetime as _dt
-    return {
-        "ok": True,
-        "cards": result,
-        "total": len(result),
-        "generated": _dt.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
-        "version": _VERSION,
-    }
-
-
-def _api_reformat_phones(body: dict) -> dict:
-    """Reformat all phone numbers in loaded cards to E.164 international spacing.
-
-    Uses phonenumbers library with the configured default_region as fallback.
-    Returns count of numbers reformatted.
-    """
-    cards = _state["cards"]
-    try:
-        import phonenumbers
-        p = _get_pipeline()
-        _, settings = p["ensure_workspace"](_ROOT)
-        region = settings.default_region or "GB"
-
-        reformatted = 0
-        unchanged = 0
-        failed = 0
-        for card in cards:
-            new_tels = []
-            for raw in (card.tels or []):
-                raw = raw.strip()
-                if not raw:
-                    continue
-                try:
-                    parsed = phonenumbers.parse(raw, region)
-                    if phonenumbers.is_valid_number(parsed):
-                        formatted = phonenumbers.format_number(
-                            parsed, phonenumbers.PhoneNumberFormat.INTERNATIONAL
-                        )
-                        if formatted != raw:
-                            reformatted += 1
-                        else:
-                            unchanged += 1
-                        new_tels.append(formatted)
-                    else:
-                        new_tels.append(raw)
-                        failed += 1
-                except Exception:
-                    new_tels.append(raw)
-                    failed += 1
-            card.tels = new_tels
-        if reformatted:
-            _autosave_checkpoint()
-        return {"ok": True, "reformatted": reformatted, "unchanged": unchanged, "failed": failed}
-    except ImportError:
-        return {"ok": False, "error": "phonenumbers library not available"}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
 
@@ -1473,12 +1442,17 @@ def _api_normalise_countries(body: dict) -> dict:
     suggestions = []
     for raw, count in sorted(seen.items(), key=lambda x: -x[1]):
         lo = raw.lower().strip()
-        # Direct lookup only — no fuzzy/prefix matching (that caused wrong suggestions)
         canonical = CANONICAL.get(lo)
+        # If no direct match, try prefix/contains match
+        if not canonical:
+            for k, v in CANONICAL.items():
+                if lo.startswith(k) or k.startswith(lo):
+                    canonical = v
+                    break
         suggestions.append({
             "raw": raw,
             "count": count,
-            "suggested": canonical or raw,
+            "suggested": canonical or raw,  # suggest self if no match (already canonical)
             "needs_fix": canonical is not None and canonical != raw,
         })
 
@@ -1555,6 +1529,8 @@ class VCardHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
+        self.send_header("Pragma", "no-cache")
         self.end_headers()
         self.wfile.write(body)
 
@@ -1566,6 +1542,8 @@ class VCardHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", mime)
             self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
+            self.send_header("Pragma", "no-cache")
             self.end_headers()
             self.wfile.write(data)
         except FileNotFoundError:
@@ -1632,8 +1610,6 @@ class VCardHandler(BaseHTTPRequestHandler):
             self._send_json(_api_reissue_uids(body))
         elif path == "/api/normalise_countries":
             self._send_json(_api_normalise_countries(body))
-        elif path == "/api/reformat_phones":
-            self._send_json(_api_reformat_phones(body))
         elif path == "/api/export_csv":
             self._send_json(_api_export_csv(body))
         elif path == "/api/update_card":
@@ -1658,6 +1634,8 @@ class VCardHandler(BaseHTTPRequestHandler):
             self._send_json(_api_birthdays(body))
         elif path == "/api/merge_cards":
             self._send_json(_api_merge_cards(body))
+        elif path == "/api/reformat_phones":
+            self._send_json(_api_reformat_phones(body))
         elif path == "/api/save_settings":
             self._send_json(_api_save_settings(body))
         elif path == "/api/quit":
@@ -1677,9 +1655,11 @@ def main():
     print(f"  cards-in     : {_ROOT / 'cards-in'}")
     print(f"  cards-wip    : {_ROOT / 'cards-wip'}")
     print(f"  cards-out    : {_ROOT / 'cards-out'}")
-    _ckpt = _ROOT / "cards-wip" / "checkpoint.vcf"
-    if _ckpt.exists():
-        print(f"  checkpoint   : {_ckpt.stat().st_size // 1024} KB")
+    _ckpt_vcf  = _ROOT / "cards-wip" / "checkpoint.vcf"
+    _ckpt_json = _ROOT / "cards-wip" / "checkpoint.json"
+    if _ckpt_vcf.exists():
+        print(f"  checkpoint.vcf  : {_ckpt_vcf.stat().st_size // 1024} KB")
+        print(f"  checkpoint.json : {'OK' if _ckpt_json.exists() else 'MISSING — will synthesise'}")
     else:
         _in_vcfs = list((_ROOT / "cards-in").glob("*.vcf")) if (_ROOT / "cards-in").is_dir() else []
         if _in_vcfs:

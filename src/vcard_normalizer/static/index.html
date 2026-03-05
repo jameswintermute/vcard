@@ -222,7 +222,7 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
 <header id="header">
   <div class="wordmark"><span class="v">v</span><span class="rest">card studio</span></div>
   <div class="tagline">local · no cloud · GNU GPL v3</div>
-  <div id="hdr-version" style="font-size:10px;color:var(--dim);padding-left:8px;border-left:1px solid var(--border)"></div>
+  <div id="hdr-version" style="font-size:10px;color:var(--dim);padding-left:8px;border-left:1px solid var(--border)">v3.2.0</div>
   <div class="hdr-spacer"></div>
   <div class="hdr-status" id="hdr-status">idle</div>
   <div id="hdr-saved" style="font-size:10px;color:var(--dim);padding:0 8px;opacity:0;transition:opacity 1s">
@@ -245,7 +245,7 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
     <div class="nav-item"        data-p="export"   onclick="show('export')">  <span class="nav-step">6</span> Export</div>
     <div class="nav-item"        data-p="viewer"   onclick="show('viewer')">  <span class="nav-step">◈</span> Raw Viewer</div>
     <div class="nav-item"        data-p="print"    onclick="show('print')">   <span class="nav-step">⎙</span> Print</div>
-    <div class="nav-item"        data-p="birthdays" onclick="show('birthdays')"><span class="nav-step">🎂</span> Birthdays</div>
+    <div class="nav-item"        data-p="birthdays" onclick="show('birthdays')"><span class="nav-step" style="color:var(--cyan)">◈</span> Birthdays</div>
     <div class="nav-item"        data-p="prefs"    onclick="show('prefs')">   <span class="nav-step">⚙</span> Preferences</div>
   </div>
   <div class="sb-footer">
@@ -349,7 +349,7 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
     <span style="color:var(--dim);font-weight:400"> — reformat all numbers to international spacing</span>
   </div>
   <div style="color:var(--dim);font-size:10px;line-height:1.9;margin-bottom:9px">
-    Converts stored numbers to <code style="color:var(--text)">+44 1932 269627</code> format (GOV.UK style, no brackets).
+    Converts stored numbers to <code style="color:var(--text)">+44 1642 714500</code> format (GOV.UK style, no brackets).
     Run after import if your source had inconsistent formatting.
   </div>
   <div class="row" style="gap:8px;align-items:center;margin-bottom:4px">
@@ -454,7 +454,7 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
   <div class="pag" id="rev-pag"></div>
   <!-- Merge bar — appears when 2+ rows are checked -->
   <div id="rev-merge-bar" style="display:none;position:sticky;bottom:0;background:var(--bg2);
-       border-top:1px solid var(--amber);padding:8px 12px;display:none;
+       border-top:1px solid var(--amber);padding:8px 12px;
        align-items:center;gap:12px;z-index:50">
     <span id="rev-merge-count" style="font-size:11px;color:var(--amber)">0 selected</span>
     <button class="btn" style="background:rgba(255,170,0,.1);border-color:var(--amber);color:var(--amber);font-size:10px"
@@ -944,9 +944,9 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
 </div>
 
 <!-- §8 BIRTHDAYS -->
-<div id="panel-birthdays" class="panel" style="display:none">
+<div id="panel-birthdays" class="panel">
   <div class="ph">
-    <div class="ph-title" style="color:var(--green)">🎂 birthdays_and_anniversaries</div>
+    <div class="ph-title" style="color:var(--green)"><span style="color:var(--cyan)">◈</span> birthdays_and_anniversaries</div>
     <div class="ph-sub">month-by-month · age calculations · print calendar</div>
   </div>
 
@@ -1048,6 +1048,13 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
         </div>
       </div>
 
+      <div id="edit-clone-banner" class="clone-banner" style="margin-bottom:8px">
+        <span style="color:var(--cyan);font-size:13px">⊕</span>
+        <span id="edit-clone-msg" style="flex:1"></span>
+        <button class="btn btn-c" style="font-size:10px;padding:2px 8px" onclick="cloneAddress()">copy address</button>
+        <button class="btn btn-d" style="font-size:10px;padding:2px 8px" onclick="dismissClone()">dismiss</button>
+      </div>
+
       <div class="section-divider">ADDRESS</div>
       <div class="form-row"><span class="form-lbl">street</span><input class="form-in" id="edit-street" placeholder="12 Baker Street" oninput="detectSingleLineAddress(this)"></div>
       <div id="edit-addr-hint" style="display:none;margin:-4px 0 8px 130px;font-size:10px;color:var(--amber)">
@@ -1094,9 +1101,9 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
 
       <div class="section-divider">LINKED PEOPLE <span style="color:var(--dim);font-weight:400;font-size:9px">— vCard 4.0 RELATED</span></div>
       <div id="edit-rel-list" class="rel-list"></div>
-      <!-- Improved rel picker -->
+      <!-- Rel picker -->
       <div class="rel-picker-wrap">
-        <div style="font-size:10px;color:var(--dim);margin-bottom:7px">Search and click to link a contact:</div>
+        <div style="font-size:10px;color:var(--dim);margin-bottom:7px">Select type, then search and click a contact to link. Repeat to add multiple links.</div>
         <div class="rel-picker-search">
           <select class="form-sel" id="edit-rel-type" style="width:90px;flex-shrink:0">
             <option value="spouse">spouse</option>
@@ -1112,6 +1119,8 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
                  autocomplete="off">
           <button class="btn btn-d" style="font-size:10px;padding:3px 8px;flex-shrink:0" onclick="addRelManual('edit')" title="Add by name only (no UID link)">+ text only</button>
         </div>
+        <!-- Linked confirmations appear here, above the grid -->
+        <div id="edit-rel-confirmations" style="display:none;margin-bottom:6px;background:rgba(0,224,64,.06);border:1px solid var(--green2);padding:6px 10px;font-size:10px;color:var(--green)"></div>
         <div class="rel-picker-grid" id="edit-rel-picker-grid">
           <div class="rel-no-results" style="display:none" id="edit-rel-no-results">Type a name above to search contacts</div>
         </div>
@@ -1133,11 +1142,6 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
         </div>
       </div>
 
-      <div id="edit-clone-banner" class="clone-banner">
-        <span id="edit-clone-msg"></span>
-        <button class="btn btn-c" style="font-size:10px;padding:2px 8px" onclick="cloneAddress()">copy address</button>
-        <button class="btn btn-d" style="font-size:10px;padding:2px 8px" onclick="dismissClone()">dismiss</button>
-      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-r" onclick="deleteFromModal()">✕ delete</button>
@@ -1221,11 +1225,45 @@ let _selfCardIdx = null;     // global index of self card, if found
 let _state_cards_by_uid = {}; // uid → {fn, org} for member resolution
 
 // ══ Init / Poll ═══════════════════════════════════════════════════════════════
-window.addEventListener('load', () => { poll(); setInterval(poll, 1800); });
+let _pollInterval = null;
+
+window.addEventListener('load', () => {
+  // Poll immediately, then every 1.8s. On first successful load with cards,
+  // switch to normal 1.8s cadence. If first poll returns 0 cards, retry
+  // quickly (500ms) for up to 10s in case server is still starting.
+  let _quickRetries = 20; // 20 × 500ms = 10s fast-poll window
+  function startPolling() {
+    poll();
+    _pollInterval = setInterval(async () => {
+      await poll();
+      if (_quickRetries > 0) {
+        _quickRetries--;
+        if (S && S.total_cards > 0) {
+          _quickRetries = 0; // got cards, stop fast-polling
+        } else if (_quickRetries > 0) {
+          clearInterval(_pollInterval);
+          _pollInterval = setInterval(() => { poll(); }, 500);
+          return;
+        }
+        if (_quickRetries === 0) {
+          clearInterval(_pollInterval);
+          _pollInterval = setInterval(() => { poll(); }, 1800);
+        }
+      }
+    }, 1800);
+  }
+  startPolling();
+});
 
 async function poll() {
   loadPrefs();
-  try { applyState(await (await fetch('/api/status')).json()); } catch(e){}
+  try {
+    const resp = await fetch('/api/status?_=' + Date.now());
+    if (!resp.ok) { document.getElementById('hdr-status').textContent = 'server error ' + resp.status; return; }
+    applyState(await resp.json());
+  } catch(e) {
+    document.getElementById('hdr-status').textContent = 'no response';
+  }
 }
 
 function applyState(d) {
@@ -1429,9 +1467,9 @@ function renderRevTable(d) {
   _revSelected.clear();
   updateRevMergeBar();
   document.getElementById('rev-body').innerHTML = d.cards.map((c,pi)=>{
-    const kindIcon = c.kind==='org' ? '🏢' : c.kind==='self' ? '⭐' : '👤';
+    const kindIcon = c.kind==='org' ? '🏢' : c.kind==='self' ? '⭐' : (c.org && !c.name_given && !c.name_family && c.fn===c.org) ? '🏢' : '👤';
     const emails = c.emails || [];
-    const tels = c.tels || [];
+    const tels = c.tels_fmt && c.tels_fmt.length ? c.tels_fmt : (c.tels || []);
     const categories = c.categories || [];
     return `
     <tr id="rev-row-${pi}" ondblclick="openEdit(${pi})" class="${_revSelected.has(pi)?'rev-row-sel':''}">
@@ -1449,7 +1487,7 @@ function renderRevTable(d) {
       </td>
       <td class="td-o">${esc(c.org||'')}</td>
       <td class="td-d">${esc(emails[0]||'')}</td>
-      <td class="td-d">${esc(fmtTel(tels[0]||''))}</td>
+      <td class="td-d">${esc(tels[0]||'')}</td>
       <td>${categories.map(cat=>`<span class="pill ${pc(cat)}">${esc(cat)}</span>`).join('')||'<span style="color:var(--dim)">—</span>'}${c.note?`<span title="${esc(c.note)}" style="color:var(--dim);margin-left:6px;cursor:help;font-size:12px">📝</span>`:''}</td>
       <td>
         <div class="row-actions">
@@ -1679,8 +1717,6 @@ function openEdit(pageIdx) {
   document.getElementById('edit-anniversary').value= c.anniversary||'';
   document.getElementById('edit-note').value         = c.note||'';
   document.getElementById('edit-kind').value       = c.kind||'individual';
-  document.getElementById('edit-emails').value     = c.emails.join('\n');
-  document.getElementById('edit-tels').value       = c.tels.join('\n');
   document.getElementById('edit-cats').value       = c.categories.join(', ');
 
   const adr = c.addresses&&c.addresses[0] ? c.addresses[0] : {};
@@ -1698,11 +1734,13 @@ function openEdit(pageIdx) {
   renderRelList('edit');
   // Also kick off a fresh server fetch in background to catch any links added since last page load
   reloadEditRelated(c._idx);
-  // Reset rel picker between cards — clear search, grid, and reset type to spouse
+  // Reset rel picker between cards — clear search, grid, confirmations, and reset type to spouse
   const relSearch = document.getElementById('edit-rel-search');
   if (relSearch) relSearch.value = '';
   const relGrid = document.getElementById('edit-rel-picker-grid');
   if (relGrid) relGrid.innerHTML = '<div class="rel-no-results">Type a name above to search contacts</div>';
+  const relConf = document.getElementById('edit-rel-confirmations');
+  if (relConf) { relConf.style.display = 'none'; relConf.innerHTML = ''; }
   const relType = document.getElementById('edit-rel-type');
   if (relType) relType.value = 'spouse';
   // Show clone banner if any linked person has an address
@@ -1811,9 +1849,15 @@ async function saveEdit(silent) {
     const d = await post('/api/full_update_card', body);
     if (!d.ok) { toast(d.error||'Save failed', true); return; }
     if (!silent) {
-      // Show normalised phones
-      const tels = d.normalised_tels||[];
-      if (tels.length) document.getElementById('edit-tels').value = tels.join('\n');
+      // Refresh tel rows with server-normalised values if returned
+      if (d.normalised_tels && d.normalised_tels.length) {
+        const existing = collectTypedTelRows();
+        const refreshed = d.normalised_tels.map((v, i) => ({
+          value: v,
+          type: existing[i] ? existing[i].type : '',
+        }));
+        renderTypedTelRows(refreshed);
+      }
       toast(`✓ Saved`); flashSaved();
       closeEditModal();
       loadRevCards(revPage);
@@ -3438,18 +3482,24 @@ async function pickRelFromGrid(rJson, gridId, ctx) {
           from_idx: fromIdx, to_idx: r._idx, rel_type: relType
         });
         if (res.ok) {
-          // Reload _editRelated from the server so saveEdit won't clobber it
+          // Reload linked list from server
           await reloadEditRelated(fromIdx);
-          // Show a strong confirmation banner inside the picker
-          showRelLinkedConfirm(gridId, res.from_name, res.to_name, res.rel_type, res.recip);
+          // Add confirmation line without replacing the grid
+          addRelConfirmation(ctx, res.from_name, res.to_name, res.rel_type, res.recip);
           flashSaved();
+          // Clear search so user can immediately search for next person
+          const searchEl = document.getElementById(`${ctx}-rel-search`);
+          if (searchEl) { searchEl.value = ''; searchEl.focus(); }
+          // Keep grid showing placeholder
+          const grid = document.getElementById(gridId);
+          if (grid) grid.innerHTML = '<div class="rel-no-results">Linked! Search for another contact to add more links.</div>';
         } else {
           toast(res.error || 'Link failed', true);
         }
       } catch(e) {
         toast('Link failed — server error', true);
       }
-      return; // don't touch local _editRelated — server is the source of truth
+      return;
     }
   }
 
@@ -3458,10 +3508,11 @@ async function pickRelFromGrid(rJson, gridId, ctx) {
   _addRelated.push(entry);
   renderRelList('add');
 
-  // Clear search and show confirmation in grid
   const searchEl = document.getElementById(`${ctx}-rel-search`);
-  if (searchEl) searchEl.value = '';
-  showRelLinkedConfirm(gridId, null, r.fn || r.org || '?', relType, null);
+  if (searchEl) { searchEl.value = ''; searchEl.focus(); }
+  addRelConfirmation(ctx, null, r.fn || r.org || '?', relType, null);
+  const grid = document.getElementById(gridId);
+  if (grid) grid.innerHTML = '<div class="rel-no-results">Linked! Search for another contact to add more links.</div>';
 
   // If the linked contact has an address, offer to clone it
   if (r.address && Object.values(r.address).some(Boolean)) {
@@ -3482,651 +3533,26 @@ async function reloadEditRelated(cardIdx) {
   } catch(e) {}
 }
 
-// Show a green "linked!" confirmation inside the picker grid
+// Append a confirmation line to the confirmations strip (doesn't touch the search grid)
+function addRelConfirmation(ctx, fromName, toName, relType, recipType) {
+  const strip = document.getElementById(`${ctx}-rel-confirmations`);
+  if (!strip) return;
+  strip.style.display = '';
+  const line = document.createElement('div');
+  line.style.cssText = 'padding:2px 0;border-bottom:1px solid rgba(0,224,64,.1);last-child:border-none';
+  const recip = recipType ? ` ↔ ${esc(recipType)} added to their card` : '';
+  line.innerHTML = `<span style="color:var(--green)">⊕</span> <strong>${esc(toName)}</strong> linked as <strong>${esc(relType)}</strong>${recip}`;
+  strip.appendChild(line);
+}
+
+// Show a green "linked!" confirmation inside the picker grid (legacy — kept for add modal path)
 function showRelLinkedConfirm(gridId, fromName, toName, relType, recipType) {
   const grid = document.getElementById(gridId);
   if (!grid) return;
-  const recip = recipType ? ` ↔ ${recipType} on their card` : '';
-  grid.innerHTML = `
-    <div style="grid-column:1/-1;background:rgba(0,224,64,.08);border:1px solid var(--green2);
-         padding:10px 12px;display:flex;align-items:center;gap:10px">
-      <span style="color:var(--green);font-size:16px">⊕</span>
-      <div>
-        <div style="color:var(--green);font-size:11px;font-weight:700">
-          ${fromName ? `${esc(fromName)} linked as <strong>${esc(relType)}</strong> of ${esc(toName)}` : `Linked as <strong>${esc(relType)}</strong> of ${esc(toName)}`}
-        </div>
-        ${recipType ? `<div style="font-size:10px;color:var(--dim);margin-top:2px">↔ ${esc(toName)} has been updated as <strong>${esc(recipType)}</strong> on their card automatically</div>` : ''}
-        <div style="margin-top:6px">
-          <button class="btn btn-d" style="font-size:10px;padding:2px 8px"
-            onclick="this.closest('[id]').innerHTML='<div class=\\'rel-no-results\\'>Type a name above to search contacts</div>'">
-            link another…
-          </button>
-        </div>
-      </div>
-    </div>`;
+  grid.innerHTML = `<div class="rel-no-results">⊕ Linked as <strong>${esc(relType)}</strong>. Search to add more.</div>`;
 }
 
-// ══ Phone Reformat ════════════════════════════════════════════════════════════
-async function doReformatPhones() {
-  const btn  = document.getElementById('btn-reformat-phones');
-  const hint = document.getElementById('reformat-phones-hint');
-  const res  = document.getElementById('reformat-phones-result');
-  btn.disabled = true;
-  hint.textContent = 'reformatting…';
-  res.style.display = 'none';
-  try {
-    const d = await post('/api/reformat_phones', {});
-    btn.disabled = false;
-    hint.textContent = '';
-    if (!d.ok) { toast(d.error || 'Failed', true); return; }
-    res.style.display = '';
-    res.innerHTML = `✓ <strong>${d.reformatted}</strong> number${d.reformatted!==1?'s':''} reformatted`
-      + (d.unchanged ? ` · ${d.unchanged} already correct` : '')
-      + (d.failed    ? ` · <span style="color:var(--amber)">${d.failed} could not be parsed</span>` : '')
-      + `<br><span style="color:var(--dim)">All numbers now use +CC NNN NNN NNNN spacing. Checkpoint saved.</span>`;
-    toast(`✓ ${d.reformatted} phones reformatted`);
-    loadRevCards(revPage || 1);
-  } catch(e) { btn.disabled=false; hint.textContent=''; toast('Reformat failed', true); }
-}
-
-// ══ Print / PDF ════════════════════════════════════════════════════════════════
-function populatePrintCats() {
-  const sel = document.getElementById('print-cat');
-  if (!sel) return;
-  const cats = Object.keys(S.category_counts || {}).sort();
-  sel.innerHTML = '<option value="">all contacts</option>' +
-    cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
-  const paper = document.getElementById('print-paper');
-  if (paper) paper.value = _PREFS.paper_size || 'A5';
-}
-
-async function openPrintPreview() {
-  const btn = document.getElementById('btn-print-preview');
-  const status = document.getElementById('print-status');
-  btn.disabled = true;
-  status.style.display = '';
-  status.textContent = 'Loading contacts…';
-
-  const cat      = document.getElementById('print-cat').value;
-  const paper    = document.getElementById('print-paper').value || _PREFS.paper_size || 'A5';
-  const inclEmail   = document.getElementById('print-incl-email').checked;
-  const inclPhone   = document.getElementById('print-incl-phone').checked;
-  const inclAddress = document.getElementById('print-incl-address').checked;
-  const inclOrg     = document.getElementById('print-incl-org').checked;
-  const inclNote    = document.getElementById('print-incl-note').checked;
-  const inclCats    = document.getElementById('print-incl-cats').checked;
-
-  try {
-    const params = new URLSearchParams({ sort_order: _PREFS.sort_order });
-    if (cat) params.set('category', cat);
-    const d = await (await fetch('/api/print_cards?' + params)).json();
-    if (!d.ok || !d.cards.length) {
-      toast('No contacts to print', true);
-      btn.disabled = false; status.style.display = 'none'; return;
-    }
-
-    const html = buildPrintDocument(d.cards, {
-      paper, inclEmail, inclPhone, inclAddress, inclOrg, inclNote, inclCats,
-      generated: d.generated, version: d.version, total: d.total, category: cat
-    });
-
-    const w = window.open('', '_blank');
-    if (!w) { toast('Pop-up blocked — allow pop-ups for localhost', true); btn.disabled=false; status.style.display='none'; return; }
-    w.document.write(html);
-    w.document.close();
-    status.style.display = 'none';
-    btn.disabled = false;
-  } catch(e) {
-    toast('Print preview failed', true);
-    btn.disabled = false; status.style.display = 'none';
-  }
-}
-
-function buildPrintDocument(cards, opts) {
-  const {paper, inclEmail, inclPhone, inclAddress, inclOrg, inclNote, inclCats,
-         generated, version, total, category} = opts;
-
-  const paperCSS = {
-    'A5':     '@page { size: A5 portrait; margin: 14mm 12mm; }',
-    'A4':     '@page { size: A4 portrait; margin: 20mm 18mm; }',
-    'Letter': '@page { size: letter portrait; margin: 20mm 18mm; }',
-  }[paper] || '@page { size: A5 portrait; margin: 14mm 12mm; }';
-
-  function cardHtml(c) {
-    const name = c.fn || c.org || '—';
-    const emails = c.emails || []; const tels = c.tels || [];
-    const cats   = c.categories || []; const addrs = c.addresses || [];
-    const orgLine = inclOrg && c.org && c.org !== c.fn
-      ? `<div class="pc-org">${esc(c.org)}${c.title ? ` <span class="pc-title">· ${esc(c.title)}</span>` : ''}</div>` : '';
-    const catLine = inclCats && cats.length
-      ? `<div class="pc-cats">${cats.map(x=>`<span class="pc-cat">${esc(x)}</span>`).join('')}</div>` : '';
-    let details = '';
-    if (inclPhone && tels.length) {
-      const typedTels = c.typed_tels || tels.map(v=>({value:v,type:''}));
-      details += typedTels.filter(tt=>tt.value).map(tt => {
-        const badge = tt.type ? `<span style="font-size:8px;font-weight:700;background:rgba(0,204,196,.1);color:#4d9fff;border:1px solid rgba(0,204,196,.2);padding:0 4px;margin-right:3px">${tt.type}</span>` : '';
-        return `<div class="pc-row"><span class="pc-lbl">☏</span>${badge} ${esc(fmtTel(tt.value))}</div>`;
-      }).join('');
-    }
-    if (inclEmail && emails.length) {
-      const typedEmails = c.typed_emails || emails.map(v=>({value:v,type:''}));
-      details += typedEmails.filter(te=>te.value).map(te => {
-        const badge = te.type ? `<span style="font-size:8px;font-weight:700;background:rgba(232,160,0,.1);color:#e8a000;border:1px solid rgba(232,160,0,.2);padding:0 4px;margin-right:3px">${te.type}</span>` : '';
-        return `<div class="pc-row"><span class="pc-lbl">@</span>${badge} ${esc(te.value)}</div>`;
-      }).join('');
-    }
-    if (inclAddress && addrs.length) {
-      const a = addrs[0];
-      const parts = [a.street, a.locality, a.region, a.postal_code, a.country].filter(Boolean);
-      if (parts.length) details += `<div class="pc-row pc-addr"><span class="pc-lbl">⌂</span><span>${parts.map(esc).join(', ')}</span></div>`;
-    }
-    if (inclNote && c.note)
-      details += `<div class="pc-row pc-note"><span class="pc-lbl">✎</span> ${esc(c.note)}</div>`;
-    const kindMark = c.kind==='org' ? '🏢' : c.kind==='self' ? '⭐' : '';
-    return `<div class="pc">
-      <div class="pc-name">${kindMark?`<span class="pc-kind">${kindMark}</span> `:''}${esc(name)}</div>
-      ${orgLine}${catLine}${details?`<div class="pc-details">${details}</div>`:''}
-    </div>`;
-  }
-
-  const catLabel = category ? ` — ${category}` : '';
-  const subtitle = `${total} contact${total!==1?'s':''}${catLabel}`;
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>vCard Studio — Address Book</title>
-<style>
-${paperCSS}
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9pt;color:#1a1a1a;background:#fff;line-height:1.4}
-.title-page{display:flex;flex-direction:column;justify-content:flex-start;padding-top:30mm;
-  height:100vh;page-break-after:always}
-.tp-rule{width:40mm;height:3px;background:#00c060;margin-bottom:12mm}
-.tp-wordmark{font-size:28pt;font-weight:900;color:#111;letter-spacing:-.02em;line-height:1}
-.tp-wordmark .v{color:#00c060}
-.tp-subtitle{font-size:10pt;color:#555;margin-top:4mm;margin-bottom:10mm;letter-spacing:.04em;text-transform:uppercase}
-.tp-meta{font-size:8.5pt;color:#444;line-height:2.2}
-.tp-meta strong{color:#111;font-weight:600}
-.tp-tagline{margin-top:16mm;font-size:7.5pt;color:#aaa;font-style:italic;border-top:1px solid #e8e8e8;padding-top:5mm}
-.page-header{display:flex;justify-content:space-between;align-items:baseline;
-  border-bottom:1.5px solid #111;padding-bottom:2mm;margin-bottom:5mm}
-.ph-left{font-size:8pt;font-weight:700;color:#111;letter-spacing:.08em;text-transform:uppercase}
-.ph-right{font-size:7pt;color:#999}
-.contacts-grid{columns:2;column-gap:4mm}
-.pc{break-inside:avoid;border:0.5pt solid #ddd;border-left:2pt solid #00c060;
-    padding:2.5mm 3mm;margin-bottom:2.5mm;background:#fff}
-.pc-name{font-size:9.5pt;font-weight:700;color:#111;margin-bottom:0.8mm}
-.pc-kind{font-size:8pt}
-.pc-org{font-size:7.5pt;color:#555;margin-bottom:0.8mm}
-.pc-title{color:#999;font-style:italic}
-.pc-cats{margin-bottom:1.5mm}
-.pc-cat{display:inline-block;font-size:6pt;color:#00a050;border:0.5pt solid #b8e4c8;
-  padding:0.3mm 1.5mm;border-radius:2px;margin-right:1mm;margin-bottom:0.5mm}
-.pc-details{margin-top:1.5mm;border-top:0.5pt solid #eee;padding-top:1.5mm}
-.pc-row{font-size:7.5pt;color:#333;padding:0.2mm 0;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
-.pc-row.pc-addr{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.5}
-.pc-lbl{color:#ccc;font-size:6.5pt;width:4mm;display:inline-block;vertical-align:top;margin-top:0.3mm}
-.pc-note{color:#888;font-style:italic}
-.self-section{column-span:all;margin-bottom:5mm;padding-bottom:4mm;border-bottom:2pt solid #00c060}
-.self-section .pc{border-left:3pt solid #e8a000;max-width:80mm}
-.self-label{font-size:7pt;font-weight:700;color:#00c060;letter-spacing:.12em;
-  text-transform:uppercase;margin-bottom:2.5mm}
-.section-rule{column-span:all;border:none;border-top:0.5pt solid #ccc;
-  margin:4mm 0 4mm 0}
-.back-page{page-break-before:always;display:flex;flex-direction:column;
-  justify-content:flex-end;height:100vh;padding-bottom:20mm}
-.bp-rule{width:20mm;height:2px;background:#00c060;margin-bottom:7mm}
-.bp-title{font-size:13pt;font-weight:700;color:#111;margin-bottom:5mm}
-.bp-body{font-size:8pt;color:#444;line-height:1.9;max-width:110mm}
-.bp-body p{margin-bottom:3mm}
-.bp-url{font-size:7.5pt;color:#00a050;margin-top:4mm;font-family:monospace}
-.bp-lic{margin-top:6mm;font-size:7pt;color:#aaa;border-top:0.5pt solid #e8e8e8;padding-top:4mm}
-@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
-</style>
-</head>
-<body>
-<div class="title-page">
-  <div class="tp-rule"></div>
-  <div class="tp-wordmark"><span class="v">v</span>card studio</div>
-  <div class="tp-subtitle">Address Book${catLabel ? ` · ${esc(catLabel.replace(' — ',''))}` : ''}</div>
-  <div class="tp-meta">
-    <div><strong>Contacts</strong> &nbsp; ${total}</div>
-    <div><strong>Generated</strong> &nbsp; ${esc(generated)}</div>
-    <div><strong>Version</strong> &nbsp; ${esc(version)}</div>
-    <div><strong>Format</strong> &nbsp; ${esc(paper)}</div>
-  </div>
-  <div class="tp-tagline">local · no cloud · offline-first · GNU GPL v3</div>
-</div>
-<div class="page-header">
-  <span class="ph-left">Address Book</span>
-  <span class="ph-right">${esc(subtitle)} · ${esc(generated)}</span>
-</div>
-<div class="contacts-grid">
-${(()=>{
-  const selfCards = cards.filter(c => c.kind === 'self');
-  const otherCards = cards.filter(c => c.kind !== 'self');
-  let html = '';
-  if (selfCards.length) {
-    html += `<div class="self-section"><div class="self-label">⭐ My Details</div>${selfCards.map(cardHtml).join('')}</div>`;
-  }
-  html += otherCards.map(cardHtml).join('\n');
-  return html;
-})()}
-</div>
-<div class="back-page">
-  <div class="bp-rule"></div>
-  <div class="bp-title">About vCard Studio</div>
-  <div class="bp-body">
-    <p>vCard Studio is a free, offline-first tool for reclaiming control of your address book.
-    Before the internet became commercial infrastructure, a contact list was something deeply personal —
-    the names and numbers of the people who mattered. It was private. It was trusted. It was yours.</p>
-    <p>This tool consolidates and de-duplicates multiple exports from Apple, Google, Proton, and
-    Outlook into a single clean standards-compliant vCard 4.0 dataset. It runs entirely on your
-    machine — no remote server, no background syncing, no data leaving your device.</p>
-    <p>Your contacts are not a product. They are relationships. Own them. Protect them.</p>
-  </div>
-  <div class="bp-url">https://github.com/jameswintermute/vcard</div>
-  <div class="bp-lic">Released under the GNU General Public License (GPL-3.0-or-later) · Free to use, study, modify and share.</div>
-</div>
-<script>window.onload=function(){window.print();}<\/script>
-</body></html>`;
-}
-
-// Format E.164 phone numbers for human reading: +447980220220 → +44 7980 220 220
-// ══ Typed Email / Tel rows in Edit Modal ══════════════════════════════════════
-
-// Render a list of {value, type} objects as interactive rows in the edit modal
-function renderTypedEmailRows(items) {
-  const list = document.getElementById('edit-emails-list');
-  if (!list) return;
-  list.innerHTML = '';
-  (items||[]).forEach((item, i) => {
-    list.appendChild(makeTypedRow(item.value||'', item.type||'', 'email', i));
-  });
-  if (!items || !items.length) {
-    list.appendChild(makeTypedRow('', '', 'email', 0));
-  }
-}
-
-function renderTypedTelRows(items) {
-  const list = document.getElementById('edit-tels-list');
-  if (!list) return;
-  list.innerHTML = '';
-  (items||[]).forEach((item, i) => {
-    list.appendChild(makeTypedRow(item.value||'', item.type||'', 'tel', i));
-  });
-  if (!items || !items.length) {
-    list.appendChild(makeTypedRow('', '', 'tel', 0));
-  }
-}
-
-function makeTypedRow(value, type, kind, idx) {
-  const row = document.createElement('div');
-  row.style.cssText = 'display:flex;gap:5px;align-items:center';
-  row.dataset.kind = kind;
-  row.dataset.idx  = idx;
-
-  const inp = document.createElement('input');
-  inp.className = 'form-in';
-  inp.style.cssText = 'flex:1;min-width:0';
-  inp.value = value;
-  inp.placeholder = kind === 'email' ? 'jane@example.com' : '+44 7980 123 456';
-  inp.setAttribute('autocomplete', kind === 'email' ? 'email' : 'tel');
-
-  const sel = document.createElement('select');
-  sel.className = 'form-sel';
-  sel.style.cssText = 'width:76px;flex-shrink:0;font-size:10px';
-  const typeOptions = kind === 'email'
-    ? [['','—'],['HOME','home'],['WORK','work'],['OTHER','other']]
-    : [['','—'],['HOME','home'],['WORK','work'],['CELL','mobile'],['OTHER','other']];
-  typeOptions.forEach(([val, lbl]) => {
-    const opt = document.createElement('option');
-    opt.value = val; opt.textContent = lbl;
-    if (val === (type||'').toUpperCase()) opt.selected = true;
-    sel.appendChild(opt);
-  });
-
-  const del = document.createElement('button');
-  del.className = 'btn btn-d';
-  del.style.cssText = 'font-size:10px;padding:2px 6px;flex-shrink:0';
-  del.textContent = '✕';
-  del.title = 'Remove';
-  del.onclick = () => row.remove();
-
-  row.appendChild(inp);
-  row.appendChild(sel);
-  row.appendChild(del);
-  return row;
-}
-
-function addTypedEmailRow() {
-  const list = document.getElementById('edit-emails-list');
-  if (list) list.appendChild(makeTypedRow('', '', 'email', list.children.length));
-}
-
-function addTypedTelRow() {
-  const list = document.getElementById('edit-tels-list');
-  if (list) list.appendChild(makeTypedRow('', '', 'tel', list.children.length));
-}
-
-function collectTypedEmailRows() {
-  const rows = document.querySelectorAll('#edit-emails-list [data-kind="email"]');
-  const result = [];
-  rows.forEach(row => {
-    const val = row.querySelector('input')?.value?.trim().toLowerCase();
-    const type = row.querySelector('select')?.value || '';
-    if (val) result.push({ value: val, type });
-  });
-  return result;
-}
-
-function collectTypedTelRows() {
-  const rows = document.querySelectorAll('#edit-tels-list [data-kind="tel"]');
-  const result = [];
-  rows.forEach(row => {
-    const val = row.querySelector('input')?.value?.trim();
-    const type = row.querySelector('select')?.value || '';
-    if (val) result.push({ value: val, type });
-  });
-  return result;
-}
-
-// ══ Strip Proprietary Fields ══════════════════════════════════════════════════
-
-async function doStripProprietary(resetWaived) {
-  const confirm_msg = resetWaived
-    ? 'Strip all proprietary X- fields AND reset all "not required" markers from all contacts? This cannot be undone.'
-    : 'Strip all proprietary X- fields from all contacts? This cannot be undone.';
-  if (!confirm(confirm_msg)) return;
-
-  const res = document.getElementById('strip-proprietary-result');
-  if (res) { res.style.display=''; res.textContent = 'Processing…'; }
-  try {
-    const d = await post('/api/strip_proprietary', { reset_waived: resetWaived });
-    if (!d.ok) {
-      if (res) res.textContent = `✗ ${d.error}`;
-      toast(d.error || 'Failed', true); return;
-    }
-    const msg = `✓ ${d.stripped_fields} proprietary field(s) removed from ${d.stripped_cards} card(s)` +
-                (d.waived_reset ? ' · "not required" markers reset' : '') +
-                ' · Checkpoint saved.';
-    if (res) res.textContent = msg;
-    toast(msg.replace(/^✓ /, ''));
-  } catch(e) {
-    if (res) res.textContent = '✗ Failed';
-    toast('Failed to strip proprietary fields', true);
-  }
-}
-
-// ══ Birthdays & Anniversaries ════════════════════════════════════════════════
-
-// Default birthday categories — user can override in preferences
-const _DEFAULT_BDAY_CATS = ['friends', 'family', 'familyextended'];
-let _bdayCats = [..._DEFAULT_BDAY_CATS];
-
-async function loadBirthdays() {
-  // Read active categories from prefs checkboxes if available
-  const checkboxes = document.querySelectorAll('.pref-bday-cat-cb:checked');
-  if (checkboxes.length) {
-    _bdayCats = Array.from(checkboxes).map(cb => cb.value);
-  }
-
-  const hintEl = document.getElementById('bday-cats-hint');
-  if (hintEl) hintEl.textContent = `Showing: ${_bdayCats.join(', ')||'all categories'}`;
-
-  const res = document.getElementById('bday-results');
-  if (res) res.innerHTML = '<div style="color:var(--dim);font-size:10px;padding:12px 0">Loading…</div>';
-
-  try {
-    const d = await post('/api/birthdays', { categories: _bdayCats });
-    if (!d.ok) { toast(d.error||'Failed', true); return; }
-    renderBirthdays(d.events || []);
-  } catch(e) {
-    if (res) res.innerHTML = '<div style="color:var(--red);font-size:10px;padding:12px 0">Failed to load birthdays.</div>';
-    toast('Failed to load birthdays', true);
-  }
-}
-
-const _MONTH_NAMES = ['January','February','March','April','May','June',
-                      'July','August','September','October','November','December'];
-const _ORDINALS = {1:'st',2:'nd',3:'rd'};
-function ordinal(n) {
-  const t = n%100;
-  if (t >= 11 && t <= 13) return n + 'th';
-  return n + (_ORDINALS[n%10] || 'th');
-}
-
-function renderBirthdays(events) {
-  const res = document.getElementById('bday-results');
-  if (!res) return;
-  if (!events.length) {
-    res.innerHTML = '<div style="color:var(--dim);font-size:10px;padding:12px 0">No birthdays or anniversaries found in selected categories.</div>';
-    return;
-  }
-
-  // Group by month
-  const byMonth = {};
-  events.forEach(e => {
-    if (!byMonth[e.month]) byMonth[e.month] = [];
-    byMonth[e.month].push(e);
-  });
-
-  let html = '';
-  Object.keys(byMonth).sort((a,b)=>+a - +b).forEach(m => {
-    html += `<div class="bday-month-hdr">${_MONTH_NAMES[+m-1]}</div>`;
-    byMonth[m].forEach(e => {
-      const dayStr = e.day ? ordinal(e.day) : '';
-      const dateLabel = dayStr ? `${dayStr} ${_MONTH_NAMES[+e.month-1]}` : _MONTH_NAMES[+e.month-1];
-      const ageStr = e.age ? ` <span style="color:var(--dim)">(${ordinal(e.age)} ${e.event_type==='birthday'?'birthday':'anniversary'})</span>` : '';
-      const typeIcon = e.event_type === 'birthday' ? '🎂' : '💍';
-      const cats = (e.categories||[]).join(', ');
-      html += `<div class="bday-row">
-        <span class="bday-icon">${typeIcon}</span>
-        <span class="bday-name" onclick="jumpToCard(${e._idx})" title="Open contact">${esc(e.fn)}</span>
-        <span class="bday-date">${dateLabel}${ageStr}</span>
-        ${cats ? `<span class="bday-cats" style="color:var(--dim);font-size:9px;margin-left:auto">${esc(cats)}</span>` : ''}
-      </div>`;
-    });
-  });
-  res.innerHTML = html;
-}
-
-function jumpToCard(idx) {
-  // Navigate to the Review tab and highlight this card
-  show('review');
-  // Try to scroll to the card
-  setTimeout(() => {
-    const rows = document.querySelectorAll('.rev-row');
-    rows.forEach(r => {
-      if (r.dataset.idx == idx) {
-        r.scrollIntoView({behavior:'smooth', block:'center'});
-        r.style.background = 'rgba(0,224,64,.1)';
-        setTimeout(() => r.style.background='', 2000);
-      }
-    });
-  }, 300);
-}
-
-function printBirthdays() {
-  const res = document.getElementById('bday-results');
-  if (!res) return;
-  const monthNames = _MONTH_NAMES;
-  const cats = _bdayCats.join(', ') || 'all categories';
-  const printWin = window.open('', '_blank');
-  printWin.document.write(`<!DOCTYPE html><html><head>
-    <title>Birthdays &amp; Anniversaries</title>
-    <style>
-      body { font-family: Georgia, serif; font-size: 12pt; margin: 20mm; }
-      h1 { font-size: 18pt; margin-bottom: 4pt; }
-      .subtitle { font-size: 10pt; color: #666; margin-bottom: 20pt; }
-      h2 { font-size: 14pt; border-bottom: 1px solid #999; margin-top: 18pt; }
-      .row { display: flex; gap: 12pt; padding: 3pt 0; font-size: 11pt; }
-      .icon { width: 16pt; }
-      .name { width: 180pt; font-weight: bold; }
-      .date { flex: 1; }
-      .age { color: #666; font-size: 10pt; }
-      @media print { body { margin: 15mm; } }
-    </style></head><body>
-    <h1>🎂 Birthdays &amp; Anniversaries</h1>
-    <div class="subtitle">Categories: ${cats} · Generated ${new Date().toLocaleDateString('en-GB', {day:'numeric',month:'long',year:'numeric'})}</div>
-    ${res.innerHTML.replace(/class="bday-month-hdr"/g,'').replace(/<div class="bday-row">/g,'<div class="row">').replace(/<span class="bday-icon">/g,'<span class="icon">').replace(/<span class="bday-name"[^>]*>/g,'<span class="name">').replace(/<span class="bday-date">/g,'<span class="date">').replace(/<span class="bday-cats"[^>]*>/g,'<span class="age">').replace(/ onclick="[^"]*"/g,'')}
-    </body></html>`);
-  printWin.document.close();
-  printWin.focus();
-  setTimeout(() => printWin.print(), 500);
-}
-
-// Load available categories for birthday preferences
-function loadBdayCatPrefs() {
-  const container = document.getElementById('pref-bday-cats');
-  if (!container) return;
-  // Get all known categories from current cards in _currentPageCards or poll data
-  const allCats = new Set([..._DEFAULT_BDAY_CATS]);
-  // Get from _status if available
-  const catCounts = window._lastStatus ? window._lastStatus.category_counts || {} : {};
-  Object.keys(catCounts).forEach(c => allCats.add(c.toLowerCase()));
-  if (allCats.size === 0) {
-    container.innerHTML = '<div style="font-size:10px;color:var(--dim);font-style:italic">No categories found. Run Unify first.</div>';
-    return;
-  }
-  const stored = (localStorage ? null : null); // no localStorage — use defaults
-  container.innerHTML = Array.from(allCats).sort().map(cat => `
-    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:11px;color:var(--text)">
-      <input type="checkbox" class="pref-bday-cat-cb" value="${esc(cat)}"
-             ${_DEFAULT_BDAY_CATS.includes(cat) ? 'checked' : ''}
-             style="accent-color:var(--green)">
-      <span>${esc(cat)}</span>
-    </label>`).join('');
-}
-
-// Format E.164 phone numbers in GOV.UK style: +441932269627 → +44 1932 269627
-// UK numbers use variable-length area codes; other countries use fixed patterns.
-// Reference: https://design-system.service.gov.uk/patterns/phone-numbers/
-// Examples: 01632 960 001, 07700 900 982, +44 808 157 0192
-function fmtTel(t) {
-  if (!t) return '';
-  t = t.trim();
-  if (!t.startsWith('+')) return t;
-
-  const digits = t.slice(1); // strip leading +
-
-  // ── UK (+44) — variable area code lengths ───────────────────────────────────
-  // Area code length (after leading 0 / international 44) determines split point.
-  // We work on the national number: digits after '44'
-  if (digits.startsWith('44')) {
-    const nat = digits.slice(2); // national number without leading 0 (already dropped)
-    // UK mobile: 07xxx → stored as 447xxx (7 digit after 44)
-    // 07xxx mobiles: 3-digit network code + 7-digit subscriber → NNNNN NNN NNN
-    if (/^7\d{9}$/.test(nat)) {
-      // e.g. 7857390662 → 7857 390 662 (Ofcom mobile style)
-      return `+44 ${nat.slice(0,4)} ${nat.slice(4,7)} ${nat.slice(7)}`;
-    }
-    // 08xx / 09xx non-geographic: treat as 4-digit area code
-    if (/^[89]0\d/.test(nat)) {
-      const area = nat.slice(0, 3); // e.g. 808
-      const sub  = nat.slice(3);    // remaining subscriber
-      const s1 = sub.slice(0, 3), s2 = sub.slice(3);
-      return `+44 ${area}${s2 ? ` ${s1} ${s2}` : ` ${s1}`}`;
-    }
-    // Geographic area codes — length encoded in first digits per Ofcom numbering plan
-    // 5-digit area codes (01xxx): 01xxx NNN NNNN → area(5) sub(6) [split 3+3]
-    // 4-digit area codes (02x): 02x NNNN NNNN
-    // 3-digit area codes (011x/01x1): 011x NNN NNNN
-    // Key UK area code lengths (digits AFTER dropping leading 0):
-    const d2 = nat.slice(0, 2);
-    const d3 = nat.slice(0, 3);
-    const d4 = nat.slice(0, 4);
-    // 2-digit areas: 20 (London), 23 (Southampton/Portsmouth), 24 (Coventry),
-    //   28 (N.Ireland), 29 (Cardiff)
-    const twoDigitAreas = new Set(['20','23','24','28','29']);
-    // 3-digit areas: 113-118 (Leeds,Sheff,Liverpool,Brum,Bristol,Glasgow),
-    //   121,131,141,151,161,191 + others
-    const threeDigitAreas = new Set([
-      '113','114','115','116','117','118',
-      '121','131','141','151','161','191',
-      '116','300','330','345','370','371',
-      '800','808','844','845','870','871',
-    ]);
-    if (twoDigitAreas.has(d2)) {
-      // +44 20 NNNN NNNN
-      const sub = nat.slice(2);
-      return `+44 ${d2} ${sub.slice(0,4)} ${sub.slice(4)}`;
-    }
-    if (threeDigitAreas.has(d3)) {
-      // +44 113 NNN NNNN
-      const sub = nat.slice(3);
-      return `+44 ${d3} ${sub.slice(0,3)} ${sub.slice(3)}`;
-    }
-    // Default: 4-digit area code (most 01xxx numbers)
-    // e.g. 1932 269627 → +44 1932 269627 (GOV.UK style: area then subscriber run-on)
-    // Subscriber number may be 5 or 6 digits
-    const area = nat.slice(0, 4);
-    const sub  = nat.slice(4);
-    if (sub.length <= 6) return `+44 ${area} ${sub}`;
-    return `+44 ${area} ${sub.slice(0,3)} ${sub.slice(3)}`;
-  }
-
-  // ── Non-UK international numbers ────────────────────────────────────────────
-  // Fixed-pattern table: [cc_digits, [group_lengths]]
-  // Group lengths do NOT include the cc — they describe the national number chunks
-  const patterns = {
-    '1':   [3, 3, 4],        // US/CA: +1 NXX NXX XXXX
-    '7':   [3, 3, 4],        // Russia
-    '33':  [1, 2, 2, 2, 2],  // France: +33 N NN NN NN NN
-    '34':  [3, 3, 3],        // Spain
-    '39':  [2, 4, 4],        // Italy
-    '41':  [2, 3, 2, 2],     // Switzerland
-    '43':  [1, 4, 4],        // Austria
-    '45':  [2, 2, 2, 2],     // Denmark
-    '46':  [2, 3, 4],        // Sweden
-    '47':  [3, 2, 3],        // Norway
-    '48':  [3, 3, 3],        // Poland
-    '49':  [3, 4, 4],        // Germany
-    '31':  [2, 8],           // Netherlands
-    '32':  [1, 3, 2, 2],     // Belgium
-    '36':  [2, 3, 4],        // Hungary
-    '40':  [3, 6],           // Romania
-    '61':  [1, 4, 4],        // Australia
-    '64':  [1, 3, 4],        // New Zealand
-    '65':  [4, 4],           // Singapore
-    '81':  [2, 4, 4],        // Japan
-    '82':  [2, 4, 4],        // South Korea
-    '86':  [3, 4, 4],        // China
-    '91':  [5, 5],           // India
-    '27':  [2, 3, 4],        // South Africa
-    '20':  [2, 8],           // Egypt
-    '30':  [3, 7],           // Greece
-  };
-  // Try 2-digit country code first, then 1-digit
-  const cc2 = digits.slice(0, 2);
-  const cc1 = digits.slice(0, 1);
-  let cc, natPat;
-  if (patterns[cc2]) { cc = cc2; natPat = patterns[cc2]; }
-  else if (patterns[cc1]) { cc = cc1; natPat = patterns[cc1]; }
-
-  if (cc && natPat) {
-    const nat = digits.slice(cc.length);
-    let pos = 0;
-    const parts = [cc];
-    for (const len of natPat) {
-      const chunk = nat.slice(pos, pos + len);
-      if (chunk) parts.push(chunk);
-      pos += len;
-    }
-    const rem = nat.slice(pos);
-    if (rem) parts.push(rem);
-    return '+' + parts.join(' ');
-  }
-
-  // Ultimate fallback: country code + rest in groups of 4
-  const cc3 = digits.length > 11 ? digits.slice(0,3) : digits.length > 10 ? digits.slice(0,2) : digits.slice(0,1);
-  const rem = digits.slice(cc3.length);
-  const groups = rem.match(/.{1,4}/g) || [rem];
-  return '+' + cc3 + ' ' + groups.join(' ');
-}
+// ══ Country Normaliser ═══════════════════════════════════════════════════════
 let _cnData = [];   // [{raw, count, suggested, needs_fix}]
 
 async function openCountryNormaliser(highlight) {
@@ -4642,6 +4068,261 @@ function parseSingleLineAddressAdd() {
 async function post(url,body){return(await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();}
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function toast(msg,err){const el=document.getElementById('toast');el.textContent=msg;el.className='show'+(err?' err':'');clearTimeout(el._t);el._t=setTimeout(()=>el.className='',3500);}
+
+// ══ Typed email rows (edit modal) ════════════════════════════════════════════
+const EMAIL_TYPES = ['', 'HOME', 'WORK', 'OTHER'];
+const TEL_TYPES   = ['', 'HOME', 'WORK', 'CELL', 'OTHER'];
+
+function _typedRowHtml(listId, rowIdx, value, type, typeOptions) {
+  const opts = typeOptions.map(t => `<option value="${t}" ${t===type?'selected':''}>${t||'—'}</option>`).join('');
+  return `<div id="${listId}-row-${rowIdx}" style="display:flex;gap:4px;align-items:center;margin-bottom:3px">
+    <input class="form-in" style="flex:1;max-width:none" value="${esc(value)}" placeholder="value"
+           oninput="this.parentElement._dirty=true">
+    <select class="flt-sel" style="width:72px">${opts}</select>
+    <button class="row-btn del" style="padding:1px 7px" onclick="this.closest('[id]').remove()">✕</button>
+  </div>`;
+}
+
+function renderTypedEmailRows(items) {
+  const list = document.getElementById('edit-emails-list');
+  if (!list) return;
+  list.innerHTML = items.map((item, i) =>
+    _typedRowHtml('edit-emails-list', i, item.value||'', (item.type||'').toUpperCase(), EMAIL_TYPES)
+  ).join('');
+}
+
+function renderTypedTelRows(items) {
+  const list = document.getElementById('edit-tels-list');
+  if (!list) return;
+  list.innerHTML = items.map((item, i) =>
+    _typedRowHtml('edit-tels-list', i, item.value||'', (item.type||'').toUpperCase(), TEL_TYPES)
+  ).join('');
+}
+
+function addTypedEmailRow() {
+  const list = document.getElementById('edit-emails-list');
+  if (!list) return;
+  const i = list.children.length;
+  const div = document.createElement('div');
+  div.innerHTML = _typedRowHtml('edit-emails-list', i, '', '', EMAIL_TYPES);
+  list.appendChild(div.firstElementChild);
+  list.lastElementChild.querySelector('input').focus();
+}
+
+function addTypedTelRow() {
+  const list = document.getElementById('edit-tels-list');
+  if (!list) return;
+  const i = list.children.length;
+  const div = document.createElement('div');
+  div.innerHTML = _typedRowHtml('edit-tels-list', i, '', '', TEL_TYPES);
+  list.appendChild(div.firstElementChild);
+  list.lastElementChild.querySelector('input').focus();
+}
+
+function collectTypedEmailRows() {
+  const list = document.getElementById('edit-emails-list');
+  if (!list) return [];
+  return [...list.children].map(row => ({
+    value: row.querySelector('input').value.trim().toLowerCase(),
+    type:  row.querySelector('select').value,
+  })).filter(r => r.value);
+}
+
+function collectTypedTelRows() {
+  const list = document.getElementById('edit-tels-list');
+  if (!list) return [];
+  return [...list.children].map(row => ({
+    value: row.querySelector('input').value.trim(),
+    type:  row.querySelector('select').value,
+  })).filter(r => r.value);
+}
+
+// ══ Birthday category preferences ════════════════════════════════════════════
+const _DEFAULT_BDAY_CATS = ['friends', 'family', 'familyextended'];
+
+async function loadBdayCatPrefs() {
+  const container = document.getElementById('pref-bday-cats');
+  if (!container) return;
+
+  // Get all known categories from the current status
+  let allCats = [];
+  try {
+    const d = await (await fetch('/api/status')).json();
+    allCats = d.categories || [];
+  } catch(e) {}
+
+  // Load saved prefs from session storage
+  let savedCats;
+  try {
+    const raw = sessionStorage.getItem('vcard_bday_cats');
+    savedCats = raw ? JSON.parse(raw) : null;
+  } catch(e) { savedCats = null; }
+  const activeCats = new Set(savedCats || _DEFAULT_BDAY_CATS);
+
+  // Always show the default cats even if no contacts loaded
+  const displayCats = allCats.length ? allCats : [...new Set([..._DEFAULT_BDAY_CATS, ...activeCats])];
+
+  container.innerHTML = displayCats.map(cat => {
+    const checked = activeCats.has(cat) ? 'checked' : '';
+    return `<label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-size:11px;color:var(--text)">
+      <input type="checkbox" value="${esc(cat)}" ${checked}
+             onchange="saveBdayCatPref()" style="accent-color:var(--green)">
+      <span>${esc(cat)}</span>
+    </label>`;
+  }).join('');
+}
+
+function saveBdayCatPref() {
+  const boxes = document.querySelectorAll('#pref-bday-cats input[type=checkbox]');
+  const cats = [...boxes].filter(cb => cb.checked).map(cb => cb.value);
+  try { sessionStorage.setItem('vcard_bday_cats', JSON.stringify(cats)); } catch(e) {}
+}
+
+// ══ Phone reformatter ═════════════════════════════════════════════════════════
+async function doReformatPhones() {
+  const btn  = document.getElementById('btn-reformat-phones');
+  const hint = document.getElementById('reformat-phones-hint');
+  const res  = document.getElementById('reformat-phones-result');
+  if (btn)  btn.disabled = true;
+  if (hint) hint.textContent = 'Reformatting…';
+
+  try {
+    const d = await post('/api/reformat_phones', {});
+    if (d.ok) {
+      const n = d.changed || 0;
+      if (hint) hint.textContent = n ? `✓ ${n} number${n!==1?'s':''} updated` : '✓ All numbers already formatted';
+      if (res) {
+        res.style.display = '';
+        const lines = (d.log || []).slice(0, 20);
+        res.innerHTML = lines.length
+          ? lines.map(l => `<div style="font-size:10px;color:var(--text);padding:1px 0">${esc(l)}</div>`).join('')
+          : `<div style="font-size:10px;color:var(--dim)">No changes needed.</div>`;
+      }
+      flashSaved();
+      loadRevCards(revPage || 1);
+    } else {
+      if (hint) hint.textContent = d.error || 'Reformat failed';
+      toast(d.error || 'Reformat failed', true);
+    }
+  } catch(e) {
+    if (hint) hint.textContent = 'Error: ' + e.message;
+    toast('Reformat error: ' + e.message, true);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// ══ Quality filter for Review panel ══════════════════════════════════════════
+function onRevQualityFilter() {
+  const sel = document.getElementById('rev-quality');
+  revQuality = sel ? sel.value : '';
+  revPage = 1;
+  loadRevCards(1);
+}
+
+// ══ Birthdays panel ═══════════════════════════════════════════════════════════
+const MONTH_NAMES = ['January','February','March','April','May','June',
+                     'July','August','September','October','November','December'];
+
+async function loadBirthdays() {
+  const resultsEl = document.getElementById('bday-results');
+  if (!resultsEl) return;
+  resultsEl.innerHTML = '<div style="color:var(--dim);font-size:10px;padding:16px 0">Loading\u2026</div>';
+
+  // Get birthday category prefs
+  const catBoxes = document.querySelectorAll('#pref-bday-cats input[type=checkbox]');
+  let cats = [];
+  if (catBoxes.length) {
+    catBoxes.forEach(cb => { if (cb.checked) cats.push(cb.value); });
+    if (!cats.length) cats = ['friends','family','familyextended'];
+  }
+
+  const hint = document.getElementById('bday-cats-hint');
+  if (hint) hint.textContent = cats.length ? 'Showing: ' + cats.join(', ') : 'Showing: all categories';
+
+  try {
+    const d = await post('/api/birthdays', cats.length ? {categories: cats} : {});
+    if (!d.ok || !d.events || !d.events.length) {
+      resultsEl.innerHTML = '<div style="color:var(--dim);font-size:10px;padding:16px 0">No birthdays or anniversaries found for the selected categories.</div>';
+      return;
+    }
+
+    const byMonth = {};
+    for (const ev of d.events) {
+      if (!byMonth[ev.month]) byMonth[ev.month] = [];
+      byMonth[ev.month].push(ev);
+    }
+
+    let html = '';
+    for (const month of Object.keys(byMonth).sort((a,b)=>+a-+b)) {
+      const mName = MONTH_NAMES[month-1] || 'Month ' + month;
+      html += `<div class="bday-month-hdr">${mName}</div>`;
+      for (const ev of byMonth[month]) {
+        const icon = ev.event_type === 'anniversary' ? '<span style="color:var(--purple)">⬡</span>' : '<span style="color:var(--cyan)">◈</span>';
+        const dayStr = ev.day ? String(ev.day).padStart(2,'0') : '??';
+        const dateLabel = ev.year ? `${mName.slice(0,3)} ${dayStr}, ${ev.year}` : `${mName.slice(0,3)} ${dayStr}`;
+        const ageLabel = ev.age != null
+          ? `<span style="color:var(--dim);font-size:10px"> (${ev.event_type==='anniversary' ? ev.age+'yr' : 'turns '+ev.age})</span>`
+          : '';
+        const typeLabel = ev.event_type === 'anniversary'
+          ? `<span style="color:var(--purple);font-size:9px;margin-left:6px;letter-spacing:.05em">ANNIV</span>` : `<span style="color:var(--cyan);font-size:9px;margin-left:6px;letter-spacing:.05em">BDAY</span>`;
+        html += `<div class="bday-row">
+          <span class="bday-icon">${icon}</span>
+          <span class="bday-name" onclick="jumpRevByName(${JSON.stringify(ev.fn)})" title="Open in Review">${esc(ev.fn)}</span>
+          <span class="bday-date">${dateLabel}${ageLabel}${typeLabel}</span>
+        </div>`;
+      }
+    }
+    resultsEl.innerHTML = html;
+  } catch(e) {
+    resultsEl.innerHTML = `<div style="color:var(--red);font-size:10px;padding:16px 0">Error loading birthdays: ${esc(e.message)}</div>`;
+    console.error('loadBirthdays error:', e);
+  }
+}
+
+function jumpRevByName(name) {
+  revSearch = name;
+  revCat = ''; revKind = ''; revQuality = ''; revPage = 1;
+  show('review');
+  const qEl = document.getElementById('rev-q');
+  if (qEl) qEl.value = name;
+  loadRevCards(1);
+}
+
+function printBirthdays() {
+  const resultsEl = document.getElementById('bday-results');
+  if (!resultsEl || !resultsEl.querySelector('.bday-row')) {
+    toast('Load birthdays first (click \u27f3 refresh)', true);
+    return;
+  }
+  const hint = document.getElementById('bday-cats-hint');
+  const subtitle = hint ? hint.textContent : '';
+  const w = window.open('', '_blank');
+  if (!w) { toast('Pop-up blocked — allow pop-ups and try again', true); return; }
+  const inner = resultsEl.innerHTML
+    .replace(/class="bday-month-hdr"/g, 'class="month"')
+    .replace(/class="bday-row"/g, 'class="row"')
+    .replace(/class="bday-icon"/g, 'class="icon"')
+    .replace(/class="bday-name"[^>]*>/g, 'class="name">')
+    .replace(/class="bday-date"/g, 'class="date"')
+    .replace(/onclick="[^"]*"/g, '');
+  w.document.write(`<!DOCTYPE html><html><head><title>Birthday Calendar</title>
+<style>
+body{font-family:monospace;font-size:12px;margin:30px;color:#111}
+h1{font-size:16px;margin-bottom:4px}.sub{font-size:10px;color:#666;margin-bottom:24px}
+.month{font-size:11px;font-weight:bold;text-transform:uppercase;letter-spacing:.1em;
+       color:#333;margin:18px 0 5px;border-bottom:1px solid #ccc;padding-bottom:3px}
+.row{display:flex;gap:12px;padding:4px 0;border-bottom:1px solid #eee}
+.icon{width:18px;flex-shrink:0}.name{width:220px}.date{color:#555}
+@media print{body{margin:15mm}}
+</style></head><body>
+<h1>[ BIRTHDAYS &amp; ANNIVERSARIES ]</h1>
+<div class="sub">${esc(subtitle)} &middot; Generated ${new Date().toLocaleDateString()}</div>
+${inner}
+</body></html>`);
+  w.document.close();
+  setTimeout(() => w.print(), 400);
+}
 </script>
 </body>
 </html>

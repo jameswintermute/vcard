@@ -53,19 +53,44 @@ def save_checkpoint(
 # ── Load ───────────────────────────────────────────────────────────────────────
 
 def load_checkpoint(work_dir: Path) -> tuple[list[Card], dict] | None:
-    """Return (cards, meta) if a valid checkpoint exists, else None."""
+    """Return (cards, meta) if a valid checkpoint exists, else None.
+
+    Resilient: if checkpoint.json is missing or corrupt we still load
+    checkpoint.vcf and return a synthetic meta dict so the session resumes.
+    """
     vcf_path  = work_dir / CHECKPOINT_VCF
     meta_path = work_dir / CHECKPOINT_META
 
-    if not vcf_path.exists() or not meta_path.exists():
+    if not vcf_path.exists():
         return None
 
+    # Load meta — tolerate missing / corrupt JSON
+    meta: dict = {}
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            print(f"  [checkpoint] warning: could not read {meta_path.name}: {e}", flush=True)
+    else:
+        print(f"  [checkpoint] {CHECKPOINT_META} not found — loading {CHECKPOINT_VCF} anyway", flush=True)
+
     try:
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
         raw_pairs = read_vcards_from_files([vcf_path])
         cards = normalize_cards(raw_pairs)
+        # Fill in synthetic meta if it was missing/empty
+        if not meta:
+            meta = {
+                "saved_at": datetime.fromtimestamp(vcf_path.stat().st_mtime, tz=UTC).isoformat(),
+                "review_index": 0,
+                "total_cards": len(cards),
+                "input_count": len(cards),
+                "duplicate_clusters": 0,
+                "source_files": [],
+            }
+        print(f"  [checkpoint] loaded {len(cards)} cards OK", flush=True)
         return cards, meta
-    except Exception:
+    except Exception as e:
+        print(f"  [checkpoint] ERROR loading {CHECKPOINT_VCF}: {e}", flush=True)
         return None
 
 
