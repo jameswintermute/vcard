@@ -126,6 +126,9 @@ def _serialise_one(c: Card, target_version: str = "4.0") -> str:
         # KIND (vCard 4.0 only)
         if c.kind and target_version == "4.0":
             v.add("kind").value = c.kind
+        # GENDER (vCard 4.0 only)
+        if c.gender and target_version == "4.0":
+            v.add("gender").value = c.gender
 
         for a in c.addresses:
             _address_to_vobject(v, a)

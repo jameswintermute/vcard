@@ -99,6 +99,7 @@ class Card:
     rev: str | None = None
     addresses: list[Address] = field(default_factory=list)
     kind: str | None = None        # vCard 4.0 KIND: individual|org|group|location
+    gender: str | None = None      # vCard 4.0 GENDER: M|F|O|N|U
     categories: list[str] = field(default_factory=list)
     related: list[Related] = field(default_factory=list)  # RELATED — vCard 4.0
     member: list[str] = field(default_factory=list)         # MEMBER — vCard 4.0 (org cards: list of UID URNs)

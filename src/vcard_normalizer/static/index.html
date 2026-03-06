@@ -375,7 +375,43 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
   </div>
 
   <hr class="divider">
-  <div class="sec-lbl">STEP 4 — AUTO-REVIEW
+  <div class="sec-lbl">STEP 4 — AUTO-GENDER FROM PREFIX
+    <span style="color:var(--dim);font-weight:400"> — infer gender from name prefix</span>
+  </div>
+  <div style="color:var(--dim);font-size:10px;line-height:1.9;margin-bottom:9px">
+    Sets <code style="color:var(--text)">GENDER:M</code> for contacts with prefix
+    <code style="color:var(--text)">Mr</code> or <code style="color:var(--text)">Master</code>,
+    and <code style="color:var(--text)">GENDER:F</code> for
+    <code style="color:var(--text)">Mrs</code>, <code style="color:var(--text)">Ms</code>, or <code style="color:var(--text)">Miss</code>.
+    Only updates contacts where gender is not already set. Skips organisations.
+  </div>
+  <div id="gender-progress-bar" style="margin-bottom:10px"></div>
+  <div class="row" style="gap:8px;align-items:center;margin-bottom:4px">
+    <button class="btn btn-c" id="btn-auto-gender" onclick="doAutoGender()">⟳ auto-set gender from prefix</button>
+    <button class="btn btn-d" id="btn-assign-gender" onclick="openGenderAssign()" style="font-size:10px">✎ assign missing manually</button>
+    <span id="auto-gender-hint" style="font-size:10px;color:var(--dim)"></span>
+  </div>
+  <div id="auto-gender-result" style="display:none;margin-top:8px;background:rgba(0,224,64,.06);
+       border:1px solid var(--green2);padding:8px 12px;font-size:10px;color:var(--green)"></div>
+
+  <hr class="divider">
+  <div class="sec-lbl">STEP 4b — AUTO-PREFIX FROM GENDER
+    <span style="color:var(--dim);font-weight:400"> — infer missing prefix from gender</span>
+  </div>
+  <div style="color:var(--dim);font-size:10px;line-height:1.9;margin-bottom:9px">
+    Sets <code style="color:var(--text)">Mr</code> for male individuals with no prefix,
+    and <code style="color:var(--text)">Ms</code> for female individuals with no prefix.
+    Only updates contacts where prefix is not already set. Skips organisations.
+  </div>
+  <div class="row" style="gap:8px;align-items:center;margin-bottom:4px">
+    <button class="btn btn-c" id="btn-auto-prefix" onclick="doAutoPrefix()">⟳ auto-set prefix from gender</button>
+    <span id="auto-prefix-hint" style="font-size:10px;color:var(--dim)"></span>
+  </div>
+  <div id="auto-prefix-result" style="display:none;margin-top:8px;background:rgba(0,224,64,.06);
+       border:1px solid var(--green2);padding:8px 12px;font-size:10px;color:var(--green)"></div>
+
+  <hr class="divider">
+  <div class="sec-lbl">STEP 5 — AUTO-REVIEW
     <span style="color:var(--dim);font-weight:400"> — scan for contacts that may need attention</span>
   </div>
 
@@ -556,6 +592,14 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
       <option value="org">organisation</option>
     </select>
   </div>
+  <div class="form-row" id="add-gender-row">
+    <span class="form-lbl">gender</span>
+    <select class="form-sel" id="add-gender">
+      <option value="">— not specified —</option>
+      <option value="M">Male</option>
+      <option value="F">Female</option>
+    </select>
+  </div>
 
   <div class="section-divider">CONTACT</div>
   <div class="form-row">
@@ -663,6 +707,8 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
     <div class="stat-box"><div class="stat-val" style="color:var(--purple)"  id="ins-cats">0</div> <div class="stat-lbl">CATEGORIES</div></div>
   </div>
   <div class="sec-lbl">COMPLETENESS</div><div id="ins-completeness" style="margin-bottom:12px"></div>
+  <div class="sec-lbl">GENDER BREAKDOWN <span style="color:var(--dim);font-weight:400;font-size:9px"> — individuals only</span></div>
+  <div id="ins-gender" style="margin-bottom:12px"></div>
   <div class="sec-lbl">CATEGORY BREAKDOWN</div><div id="ins-cat-bars" style="margin-bottom:12px"></div>
   <div class="sec-lbl">SOURCE FILES</div><div id="ins-sources" style="margin-bottom:12px"></div>
   <div class="sec-lbl">CONTACTS BY COUNTRY
@@ -672,6 +718,38 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
   <div class="row" style="gap:8px;margin-bottom:12px">
     <button class="btn btn-c" style="font-size:10px;padding:2px 10px" onclick="openCountryNormaliser()">⟳ normalise country names</button>
     <span id="cn-hint" style="font-size:10px;color:var(--dim)"></span>
+  </div>
+</div>
+
+<!-- Gender Quick-Assign Modal -->
+<div class="modal-backdrop" id="gender-assign-modal">
+  <div class="modal" style="width:400px">
+    <div class="modal-header">
+      <div class="modal-title">Assign Gender</div>
+      <button class="modal-close" onclick="closeGenderAssign()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:10px;color:var(--dim);margin-bottom:14px">
+        <span id="ga-progress" style="color:var(--cyan)"></span>
+        individuals without a gender set.
+      </div>
+      <div id="ga-name" style="font-size:16px;font-weight:700;color:var(--bright);margin-bottom:6px;min-height:24px"></div>
+      <div id="ga-prefix" style="font-size:10px;color:var(--dim);margin-bottom:16px;min-height:14px"></div>
+      <div style="display:flex;gap:16px;margin-bottom:20px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:10px 20px;border:1px solid var(--border);border-radius:3px;flex:1;justify-content:center;transition:all .1s" id="ga-lbl-m" onclick="gaSelect('M')">
+          <input type="radio" name="ga-radio" id="ga-m" value="M" style="accent-color:var(--cyan)">
+          <span style="font-size:13px;color:var(--text)">♂ Male</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:10px 20px;border:1px solid var(--border);border-radius:3px;flex:1;justify-content:center;transition:all .1s" id="ga-lbl-f" onclick="gaSelect('F')">
+          <input type="radio" name="ga-radio" id="ga-f" value="F" style="accent-color:var(--cyan)">
+          <span style="font-size:13px;color:var(--text)">♀ Female</span>
+        </label>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-g" id="ga-next-btn" onclick="gaNext()" style="flex:1">Next →</button>
+        <button class="btn btn-d" onclick="gaSkip()" style="font-size:10px">skip</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1027,6 +1105,14 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
           <option value="self">self (my own card)</option>
         </select>
       </div>
+      <div class="form-row" id="edit-gender-row">
+        <span class="form-lbl">gender</span>
+        <select class="form-sel" id="edit-gender">
+          <option value="">— not specified —</option>
+          <option value="M">Male</option>
+          <option value="F">Female</option>
+        </select>
+      </div>
       <div id="edit-self-banner" style="display:none;background:rgba(77,159,255,.08);border:1px solid #4d9fff;padding:7px 10px;font-size:10px;color:#4d9fff;margin:6px 0">
         ★ This is your own contact card. vCard 4.0 KIND=individual is the correct export value — "self" is a local label only.
         Tagging yourself helps tools like the auto-reviewer skip you in certain checks.
@@ -1048,13 +1134,6 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
           <div id="edit-tels-list" style="display:flex;flex-direction:column;gap:4px"></div>
           <button class="btn btn-d" style="font-size:10px;padding:2px 8px;margin-top:5px" onclick="addTypedTelRow()">+ add phone</button>
         </div>
-      </div>
-
-      <div id="edit-clone-banner" class="clone-banner" style="margin-bottom:8px">
-        <span style="color:var(--cyan);font-size:13px">⊕</span>
-        <span id="edit-clone-msg" style="flex:1"></span>
-        <button class="btn btn-c" style="font-size:10px;padding:2px 8px" onclick="cloneAddress()">copy address</button>
-        <button class="btn btn-d" style="font-size:10px;padding:2px 8px" onclick="dismissClone()">dismiss</button>
       </div>
 
       <div class="section-divider">ADDRESS</div>
@@ -1103,6 +1182,12 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
 
       <div class="section-divider">LINKED PEOPLE <span style="color:var(--dim);font-weight:400;font-size:9px">— vCard 4.0 RELATED</span></div>
       <div id="edit-rel-list" class="rel-list"></div>
+      <div id="edit-clone-banner" class="clone-banner" style="margin-top:6px;margin-bottom:4px">
+        <span style="color:var(--cyan);font-size:13px">⊕</span>
+        <span id="edit-clone-msg" style="flex:1"></span>
+        <button class="btn btn-c" style="font-size:10px;padding:2px 8px" onclick="cloneAddress()">copy address</button>
+        <button class="btn btn-d" style="font-size:10px;padding:2px 8px" onclick="dismissClone()">dismiss</button>
+      </div>
       <!-- Rel picker -->
       <div class="rel-picker-wrap">
         <div style="font-size:10px;color:var(--dim);margin-bottom:7px">Select type, then search and click a contact to link. Repeat to add multiple links.</div>
@@ -1294,14 +1379,6 @@ function applyState(d) {
     checkSelfCards();
     checkFirstRun(d);
   }
-  // Always keep UID map fresh for relationship name resolution
-  if (d.total_cards && (!window._state_cards_by_uid || !Object.keys(window._state_cards_by_uid).length)) {
-    fetch('/api/cards?per_page=1000').then(r=>r.json()).then(all => {
-      window._state_cards_by_uid = {};
-      (all.cards||[]).forEach(c => { if (c.uid) window._state_cards_by_uid[c.uid] = c; });
-    }).catch(()=>{});
-  }
-  // Always keep UID map fresh for relationship name resolution
   if (d.total_cards && (!window._state_cards_by_uid || !Object.keys(window._state_cards_by_uid).length)) {
     fetch('/api/cards?per_page=1000').then(r=>r.json()).then(all => {
       window._state_cards_by_uid = {};
@@ -1376,6 +1453,9 @@ function renderClean(d) {
   document.getElementById('cs-dupes').textContent = d.dup_count||0;
   document.getElementById('cs-cats').textContent  = Object.keys(d.category_counts||{}).length;
   document.getElementById('cs-src').textContent   = Object.keys(d.source_counts||{}).length;
+
+  // Gender progress bar
+  renderGenderBar(d.gender_counts, 'gender-progress-bar', true);
 
   // Show the right empty state
   const hasSources  = (d.sources_present||[]).length > 0;
@@ -1482,13 +1562,22 @@ function renderRevTable(d) {
 
   _revSelected.clear();
   updateRevMergeBar();
+  let lastWasSelf = false;
   document.getElementById('rev-body').innerHTML = d.cards.map((c,pi)=>{
     const kindIcon = c.kind==='org' ? '🏢' : c.kind==='self' ? '⭐' : (c.org && !c.name_given && !c.name_family && c.fn===c.org) ? '🏢' : '👤';
     const emails = c.emails || [];
     const tels = c.tels_fmt && c.tels_fmt.length ? c.tels_fmt : (c.tels || []);
     const categories = c.categories || [];
-    return `
-    <tr id="rev-row-${pi}" ondblclick="openEdit(${pi})" class="${_revSelected.has(pi)?'rev-row-sel':''}">
+    // Insert divider after last self card
+    const isSelf = c._is_self || c.kind === 'self';
+    let divider = '';
+    if (lastWasSelf && !isSelf) {
+      divider = `<tr><td colspan="7" style="padding:0;border-bottom:1px solid var(--cyan);opacity:.35"></td></tr>`;
+    }
+    lastWasSelf = isSelf;
+    const rowStyle = isSelf ? 'background:rgba(0,204,196,.04)' : '';
+    return divider + `
+    <tr id="rev-row-${pi}" ondblclick="openEdit(${pi})" class="${_revSelected.has(pi)?'rev-row-sel':''}" style="${rowStyle}">
       <td style="width:28px;text-align:center">
         <input type="checkbox" class="rev-cb" data-pi="${pi}"
                onchange="toggleRevRow(${pi},this.checked)"
@@ -1719,6 +1808,13 @@ function openEdit(pageIdx) {
   _editPagePos = pageIdx;
   const c = _currentPageCards[pageIdx];
   if (!c) return;
+  if (!window._state_cards_by_uid || !Object.keys(window._state_cards_by_uid).length) {
+    fetch('/api/cards?per_page=1000').then(r=>r.json()).then(d => {
+      window._state_cards_by_uid = {};
+      (d.cards||[]).forEach(c => { if (c.uid) window._state_cards_by_uid[c.uid] = c; });
+      renderRelList('edit');
+    }).catch(()=>{});
+  }
 
   document.getElementById('edit-idx').value = c._idx;
   document.getElementById('edit-fn').value         = c.fn||'';
@@ -1733,6 +1829,7 @@ function openEdit(pageIdx) {
   document.getElementById('edit-anniversary').value= c.anniversary||'';
   document.getElementById('edit-note').value         = c.note||'';
   document.getElementById('edit-kind').value       = c.kind||'individual';
+  document.getElementById('edit-gender').value     = c.gender||'';
   document.getElementById('edit-cats').value       = c.categories.join(', ');
 
   const adr = c.addresses&&c.addresses[0] ? c.addresses[0] : {};
@@ -1790,8 +1887,13 @@ function openEdit(pageIdx) {
   document.getElementById('edit-modal-title').textContent = 'Edit: ' + (c.fn||c.org||'Contact');
   // Typed emails — build dynamic rows
   renderTypedEmailRows(c.typed_emails && c.typed_emails.length ? c.typed_emails : c.emails.map(v=>({value:v,type:''})));
-  // Typed tels — build dynamic rows
-  renderTypedTelRows(c.typed_tels && c.typed_tels.length ? c.typed_tels : c.tels.map(v=>({value:v,type:''})));
+  // Typed tels — build dynamic rows using tels_fmt for display-formatted values
+  const fmtMap = {};
+  (c.tels || []).forEach((raw, i) => { if (c.tels_fmt && c.tels_fmt[i]) fmtMap[raw] = c.tels_fmt[i]; });
+  const telRows = c.typed_tels && c.typed_tels.length
+    ? c.typed_tels.map(tv => ({ value: fmtMap[tv.value] || tv.value, type: tv.type }))
+    : (c.tels_fmt || c.tels || []).map((v, i) => ({ value: v, type: (c.typed_tels && c.typed_tels[i] ? c.typed_tels[i].type : '') }));
+  renderTypedTelRows(telRows);
   updateEditNav();
   _editFnManual = false;
   document.getElementById('edit-modal').classList.add('open');
@@ -1847,6 +1949,7 @@ async function saveEdit(silent) {
     anniversary: document.getElementById('edit-anniversary').value,
     note:        document.getElementById('edit-note').value,
     kind:        document.getElementById('edit-kind').value,
+    gender:      document.getElementById('edit-gender').value,
     typed_emails: collectTypedEmailRows(),
     typed_tels:   collectTypedTelRows(),
     emails:      collectTypedEmailRows().map(x=>x.value).join('\n'),
@@ -1970,6 +2073,7 @@ async function doAddContact() {
     org:        document.getElementById('add-org').value,
     title:      document.getElementById('add-title').value,
     kind:       document.getElementById('add-kind').value,
+    gender:     document.getElementById('add-gender').value,
     email:      rawEmails,
     tel:        document.getElementById('add-tel').value,
     bday:       document.getElementById('add-bday').value,
@@ -2017,6 +2121,10 @@ function renderInsights(d) {
   document.getElementById('ins-dupes').textContent = d.dup_count||0;
   document.getElementById('ins-src').textContent   = Object.keys(d.source_counts||{}).length;
   document.getElementById('ins-cats').textContent  = Object.keys(d.category_counts||{}).length;
+
+  // Gender breakdown
+  renderGenderBar(d.gender_counts, 'ins-gender', false);
+
   const catVals=Object.values(d.category_counts||{});
   const catTotal=catVals.reduce((a,b)=>a+b,0);
   const catPct=d.total_cards?Math.min(100,Math.round(catTotal/d.total_cards*100)):0;
@@ -2054,6 +2162,15 @@ function renderInsights(d) {
 
 // ══ §6 Export ═════════════════════════════════════════════════════════════════
 function renderExport(d) {
+  // Auto-populate owner name from self card if field is empty
+  const ownerEl = document.getElementById('exp-owner');
+  if (ownerEl && !ownerEl.value && d.self_card) {
+    const sc = d.self_card;
+    let ownerName = '';
+    if (sc.given && sc.family) ownerName = `${sc.given} ${sc.family}`;
+    else if (sc.fn) ownerName = sc.fn;
+    if (ownerName) ownerEl.value = ownerName;
+  }
   document.getElementById('exp-files').innerHTML=(d.output_files||[]).length
     ? d.output_files.map(f=>`<div class="fi"><span style="color:var(--blue)">▪</span><span class="fi-name">${esc(f.name)}</span><span class="fi-meta">${f.size_kb} KB</span></div>`).join('')
     : `<div style="color:var(--dim);font-size:10px;">No exports yet.</div>`;
@@ -2266,29 +2383,6 @@ function collectPrefixes() {
 }
 
 // ══ Structured name → FN sync ════════════════════════════════════════════════
-function syncAddFn() {
-  const prefix = document.getElementById('add-prefix').value.trim();
-  const given  = document.getElementById('add-given').value.trim();
-  const mid    = document.getElementById('add-additional').value.trim();
-  const family = document.getElementById('add-family').value.trim();
-  const suffix = document.getElementById('add-suffix').value.trim();
-  const parts  = [prefix, given, mid, family, suffix].filter(Boolean);
-  document.getElementById('add-fn').value = parts.join(' ');
-  // Clear error
-  document.getElementById('add-fn').classList.remove('err');
-  document.getElementById('add-fn-err').style.display = 'none';
-}
-
-function syncEditFn() {
-  const prefix = document.getElementById('edit-prefix').value.trim();
-  const given  = document.getElementById('edit-given').value.trim();
-  const mid    = document.getElementById('edit-additional').value.trim();
-  const family = document.getElementById('edit-family').value.trim();
-  const suffix = document.getElementById('edit-suffix').value.trim();
-  const parts  = [prefix, given, mid, family, suffix].filter(Boolean);
-  if (parts.length) document.getElementById('edit-fn').value = parts.join(' ');
-}
-
 // ══ Related / Spouse picker ═══════════════════════════════════════════════════
 let _addRelated  = [];   // [{rel_type, uid, text}]
 let _editRelated = [];
@@ -2296,39 +2390,65 @@ let _editRelated = [];
 function renderRelList(ctx) {
   const list = ctx === 'add' ? _addRelated : _editRelated;
   const el = document.getElementById(`${ctx}-rel-list`);
-  if (!list.length) { el.innerHTML = `<div style="color:var(--dim);font-size:10px;padding:3px 0 6px;">No linked people yet.</div>`; return; }
+  if (!list.length) { el.innerHTML = '<div style="color:var(--dim);font-size:10px;padding:3px 0 6px;">No linked people yet.</div>'; return; }
   el.innerHTML = list.map((r, i) => {
-    const looksLikeUid = r.text && /^(vcard-studio-|urn:uuid:)/i.test(r.text);
+    const looksLikeUid = r.text && /^vcard-studio-/i.test(r.text);
     const resolved = r.uid ? (window._state_cards_by_uid || {})[r.uid] : null;
     const displayName = (!looksLikeUid && r.text) ? r.text
                       : (resolved ? (resolved.fn || resolved.org || r.uid) : (r.uid || '?'));
     const linkedIdx = resolved ? resolved._idx : null;
     const nameEl = (r.uid && linkedIdx != null)
-      ? `<span class="ri-name ri-name-link" title="Open ${esc(displayName)}" onclick="jumpToLinkedCard(${linkedIdx})">${esc(displayName)} ↗</span>`
+      ? `<span class="ri-name ri-name-link" onclick="jumpToLinkedCard(${linkedIdx})">${esc(displayName)} ↗</span>`
       : `<span class="ri-name">${esc(displayName)}</span>`;
-    return `
-    <div class="rel-item">
+    const removeCmd = (r.uid && ctx === 'edit')
+      ? `removeRelUid('${ctx}','${r.uid}',${i})`
+      : `removeRel('${ctx}',${i})`;
+    // Show copy-address button if resolved contact has an address
+    const hasAddr = resolved && resolved.addresses && resolved.addresses[0] &&
+                    hasRealAddress(resolved.addresses[0]);
+    const addrBtn = hasAddr
+      ? `<button class="btn btn-d" style="font-size:9px;padding:1px 6px;color:var(--cyan);border-color:var(--cyan)" title="Copy ${esc(displayName)}'s address to this card" onmousedown="copyLinkedAddress('${ctx}','${r.uid}')">⊕ addr</button>`
+      : '';
+    return `<div class="rel-item">
       <span class="ri-type">${esc(r.rel_type)}</span>
       ${nameEl}
-      ${r.uid ? `<span class="ri-uid" title="Linked by UID — bidirectional">⊕ linked</span>` : `<span class="ri-uid">text only</span>`}
-      <button class="rel-remove" onmousedown="${r.uid && ctx==='edit' ? `removeRelUid('${ctx}','${r.uid}',${i})` : `removeRel('${ctx}',${i})`}">✕</button>
+      ${r.uid ? '<span class="ri-uid" title="Linked by UID">&#8853; linked</span>' : '<span class="ri-uid">text only</span>'}
+      ${addrBtn}
+      <button class="rel-remove" onmousedown="${removeCmd}">&#x2715;</button>
     </div>`;
   }).join('');
 }
 
+// Country-only does not count as a "real" address — require street, city or postcode
+function hasRealAddress(adr) {
+  if (!adr) return false;
+  return !!(adr.street || adr.locality || adr.city || adr.postal_code);
+}
+
+async function copyLinkedAddress(ctx, uid) {
+  const resolved = (window._state_cards_by_uid || {})[uid];
+  if (!resolved) {
+    // Map not ready — fetch and retry
+    const d = await (await fetch('/api/cards?per_page=1000')).json();
+    window._state_cards_by_uid = {};
+    (d.cards||[]).forEach(c => { if (c.uid) window._state_cards_by_uid[c.uid] = c; });
+    const r2 = window._state_cards_by_uid[uid];
+    if (!r2 || !r2.addresses || !r2.addresses[0]) { toast('Address not found', true); return; }
+    showCloneBanner(ctx, r2.fn || r2.org || 'linked contact', r2.addresses[0]);
+    return;
+  }
+  if (!resolved.addresses || !resolved.addresses[0]) { toast('No address on this contact', true); return; }
+  showCloneBanner(ctx, resolved.fn || resolved.org || 'linked contact', resolved.addresses[0]);
+}
+
 async function jumpToLinkedCard(globalIdx) {
-  // Close current modal, find the card in review, open its edit modal
   closeEditModal();
   try {
     const d = await (await fetch('/api/cards?per_page=1000')).json();
     const pi = (d.cards || []).findIndex(c => c._idx === globalIdx);
-    if (pi >= 0) {
-      _currentPageCards = d.cards;
-      openEdit(pi);
-    } else {
-      toast('Card not found', true);
-    }
-  } catch(e) { toast('Failed to open card', true); }
+    if (pi >= 0) { _currentPageCards = d.cards; openEdit(pi); }
+    else { toast('Card not found', true); }
+  } catch(e) { toast('Failed', true); }
 }
 
 async function removeRelUid(ctx, uid, i) {
@@ -2371,21 +2491,23 @@ async function relSearch(input, resultsId, ctx) {
 function renderRelResults(results, resultsId, ctx) {
   const el = document.getElementById(resultsId);
   if (!results.length) { el.classList.remove('open'); return; }
+  window._relPickerMap = window._relPickerMap || {};
+  window._relPickerMap[resultsId] = results;
   el.innerHTML = results.map((r, i) => `
-    <div class="rr-item" onmousedown="pickRel(${JSON.stringify(JSON.stringify(r)).slice(1,-1)},'${resultsId}','${ctx}')">
+    <div class="rr-item" onmousedown="pickRel(${i},'${resultsId}','${ctx}')">
       <div class="rr-name">${esc(r.fn || r.org || '?')}</div>
       <div class="rr-meta">${[r.emails[0], r.tels[0]].filter(Boolean).join(' · ')}</div>
       ${r.address && Object.values(r.address).some(Boolean)
-        ? `<div class="rr-copy-adr" onmousedown="copyRelAddress(event,${JSON.stringify(JSON.stringify(r.address)).slice(1,-1)},'${ctx}')">⊕ copy their address to this contact</div>`
+        ? `<div class="rr-copy-adr" onmousedown="copyRelAddress(event,${i},'${resultsId}','${ctx}')">⊕ copy their address to this contact</div>`
         : ''}
     </div>`).join('');
   el.classList.add('open');
 }
 
 async function pickRel(idx, resultsId, ctx) {
-  const results = (window._relPickerMap || {})[resultsId];
-  if (!results || !results[idx]) return;
-  const r = results[idx];
+  const _map = (window._relPickerMap || {})[resultsId];
+  if (!_map || !_map[idx]) return;
+  const r = _map[idx];
   const relType = document.getElementById(`${ctx}-rel-type`).value;
   const entry = { rel_type: relType, uid: r.uid || null, text: r.fn || r.org || '' };
 
@@ -2405,7 +2527,9 @@ async function pickRel(idx, resultsId, ctx) {
           from_idx: fromIdx, to_idx: r._idx, rel_type: relType
         });
         if (res.ok) {
-          toast(`⊕ Linked ${res.from_name} ↔ ${res.to_name} (${res.rel_type} / ${res.recip})`);
+          await reloadEditRelated(fromIdx);
+          addRelConfirmation(ctx, res.from_name, res.to_name, res.rel_type, res.recip);
+          flashSaved();
         }
       } catch(e) {}
     }
@@ -2464,19 +2588,32 @@ function checkCloneBanner(card) {
   dismissClone();
   // Only offer if this card has NO address
   const hasAdr = card.addresses && card.addresses.length > 0 &&
-    Object.values(card.addresses[0]).some(Boolean);
+    hasRealAddress(card.addresses[0]);
   if (hasAdr) return;
-  // Check if any related UID-linked person has an address in our loaded state
-  const related = card.related || [];
-  for (const r of related) {
-    if (!r.uid) continue;
-    const linked = _state_cards_by_uid[r.uid];
-    if (linked && linked.addresses && linked.addresses[0] &&
-        Object.values(linked.addresses[0]).some(Boolean)) {
-      showCloneBanner('edit', linked.fn || linked.org || r.text || 'linked contact',
-                      linked.addresses[0]);
-      return;
+
+  const _doCheck = () => {
+    const related = card.related || [];
+    for (const r of related) {
+      if (!r.uid) continue;
+      const linked = (window._state_cards_by_uid || {})[r.uid];
+      if (linked && linked.addresses && linked.addresses[0] &&
+          hasRealAddress(linked.addresses[0])) {
+        showCloneBanner('edit', linked.fn || linked.org || r.text || 'linked contact',
+                        linked.addresses[0]);
+        return;
+      }
     }
+  };
+
+  // If UID map is populated, check immediately; otherwise fetch first
+  if (window._state_cards_by_uid && Object.keys(window._state_cards_by_uid).length) {
+    _doCheck();
+  } else {
+    fetch('/api/cards?per_page=1000').then(r=>r.json()).then(d => {
+      window._state_cards_by_uid = {};
+      (d.cards||[]).forEach(c => { if (c.uid) window._state_cards_by_uid[c.uid] = c; });
+      _doCheck();
+    }).catch(()=>{});
   }
 }
 
@@ -2489,10 +2626,11 @@ function dismissClone() {
   });
 }
 
-function copyRelAddress(event, adrJson, ctx) {
+function copyRelAddress(event, idx, resultsId, ctx) {
   event.stopPropagation();
-  let a;
-  try { a = JSON.parse(adrJson); } catch(e) { return; }
+  const _map = (window._relPickerMap || {})[resultsId];
+  if (!_map || !_map[idx] || !_map[idx].address) return;
+  const a = _map[idx].address;
   const set = (id, val) => { const el = document.getElementById(`${ctx}-${id}`); if (el) el.value = val || ''; };
   set('street', a.street);
   set('city',   a.locality || a.city);
@@ -3144,6 +3282,9 @@ function onKindChange(ctx) {
     // MEMBER section — only relevant for org/group
     const memberSection = document.getElementById('edit-member-section');
     if (memberSection) memberSection.style.display = (isOrg || kind === 'group') ? '' : 'none';
+    // Gender — only for individuals
+    const genderRow = document.getElementById('edit-gender-row');
+    if (genderRow) genderRow.style.display = isOrg ? 'none' : '';
   }
 
   if (ctx === 'add') {
@@ -3157,6 +3298,9 @@ function onKindChange(ctx) {
     if (orgRow) orgRow.style.display = isOrg ? 'none' : '';
     const addDates = document.getElementById('add-dates-section');
     if (addDates) addDates.style.display = isOrg ? 'none' : '';
+    // Gender — only for individuals
+    const addGenderRow = document.getElementById('add-gender-row');
+    if (addGenderRow) addGenderRow.style.display = isOrg ? 'none' : '';
     // Highlight active kind button
     ['individual','org','self'].forEach(k => {
       const btn = document.getElementById(`kind-btn-${k}`);
@@ -3488,32 +3632,34 @@ async function relSearchPicker(q, gridId, ctx) {
   _relSearchTimer2 = setTimeout(async () => {
     try {
       const d = await (await fetch(`/api/search_cards?q=${encodeURIComponent(q)}`)).json();
-      renderRelPickerGrid(d.results||[], gridId, ctx);
+      const filtered = (d.results||[]).filter(r => r.kind !== 'org');
+      renderRelPickerGrid(filtered, gridId, ctx);
     } catch(e) {}
   }, 180);
 }
 
 function renderRelPickerGrid(results, gridId, ctx) {
   const grid = document.getElementById(gridId);
-  window._relPickerMap = window._relPickerMap || {};
-  window._relPickerMap[gridId] = results;
   if (!results.length) {
-    grid.innerHTML = '<div class="rel-no-results">No contacts found matching that name</div>';
+    grid.innerHTML = `<div class="rel-no-results">No contacts found matching that name</div>`;
     return;
   }
+  window._relPickerMap = window._relPickerMap || {};
+  window._relPickerMap[gridId] = results;
   grid.innerHTML = results.map((r, i) => {
-    const kindIcon = r.kind==='org' ? '\u{1F3E2}' : '\u{1F464}';
-    const sub = [r.emails[0], r.tels[0]].filter(Boolean).join(' \u00B7 ');
+    const kindIcon = r.kind==='org' ? '🏢' : '👤';
+    const sub = [r.emails[0], r.tels[0]].filter(Boolean).join(' · ');
     return `<div class="rel-card" onclick="pickRelFromGrid(${i},'${gridId}','${gridId}','${ctx}')">
       <div class="rel-card-name">${kindIcon} ${esc(r.fn||r.org||'?')}</div>
       ${sub ? `<div class="rel-card-sub">${esc(sub)}</div>` : ''}
-      <div class="rel-card-type">${r.uid ? '\u2295 will be UID-linked' : 'text link'}</div>
+      <div class="rel-card-type">${r.uid ? '⊕ will be UID-linked' : 'text link'}</div>
     </div>`;
   }).join('');
 }
+
 async function pickRelFromGrid(idx, mapKey, gridId, ctx) {
   const results = (window._relPickerMap || {})[mapKey];
-  if (!results || !results[idx]) { toast('Contact not found', true); return; }
+  if (!results || !results[idx]) { toast("Contact not found", true); return; }
   const r = results[idx];
   const relType = document.getElementById(`${ctx}-rel-type`).value;
 
@@ -3867,6 +4013,7 @@ function renderMemberPickerGrid(results, gridId) {
 
 function addMemberFromGrid(rJson) {
   let r;
+  try { r = JSON.parse(rJson); } catch(e) { return; }
   if (_editMembers.some(m => m.uid && m.uid === r.uid)) {
     toast('Already in members list', true); return;
   }
@@ -4222,6 +4369,175 @@ function saveBdayCatPref() {
 }
 
 // ══ Phone reformatter ═════════════════════════════════════════════════════════
+// ══ Gender progress bar (used by Clean + Insights) ═══════════════════════════
+function renderGenderBar(gc, elId, showAssignHint) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (!gc) { el.innerHTML = ''; return; }
+  const m = gc.M || 0, f = gc.F || 0, u = gc.unset || 0;
+  const total = m + f + u;
+  if (!total) { el.innerHTML = ''; return; }
+  const pctM   = Math.round(m / total * 100);
+  const pctF   = Math.round(f / total * 100);
+  const pctSet = Math.round((m + f) / total * 100);
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:5px">
+      <div style="flex:1;height:8px;background:var(--bg3);border-radius:4px;overflow:hidden;display:flex">
+        <div style="width:${pctM}%;background:#4d9fff;transition:width .3s" title="Male ${m}"></div>
+        <div style="width:${pctF}%;background:#f07adf;transition:width .3s" title="Female ${f}"></div>
+      </div>
+      <div style="font-size:10px;color:var(--dim);white-space:nowrap">${pctSet}% set</div>
+    </div>
+    <div style="display:flex;gap:16px;font-size:10px;color:var(--dim)">
+      <span><span style="color:#4d9fff">♂</span> ${m} male (${pctM}%)</span>
+      <span><span style="color:#f07adf">♀</span> ${f} female (${pctF}%)</span>
+      ${u > 0 ? `<span style="color:var(--amber)">${u} unset</span>` : `<span style="color:var(--green)">✓ complete</span>`}
+    </div>`;
+}
+
+// ══ Gender quick-assign ═══════════════════════════════════════════════════════
+let _gaQueue = [], _gaIdx = 0, _gaSel = null;
+
+async function openGenderAssign() {
+  const d = await (await fetch('/api/gender_unset')).json();
+  if (!d.ok || !d.cards.length) { toast('No individuals with unset gender'); return; }
+  _gaQueue = d.cards;
+  _gaIdx = 0;
+  _gaSel = null;
+  document.getElementById('gender-assign-modal').classList.add('open');
+  gaRender();
+}
+
+function closeGenderAssign() {
+  document.getElementById('gender-assign-modal').classList.remove('open');
+  _gaQueue = []; _gaIdx = 0; _gaSel = null;
+}
+
+function gaRender() {
+  if (_gaIdx >= _gaQueue.length) {
+    closeGenderAssign();
+    toast('✓ All done — gender assignment complete');
+    poll();
+    return;
+  }
+  const card = _gaQueue[_gaIdx];
+  const remaining = _gaQueue.length - _gaIdx;
+  document.getElementById('ga-progress').textContent = remaining;
+  document.getElementById('ga-name').textContent = card.fn;
+  document.getElementById('ga-prefix').textContent = card.prefix ? `prefix: ${card.prefix}` : '';
+  // Reset radio + highlight
+  document.getElementById('ga-m').checked = false;
+  document.getElementById('ga-f').checked = false;
+  _gaSel = null;
+  gaHighlight(null);
+}
+
+function gaSelect(gender) {
+  _gaSel = gender;
+  document.getElementById('ga-m').checked = gender === 'M';
+  document.getElementById('ga-f').checked = gender === 'F';
+  gaHighlight(gender);
+}
+
+function gaHighlight(gender) {
+  const lm = document.getElementById('ga-lbl-m');
+  const lf = document.getElementById('ga-lbl-f');
+  if (lm) { lm.style.borderColor = gender === 'M' ? '#4d9fff' : 'var(--border)'; lm.style.background = gender === 'M' ? 'rgba(77,159,255,.1)' : ''; }
+  if (lf) { lf.style.borderColor = gender === 'F' ? '#f07adf' : 'var(--border)'; lf.style.background = gender === 'F' ? 'rgba(240,122,223,.1)' : ''; }
+}
+
+async function gaNext() {
+  if (!_gaSel) { toast('Pick M or F first', true); return; }
+  const card = _gaQueue[_gaIdx];
+  await post('/api/set_gender', { idx: card._idx, gender: _gaSel });
+  _gaIdx++;
+  _gaSel = null;
+  gaRender();
+}
+
+function gaSkip() {
+  _gaIdx++;
+  _gaSel = null;
+  gaRender();
+}
+
+// Keyboard shortcuts: M, F, Enter, Escape while modal is open
+document.addEventListener('keydown', e => {
+  if (!document.getElementById('gender-assign-modal')?.classList.contains('open')) return;
+  if (e.key === 'm' || e.key === 'M') { e.preventDefault(); gaSelect('M'); }
+  else if (e.key === 'f' || e.key === 'F') { e.preventDefault(); gaSelect('F'); }
+  else if (e.key === 'Enter') { e.preventDefault(); gaNext(); }
+  else if (e.key === 'Escape') { closeGenderAssign(); }
+  else if (e.key === 's' || e.key === 'S') { e.preventDefault(); gaSkip(); }
+});
+
+async function doAutoGender() {
+  const btn  = document.getElementById('btn-auto-gender');
+  const hint = document.getElementById('auto-gender-hint');
+  const res  = document.getElementById('auto-gender-result');
+  if (btn)  btn.disabled = true;
+  if (hint) hint.textContent = 'Processing…';
+
+  try {
+    const d = await post('/api/auto_gender', {});
+    if (d.ok) {
+      const n = d.changed || 0;
+      if (hint) hint.textContent = n ? `✓ ${n} contact${n!==1?'s':''} updated` : '✓ No unset genders found matching known prefixes';
+      if (res) {
+        res.style.display = '';
+        const lines = (d.log || []).slice(0, 30);
+        res.innerHTML = lines.length
+          ? lines.map(l => `<div style="font-size:10px;color:var(--text);padding:1px 0">${esc(l)}</div>`).join('')
+          : '<div style="font-size:10px;color:var(--dim)">No changes needed.</div>';
+      }
+      flashSaved();
+      loadRevCards(revPage || 1);
+      poll();
+    } else {
+      if (hint) hint.textContent = d.error || 'Failed';
+      toast(d.error || 'Auto-gender failed', true);
+    }
+  } catch(e) {
+    if (hint) hint.textContent = 'Error';
+    toast('Auto-gender failed', true);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function doAutoPrefix() {
+  const btn  = document.getElementById('btn-auto-prefix');
+  const hint = document.getElementById('auto-prefix-hint');
+  const res  = document.getElementById('auto-prefix-result');
+  if (btn)  btn.disabled = true;
+  if (hint) hint.textContent = 'Processing…';
+
+  try {
+    const d = await post('/api/auto_prefix', {});
+    if (d.ok) {
+      const n = d.changed || 0;
+      if (hint) hint.textContent = n ? `✓ ${n} contact${n!==1?'s':''} updated` : '✓ No missing prefixes found';
+      if (res) {
+        res.style.display = '';
+        const lines = (d.log || []).slice(0, 30);
+        res.innerHTML = lines.length
+          ? lines.map(l => `<div style="font-size:10px;color:var(--text);padding:1px 0">${esc(l)}</div>`).join('')
+          : '<div style="font-size:10px;color:var(--dim)">No changes needed.</div>';
+      }
+      flashSaved();
+      loadRevCards(revPage || 1);
+    } else {
+      if (hint) hint.textContent = d.error || 'Failed';
+      toast(d.error || 'Auto-prefix failed', true);
+    }
+  } catch(e) {
+    if (hint) hint.textContent = 'Error';
+    toast('Auto-prefix failed', true);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 async function doReformatPhones() {
   const btn  = document.getElementById('btn-reformat-phones');
   const hint = document.getElementById('reformat-phones-hint');

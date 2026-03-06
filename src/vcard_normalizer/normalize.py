@@ -245,6 +245,12 @@ def normalize_cards(
         if kind_raw:
             kind = kind_raw.strip().lower()
 
+        # Parse GENDER (vCard 4.0) — M|F|O|N|U
+        gender: str | None = None
+        gender_raw = _get_text(getattr(vc, "gender", None))
+        if gender_raw:
+            gender = gender_raw.strip().upper().split(";")[0]  # "M;Male" → "M"
+
         card = Card(
             raw=vc,
             fn=fn,
@@ -264,6 +270,7 @@ def normalize_cards(
             related=related,
             note=note,
             kind=kind,
+            gender=gender,
             _source_files=[source_label],
         )
         # Restore "not required" field markers (persisted as X-VCARD-STUDIO-WAIVED)

@@ -22,7 +22,7 @@ from urllib.parse import parse_qs, urlparse
 # ── Resolve project root (2 levels up from this file: src/vcard_normalizer/) ──
 _HERE = Path(__file__).resolve().parent
 _ROOT = _HERE.parent.parent   # project root
-_VERSION = "3.2.0"
+_VERSION = "3.3.0"
 _STATIC = _HERE / "static"    # HTML/CSS/JS lives here
 
 PORT = 8421
@@ -87,11 +87,14 @@ def _card_to_dict(card) -> dict:
     # Format phone numbers using libphonenumber for display
     def _fmt_tel(t: str) -> str:
         try:
+            from .formatters import _format_spaced_e164 as _spaced
             import phonenumbers as _pn
-            n = _pn.parse(t, None)  # E.164 doesn't need region hint
-            return _pn.format_number(n, _pn.PhoneNumberFormat.INTERNATIONAL)
+            n = _pn.parse(t, "GB")
+            if _pn.is_possible_number(n):
+                return _spaced(n)
         except Exception:
-            return t
+            pass
+        return t
 
     return {
         "fn": card.fn or "",
@@ -104,6 +107,7 @@ def _card_to_dict(card) -> dict:
         "typed_tels":   [{"value": tv.value, "type": tv.type} for tv in (getattr(card, "typed_tels",   None) or [])],
         "categories": card.categories,
         "kind": card.kind or ("org" if (card.org and not card.fn) else "individual"),
+        "gender": card.gender or "",
         "title": card.title or "",
         "bday": card.bday or "",
         "anniversary": card.anniversary or "",
@@ -226,6 +230,7 @@ def _api_status() -> dict:
     print(f"  [status] cards={len(cards)} status={_state['status']}", flush=True)
     cats: dict[str, int] = {}
     countries: dict[str, int] = {}
+    gender_m = gender_f = gender_unset = 0
     for c in cards:
         try:
             for cat in (c.categories or []):
@@ -235,6 +240,11 @@ def _api_status() -> dict:
                 country = (c.addresses[0].country or "").strip()
             if country:
                 countries[country] = countries.get(country, 0) + 1
+            if c.kind != "org":
+                g = (c.gender or "").upper()
+                if g == "M":   gender_m += 1
+                elif g == "F": gender_f += 1
+                else:          gender_unset += 1
         except Exception:
             pass
 
@@ -244,6 +254,17 @@ def _api_status() -> dict:
     if cards and reported_status == "error":
         reported_status = "loaded"
         _state["status"] = "loaded"
+
+    # Find self card for owner name auto-population
+    self_card_info = None
+    for c in cards:
+        if c.kind == "self":
+            name = getattr(c, "name", None)
+            given  = (name.given  or "").strip() if name else ""
+            family = (name.family or "").strip() if name else ""
+            fn = c.fn or ""
+            self_card_info = {"fn": fn, "given": given, "family": family}
+            break
 
     return {
         "version": _VERSION,
@@ -256,6 +277,8 @@ def _api_status() -> dict:
         "dup_count": _state["dup_count"],
         "category_counts": cats,
         "country_counts": countries,
+        "gender_counts": {"M": gender_m, "F": gender_f, "unset": gender_unset},
+        "self_card": self_card_info,
         "sources_present": _get_source_filenames(),
         "checkpoint": _get_checkpoint_info(),
         "output_files": _get_output_files(),
@@ -379,6 +402,11 @@ def _api_cards(params: dict) -> dict:
 
     indexed.sort(key=_sort_key)
 
+    # Pin self card(s) to the top of page 1, with a flag for the UI divider
+    self_cards  = [(i, c) for i, c in indexed if c.kind == "self"]
+    other_cards = [(i, c) for i, c in indexed if c.kind != "self"]
+    indexed = self_cards + other_cards
+
     total = len(indexed)
     start = (page - 1) * per_page
     page_items = indexed[start:start + per_page]
@@ -386,6 +414,7 @@ def _api_cards(params: dict) -> dict:
     def _with_idx(i, c):
         d = _card_to_dict(c)
         d["_idx"] = i
+        d["_is_self"] = (c.kind == "self")
         return d
 
     return {
@@ -691,7 +720,7 @@ def _api_add_card(body: dict) -> dict:
 
         # Normalise phones
         import re as _re
-        raw_tels = [t for t in re.split(r"[\n,]+", body.get("tel",""))]
+        raw_tels = [t for t in _re.split(r"[\n,]+", body.get("tel",""))]
         normalised_tels = []
         for raw in raw_tels:
             raw = raw.strip()
@@ -739,6 +768,7 @@ def _api_add_card(body: dict) -> dict:
             categories=cats,
             addresses=[adr] if adr else [],
             kind=body.get("kind","individual"),
+            gender=body.get("gender","").strip().upper() or None,
             related=related,
             uid=str(_uuid.uuid4()),
         )
@@ -776,6 +806,7 @@ def _api_full_update_card(body: dict) -> dict:
     card.anniversary = body.get("anniversary","").strip() or None
     card.note  = body.get("note","").strip() or None
     card.kind  = body.get("kind","individual")
+    card.gender = body.get("gender","").strip().upper() or None
 
     # Structured name
     card.name = NameComponents(
@@ -1228,6 +1259,109 @@ def _api_settings() -> dict:
         return {"ok": False, "error": str(exc)}
 
 
+def _api_gender_unset(params: dict) -> dict:
+    """Return individuals with no gender set, for the quick-assign UI."""
+    cards = _state.get("cards", [])
+    results = [
+        {"_idx": i, "fn": c.fn or c.org or "(unnamed)", "prefix": (c.name.prefix if c.name else "") or ""}
+        for i, c in enumerate(cards)
+        if c.kind != "org" and not (c.gender or "").strip()
+    ]
+    return {"ok": True, "cards": results, "total": len(results)}
+
+
+def _api_set_gender(body: dict) -> dict:
+    """Set gender on a single card by _idx."""
+    cards = _state.get("cards", [])
+    idx = body.get("idx")
+    gender = (body.get("gender") or "").strip().upper()
+    if idx is None or gender not in ("M", "F", ""):
+        return {"ok": False, "error": "Invalid request"}
+    idx = int(idx)
+    if idx < 0 or idx >= len(cards):
+        return {"ok": False, "error": "Card not found"}
+    cards[idx].gender = gender or None
+    _autosave_checkpoint()
+    return {"ok": True}
+
+
+def _api_auto_prefix(body: dict) -> dict:
+    """Set name prefix from gender for individuals missing a prefix.
+
+    Rules:
+      gender M + no prefix → Mr
+      gender F + no prefix → Ms
+
+    Only sets prefix where it is not already recorded. Skips organisations.
+    """
+    cards = _state.get("cards")
+    if not cards:
+        return {"ok": False, "error": "No cards loaded"}
+
+    log = []
+    changed = 0
+    for card in cards:
+        if card.kind == "org":
+            continue
+        if (card.name.prefix or "").strip():   # already has a prefix
+            continue
+        gender = (card.gender or "").upper()
+        if gender == "M":
+            card.name.prefix = "Mr"
+            changed += 1
+            log.append(f"Mr  {card.fn or '(unnamed)'}")
+        elif gender == "F":
+            card.name.prefix = "Ms"
+            changed += 1
+            log.append(f"Ms  {card.fn or '(unnamed)'}")
+
+    if changed:
+        _autosave_checkpoint()
+
+    return {"ok": True, "changed": changed, "log": log}
+
+
+
+    """Infer gender from name prefix for all loaded individual contacts.
+
+    Rules:
+      Mr, Master  → M
+      Mrs, Ms, Miss → F
+
+    Only sets gender where it is not already recorded. Skips organisations.
+    """
+    cards = _state.get("cards")
+    if not cards:
+        return {"ok": False, "error": "No cards loaded"}
+
+    MALE_PREFIXES   = {"mr", "master"}
+    FEMALE_PREFIXES = {"mrs", "ms", "miss"}
+
+    log = []
+    changed = 0
+    for card in cards:
+        if card.kind == "org":
+            continue
+        if card.gender:          # already set — leave it alone
+            continue
+        prefix = (card.name.prefix or "").strip().rstrip(".").lower()
+        if not prefix:
+            continue
+        if prefix in MALE_PREFIXES:
+            card.gender = "M"
+            changed += 1
+            log.append(f"M  {card.fn or card.org or '(unnamed)'}")
+        elif prefix in FEMALE_PREFIXES:
+            card.gender = "F"
+            changed += 1
+            log.append(f"F  {card.fn or card.org or '(unnamed)'}")
+
+    if changed:
+        _autosave_checkpoint()
+
+    return {"ok": True, "changed": changed, "log": log}
+
+
 def _api_reformat_phones(body: dict) -> dict:
     """Re-run phone normalisation on all loaded cards and return a log of changes.
 
@@ -1330,23 +1464,6 @@ def _api_export_individual(body: dict) -> dict:
         if skipped:
             result["warning"] = f"{skipped} card(s) skipped due to data errors"
         return result
-    except Exception as exc:
-        return {"ok": False, "error": str(exc)}
-
-
-def _api_card(params: dict) -> dict:
-    """Return the full JSON for a single card by _idx."""
-    cards = _state.get("cards")
-    if not cards:
-        return {"ok": False, "error": "No cards loaded"}
-    try:
-        idx = int(params.get("idx", ["-1"])[0])
-        card = next((c for c in cards if getattr(c, '_idx', None) == idx), None)
-        if card is None and 0 <= idx < len(cards):
-            card = cards[idx]
-        if card is None:
-            return {"ok": False, "error": "Card not found"}
-        return {"ok": True, "card": _card_to_dict(card)}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
 
@@ -1590,10 +1707,10 @@ class VCardHandler(BaseHTTPRequestHandler):
             self._send_json(_api_search_cards(params))
         elif path == "/api/settings":
             self._send_json(_api_settings())
-        elif path == "/api/card":
-                self._send_json(_api_card(params))
         elif path == "/api/card_raw":
             self._send_json(_api_card_raw(params))
+        elif path == "/api/gender_unset":
+            self._send_json(_api_gender_unset(params))
         elif path == "/api/print_cards":
             self._send_json(_api_print_cards(params))
         elif path == "/api/search_orgs":
@@ -1656,6 +1773,14 @@ class VCardHandler(BaseHTTPRequestHandler):
             self._send_json(_api_merge_cards(body))
         elif path == "/api/reformat_phones":
             self._send_json(_api_reformat_phones(body))
+        elif path == "/api/auto_gender":
+            self._send_json(_api_auto_gender(body))
+        elif path == "/api/auto_prefix":
+            self._send_json(_api_auto_prefix(body))
+        elif path == "/api/set_gender":
+            self._send_json(_api_set_gender(body))
+        elif path == "/api/gender_unset":
+            self._send_json(_api_gender_unset(params))
         elif path == "/api/save_settings":
             self._send_json(_api_save_settings(body))
         elif path == "/api/quit":
