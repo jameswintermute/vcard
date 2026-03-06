@@ -1334,6 +1334,23 @@ def _api_export_individual(body: dict) -> dict:
         return {"ok": False, "error": str(exc)}
 
 
+def _api_card(params: dict) -> dict:
+    """Return the full JSON for a single card by _idx."""
+    cards = _state.get("cards")
+    if not cards:
+        return {"ok": False, "error": "No cards loaded"}
+    try:
+        idx = int(params.get("idx", ["-1"])[0])
+        card = next((c for c in cards if getattr(c, '_idx', None) == idx), None)
+        if card is None and 0 <= idx < len(cards):
+            card = cards[idx]
+        if card is None:
+            return {"ok": False, "error": "Card not found"}
+        return {"ok": True, "card": _card_to_dict(card)}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
 def _api_card_raw(params: dict) -> dict:
     """Return serialised vCard text for one card (raw viewer)."""
     cards = _state["cards"]
@@ -1573,6 +1590,8 @@ class VCardHandler(BaseHTTPRequestHandler):
             self._send_json(_api_search_cards(params))
         elif path == "/api/settings":
             self._send_json(_api_settings())
+        elif path == "/api/card":
+                self._send_json(_api_card(params))
         elif path == "/api/card_raw":
             self._send_json(_api_card_raw(params))
         elif path == "/api/print_cards":

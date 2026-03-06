@@ -33,6 +33,4 @@ if spec and os.path.abspath(spec.origin) != os.path.abspath(expected):
     sys.path.insert(0, src_dir)
 
 from vcard_normalizer.server import main
-import vcard_normalizer.server as _srv
-print(f"  Loaded server from: {_srv.__file__}")
 main()
