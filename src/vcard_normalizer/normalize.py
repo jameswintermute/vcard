@@ -239,6 +239,12 @@ def normalize_cards(
         if waived_raw:
             waived = {f.strip() for f in waived_raw.split(",") if f.strip()}
 
+        # Parse KIND (vCard 4.0) — critical for preserving user-set org/individual/self
+        kind: str | None = None
+        kind_raw = _get_text(getattr(vc, "kind", None))
+        if kind_raw:
+            kind = kind_raw.strip().lower()
+
         card = Card(
             raw=vc,
             fn=fn,
@@ -257,6 +263,7 @@ def normalize_cards(
             categories=categories,
             related=related,
             note=note,
+            kind=kind,
             _source_files=[source_label],
         )
         # Restore "not required" field markers (persisted as X-VCARD-STUDIO-WAIVED)

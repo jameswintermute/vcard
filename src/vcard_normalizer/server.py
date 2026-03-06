@@ -1267,6 +1267,7 @@ def _api_reformat_phones(body: dict) -> dict:
 
         # Mark dirty so next save/export picks up changes
         _state["dirty"] = True
+        _autosave_checkpoint()
 
         return {"ok": True, "changed": changed, "log": log}
     except Exception as exc:
