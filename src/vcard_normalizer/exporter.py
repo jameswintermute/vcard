@@ -167,7 +167,7 @@ def card_to_vcf_text(card: Card, target_version: str = "4.0") -> str:
 
 def export_vcards(cards: list[Card], path: Path, target_version: str = "4.0") -> int:
     """Serialise all cards to one combined VCF file."""
-    cards_sorted = sorted(cards, key=lambda c: (c.fn or "", c.n or ""))
+    cards_sorted = sorted(cards, key=lambda c: (c.fn or "", c.org or ""))
     lines: list[str] = []
     skipped = 0
 
