@@ -82,6 +82,18 @@ def normalize_phones_in_cards(
             except NumberParseException:
                 new_tels.append(raw)
         card.tels = sorted(set(new_tels))
+        # Keep typed_tels in sync — update values in-place, preserving type labels
+        if card.typed_tels:
+            updated_typed = []
+            for tv in card.typed_tels:
+                try:
+                    parsed = phonenumbers.parse(tv.value, region)
+                    if phonenumbers.is_possible_number(parsed) and phonenumbers.is_valid_number(parsed):
+                        tv.value = _format_spaced_e164(parsed)
+                except Exception:
+                    pass
+                updated_typed.append(tv)
+            card.typed_tels = updated_typed
         if reformatted:
             card.log_change(f"Phone(s) reformatted: {'; '.join(reformatted)}")
 

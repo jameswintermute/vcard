@@ -98,9 +98,13 @@ def _serialise_one(c: Card, target_version: str = "4.0") -> str:
         if target_version == "4.0":
             for rel in (c.related or []):
                 try:
+                    val = rel.value_str()
+                    if not val:
+                        continue
                     r = v.add("related")
-                    r.value = rel.value_str()
-                    r.type_param = rel.rel_type
+                    r.value = val
+                    if rel.rel_type:
+                        r.params["TYPE"] = [rel.rel_type]
                 except Exception:
                     pass
 
