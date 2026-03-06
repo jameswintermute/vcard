@@ -575,6 +575,8 @@ def _api_export(body: dict) -> dict:
         return {"ok": True, "count": count, "file": out_path.name}
 
     except Exception as exc:
+        import traceback
+        print(f"[export error] {traceback.format_exc()}", flush=True)
         return {"ok": False, "error": str(exc)}
 
 
