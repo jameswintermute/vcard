@@ -251,6 +251,11 @@ def normalize_cards(
         if gender_raw:
             gender = gender_raw.strip().upper().split(";")[0]  # "M;Male" → "M"
 
+        # Parse X-IOS-GIVEN / X-IOS-FAMILY — non-destructive iOS display name override
+        # vobject converts hyphens to underscores in attribute names
+        x_ios_given  = _get_text(getattr(vc, "x_ios_given",  None)) or None
+        x_ios_family = _get_text(getattr(vc, "x_ios_family", None)) or None
+
         card = Card(
             raw=vc,
             fn=fn,
@@ -276,6 +281,11 @@ def normalize_cards(
         # Restore "not required" field markers (persisted as X-VCARD-STUDIO-WAIVED)
         if waived:
             card._waived = waived
+        # Restore iOS display-name override fields
+        if x_ios_given:
+            card.x_ios_given = x_ios_given
+        if x_ios_family:
+            card.x_ios_family = x_ios_family
         if photo_count:
             card.log_change(f"Stripped {photo_count} photo/logo/sound property(ies)")
         # Log UID replacement (old_uid set above if vendor UID was found)
