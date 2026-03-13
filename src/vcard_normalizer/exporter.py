@@ -147,6 +147,14 @@ def _serialise_one(c: Card, target_version: str = "4.0") -> str:
         if waived:
             v.add("x-vcard-studio-waived").value = ",".join(sorted(waived))
 
+        # X-IOS-GIVEN / X-IOS-FAMILY — non-destructive iOS display name override
+        x_ios_given  = getattr(c, "x_ios_given",  None)
+        x_ios_family = getattr(c, "x_ios_family", None)
+        if x_ios_given:
+            v.add("x-ios-given").value = x_ios_given
+        if x_ios_family:
+            v.add("x-ios-family").value = x_ios_family
+
         # REV — card's own revision timestamp if set, else now
         v.add("rev").value = c.rev or now_iso
 
@@ -161,18 +169,170 @@ def _serialise_one(c: Card, target_version: str = "4.0") -> str:
 
 
 def card_to_vcf_text(card: Card, target_version: str = "4.0") -> str:
-    """Return the vCard 4.0 text for a single card (used by the raw viewer)."""
+    """Return the vCard text for a single card (used by the raw viewer)."""
     return _serialise_one(card, target_version)
 
 
-def export_vcards(cards: list[Card], path: Path, target_version: str = "4.0") -> int:
+# ---------------------------------------------------------------------------
+# Apple / iOS compatibility serialiser (vCard 3.0)
+# ---------------------------------------------------------------------------
+
+def _serialise_one_apple(c: Card) -> str:
+    """Serialise a single Card to vCard 3.0 format optimised for Apple iOS/iCloud.
+
+    4.0-only fields (KIND, GENDER, RELATED, MEMBER, ANNIVERSARY) are stripped
+    from the structured data but preserved verbatim in an appended NOTE block
+    so that no information is permanently lost. TEL values are written as plain
+    phone numbers (not URI format) for maximum iPhone compatibility.
+    Returns '' on failure.
+    """
+    try:
+        now_iso = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        v = vobject.vCard()
+        v.add("version").value = "3.0"
+
+        fn = c.fn or "Unnamed"
+        v.add("fn").value = fn
+
+        # iOS name override: if X-IOS-GIVEN/FAMILY set, use them for N and FN
+        # This is non-destructive — the real name fields are unchanged
+        x_ios_given  = getattr(c, "x_ios_given",  None)
+        x_ios_family = getattr(c, "x_ios_family", None)
+        if x_ios_given or x_ios_family:
+            from .model import NameComponents as _NC
+            ios_name = _NC(
+                given    = x_ios_given  or (c.name.given  if c.name else None),
+                family   = x_ios_family or (c.name.family if c.name else None),
+                prefix   = c.name.prefix   if c.name else None,
+                suffix   = c.name.suffix   if c.name else None,
+                additional = c.name.additional if c.name else None,
+            )
+            ios_name_obj = _name_to_vobject(ios_name)
+            if ios_name_obj is not None:
+                v.add("n").value = ios_name_obj
+            # FN: prefix + ios name if no prefix already in fn
+            ios_full = " ".join(p for p in [
+                c.name.prefix if c.name else None,
+                x_ios_given,
+                x_ios_family,
+            ] if p)
+            if ios_full:
+                v.fn.value = ios_full
+        else:
+            name_obj = _name_to_vobject(c.name)
+            if name_obj is not None:
+                v.add("n").value = name_obj
+
+            if c.name and c.name.prefix and c.fn and not c.fn.startswith(c.name.prefix):
+                v.fn.value = f"{c.name.prefix} {c.fn}"
+
+        # EMAIL
+        typed_email_map = {tv.value: tv.type for tv in (c.typed_emails or [])}
+        for e in sorted(set(c.emails)):
+            it = v.add("email")
+            it.value = e
+            etype = typed_email_map.get(e, "").upper()
+            if etype and etype not in ("INTERNET",):
+                it.type_param = [etype, "INTERNET"]
+            else:
+                it.type_param = "INTERNET"
+
+        # TEL — write plain E.164 numbers, not VALUE=uri:tel: format
+        # Strip any accidental tel: prefix that might have crept in
+        typed_tel_map = {tv.value: tv.type for tv in (c.typed_tels or [])}
+        for t in sorted(set(c.tels)):
+            tel = v.add("tel")
+            # Ensure we never write 'tel:+44...' — strip any URI prefix
+            tel.value = t.removeprefix("tel:").strip()
+            ttype = typed_tel_map.get(t, "").upper()
+            if ttype:
+                tel.type_param = ttype
+
+        if c.org:
+            try:
+                v.add("org").value = [c.org]
+            except Exception:
+                pass
+
+        if c.title:
+            v.add("title").value = c.title
+
+        if c.bday:
+            v.add("bday").value = c.bday
+
+        for a in c.addresses:
+            _address_to_vobject(v, a)
+
+        if c.categories:
+            v.add("categories").value = sorted(set(c.categories))
+
+        if c.uid:
+            v.add("uid").value = c.uid
+
+        # Mark self card as the device owner's "My Card"
+        if c.kind == "self":
+            v.add("x-abshowas").value = "PROFILE"
+
+        # Build the metadata preservation block for stripped 4.0 fields
+        meta_lines: list[str] = []
+
+        if c.kind and c.kind != "individual":
+            meta_lines.append(f"KIND: {c.kind}")
+
+        if c.gender:
+            meta_lines.append(f"GENDER: {c.gender}")
+
+        if c.anniversary:
+            meta_lines.append(f"ANNIVERSARY: {c.anniversary}")
+
+        if c.categories:
+            meta_lines.append(f"CATEGORIES: {', '.join(sorted(set(c.categories)))}")
+
+        for rel in (c.related or []):
+            val = rel.value_str() if hasattr(rel, "value_str") else str(rel)
+            if val:
+                rtype = rel.rel_type if hasattr(rel, "rel_type") and rel.rel_type else ""
+                meta_lines.append(f"RELATED{('[' + rtype + ']') if rtype else ''}: {val}")
+
+        for uid_ref in (c.member or []):
+            if uid_ref:
+                meta_lines.append(f"MEMBER: {uid_ref}")
+
+        # Compose NOTE: existing note + appended metadata block (single line, no embedded newlines)
+        existing_note = (c.note or "").strip()
+        if meta_lines:
+            meta_block = "[vCS: " + " | ".join(meta_lines) + "]"
+            combined_note = f"{existing_note}  {meta_block}".strip() if existing_note else meta_block
+        else:
+            combined_note = existing_note
+
+        if combined_note:
+            v.add("note").value = combined_note
+
+        v.add("prodid").value = PRODID
+        v.add("rev").value = c.rev or now_iso
+
+        # vobject serialises with \r\n — return as-is, no post-processing
+        return v.serialize()
+
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Apple serialisation failed for %r: %s", c.fn or c.org or "Unnamed", exc
+        )
+        return ""
+
+
+def export_vcards(cards: list[Card], path: Path, target_version: str = "4.0", apple_compat: bool = False) -> int:
     """Serialise all cards to one combined VCF file."""
     cards_sorted = sorted(cards, key=lambda c: (c.fn or "", c.org or ""))
     lines: list[str] = []
     skipped = 0
 
+    serialise = _serialise_one_apple if apple_compat else lambda c: _serialise_one(c, target_version)
+
     for c in cards_sorted:
-        text = _serialise_one(c, target_version)
+        text = serialise(c)
         if text:
             lines.append(text)
         else:
@@ -204,6 +364,7 @@ def export_vcards_individual(
     cards: list[Card],
     out_dir: Path,
     target_version: str = "4.0",
+    apple_compat: bool = False,
 ) -> tuple[int, int]:
     """Export each card as its own .vcf file.
 
@@ -215,8 +376,10 @@ def export_vcards_individual(
     written = 0
     skipped = 0
 
+    serialise = _serialise_one_apple if apple_compat else lambda c: _serialise_one(c, target_version)
+
     for c in sorted(cards, key=lambda c: (c.name.family or c.fn or "", c.name.given or "")):
-        text = _serialise_one(c, target_version)
+        text = serialise(c)
         if not text:
             skipped += 1
             continue

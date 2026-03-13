@@ -513,6 +513,32 @@ def _api_process(body: dict) -> dict:
     return {"ok": True, "message": "Processing started"}
 
 
+def _get_apple_name_warnings(cards) -> list:
+    """Return list of (uid, fn) for contacts that will render badly on Apple/iOS.
+
+    Apple ignores the FN field and builds the display name from the structured
+    N field (given + family).  If both are empty the contact appears as just
+    the prefix (e.g. 'Ms').  Flag: kind==individual, fn set, no given/family.
+    """
+    bad = []
+    for c in cards:
+        kind = (c.kind or "individual").lower()
+        if kind not in ("individual", "self"):
+            continue
+        fn = (c.fn or "").strip()
+        if not fn:
+            continue
+        name = c.name if hasattr(c, "name") else None
+        given  = (name.given  or "").strip() if name else ""
+        family = (name.family or "").strip() if name else ""
+        if not given and not family:
+            # X-IOS override already set — won't render badly on Apple
+            if getattr(c, "x_ios_given", None) or getattr(c, "x_ios_family", None):
+                continue
+            bad.append({"uid": c.uid, "fn": fn})
+    return bad
+
+
 def _api_export(body: dict) -> dict:
     """Export current cards to cards-out/."""
     cards = _state["cards"]
@@ -525,6 +551,9 @@ def _api_export(body: dict) -> dict:
         _, settings = p["ensure_workspace"](_ROOT)
         owner = body.get("owner_name", settings.owner_name)
         version = body.get("version", "4.0")
+        apple_compat = bool(body.get("apple_compat", False))
+        if apple_compat:
+            version = "3.0"  # force 3.0 for apple mode
         category_filter = body.get("category", "")
         categories_filter = body.get("categories", [])  # multi-select list, [] = all
 
@@ -546,13 +575,24 @@ def _api_export(body: dict) -> dict:
             safe_cat = re.sub(r"[^\w-]", "-", category_filter).strip("-")
         else:
             safe_cat = "All"
-        out_path = _ROOT / "cards-out" / f"{iso}-{safe_cat}-{safe}.vcf"
+        out_label = "apple" if apple_compat else safe_cat
+        out_path = _ROOT / "cards-out" / f"{iso}-{out_label}-{safe}.vcf"
 
         # Save a fresh checkpoint first so in-memory state is always durable
         # before we write the export (belt-and-suspenders durability)
         _autosave_checkpoint()
 
-        count = p["export_vcards"](export_cards, out_path, target_version=version)
+        # Apple/iOS name warning — check before writing so the user can fix first
+        apple_name_warn = None
+        if apple_compat:
+            bad = _get_apple_name_warnings(export_cards)
+            if bad:
+                apple_name_warn = {
+                    "count": len(bad),
+                    "contacts": [b["fn"] for b in bad],
+                }
+
+        count = p["export_vcards"](export_cards, out_path, target_version=version, apple_compat=apple_compat)
 
         # Verify the export actually wrote to disk and contains the right count
         if not out_path.exists() or out_path.stat().st_size == 0:
@@ -566,13 +606,14 @@ def _api_export(body: dict) -> dict:
             # Still return ok but surface the discrepancy
             return {
                 "ok": True, "count": count, "file": out_path.name,
-                "warning": f"{len(export_cards) - count} contact(s) were skipped during export due to data errors"
+                "warning": f"{len(export_cards) - count} contact(s) were skipped during export due to data errors",
+                "apple_name_warning": apple_name_warn,
             }
 
         # Only clear checkpoint once we have verified the export is complete
         p["clear_checkpoint"](_ROOT / "cards-wip")
 
-        return {"ok": True, "count": count, "file": out_path.name}
+        return {"ok": True, "count": count, "file": out_path.name, "apple_name_warning": apple_name_warn}
 
     except Exception as exc:
         import traceback
@@ -1261,7 +1302,58 @@ def _api_settings() -> dict:
         return {"ok": False, "error": str(exc)}
 
 
-def _api_gender_unset(params: dict) -> dict:
+def _api_apple_name_unset(params: dict) -> dict:
+    """Return individuals with fn set but no given/family name AND no X-IOS override, for the quick-fix UI."""
+    cards = _state.get("cards", [])
+    results = []
+    for i, c in enumerate(cards):
+        kind = (c.kind or "individual").lower()
+        if kind == "org":
+            continue
+        fn = (c.fn or "").strip()
+        if not fn:
+            continue
+        name = c.name if hasattr(c, "name") else None
+        given  = (name.given  or "").strip() if name else ""
+        family = (name.family or "").strip() if name else ""
+        # Already fixed via X-IOS override — skip
+        if getattr(c, "x_ios_given", None) or getattr(c, "x_ios_family", None):
+            continue
+        if not given and not family:
+            prefix = (name.prefix or "").strip() if name else ""
+            results.append({"_idx": i, "fn": fn, "prefix": prefix})
+    return {"ok": True, "cards": results, "total": len(results)}
+
+
+def _api_set_structured_name(body: dict) -> dict:
+    """Set iOS display name override on a single card by _idx.
+
+    Writes X-IOS-GIVEN / X-IOS-FAMILY — never touches name.given / name.family,
+    so the card's real structured name (and KIND) is preserved.
+    """
+    cards = _state.get("cards", [])
+    idx = body.get("idx")
+    given  = (body.get("given")  or "").strip()
+    family = (body.get("family") or "").strip()
+    if idx is None:
+        return {"ok": False, "error": "Invalid request"}
+    idx = int(idx)
+    if idx < 0 or idx >= len(cards):
+        return {"ok": False, "error": "Card not found"}
+    card = cards[idx]
+    if given:
+        card.x_ios_given  = given
+    elif hasattr(card, "x_ios_given"):
+        del card.x_ios_given
+    if family:
+        card.x_ios_family = family
+    elif hasattr(card, "x_ios_family"):
+        del card.x_ios_family
+    _autosave_checkpoint()
+    return {"ok": True}
+
+
+
     """Return individuals with no gender set, for the quick-assign UI."""
     cards = _state.get("cards", [])
     results = [
@@ -1452,17 +1544,32 @@ def _api_export_individual(body: dict) -> dict:
         return {"ok": False, "error": "No cards loaded"}
     try:
         version = body.get("version", "4.0")
+        apple_compat = bool(body.get("apple_compat", False))
+        if apple_compat:
+            version = "3.0"
         categories_filter = body.get("categories", [])
         export_cards = [c for c in cards if any(cat in c.categories for cat in categories_filter)] if categories_filter else cards
 
         from .exporter import export_vcards_individual
         from datetime import datetime as _dt2
         iso = _dt2.now().strftime("%Y-%m-%d-%H%M")
-        out_dir = _ROOT / "cards-out" / f"vcard-studio-{iso}"
+        label = "apple" if apple_compat else "vcard-studio"
+        out_dir = _ROOT / "cards-out" / f"{label}-{iso}"
 
         _autosave_checkpoint()
-        written, skipped = export_vcards_individual(export_cards, out_dir, target_version=version)
-        result = {"ok": True, "written": written, "skipped": skipped, "folder": out_dir.name}
+
+        # Apple/iOS name warning
+        apple_name_warn = None
+        if apple_compat:
+            bad = _get_apple_name_warnings(export_cards)
+            if bad:
+                apple_name_warn = {
+                    "count": len(bad),
+                    "contacts": [b["fn"] for b in bad],
+                }
+
+        written, skipped = export_vcards_individual(export_cards, out_dir, target_version=version, apple_compat=apple_compat)
+        result = {"ok": True, "written": written, "skipped": skipped, "folder": out_dir.name, "apple_name_warning": apple_name_warn}
         if skipped:
             result["warning"] = f"{skipped} card(s) skipped due to data errors"
         return result
@@ -1713,6 +1820,8 @@ class VCardHandler(BaseHTTPRequestHandler):
             self._send_json(_api_card_raw(params))
         elif path == "/api/gender_unset":
             self._send_json(_api_gender_unset(params))
+        elif path == "/api/apple_name_unset":
+            self._send_json(_api_apple_name_unset(params))
         elif path == "/api/print_cards":
             self._send_json(_api_print_cards(params))
         elif path == "/api/search_orgs":
@@ -1783,6 +1892,10 @@ class VCardHandler(BaseHTTPRequestHandler):
             self._send_json(_api_set_gender(body))
         elif path == "/api/gender_unset":
             self._send_json(_api_gender_unset(params))
+        elif path == "/api/apple_name_unset":
+            self._send_json(_api_apple_name_unset(params))
+        elif path == "/api/set_structured_name":
+            self._send_json(_api_set_structured_name(body))
         elif path == "/api/save_settings":
             self._send_json(_api_save_settings(body))
         elif path == "/api/quit":

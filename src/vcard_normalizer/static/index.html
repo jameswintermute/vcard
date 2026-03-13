@@ -59,6 +59,12 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
 .fi{display:flex;align-items:center;gap:8px;padding:5px 10px;background:var(--bg2);border:1px solid var(--border);margin-bottom:3px;font-size:11px}
 .fi-dot{width:5px;height:5px;border-radius:50%;background:var(--green);flex-shrink:0}
 .fi-name{color:var(--text);flex:1}.fi-meta{color:var(--dim);font-size:10px}
+.exp-opt-block{border:1px solid rgba(255,255,255,.08);border-radius:4px;padding:12px 14px;background:rgba(255,255,255,.02)}
+.exp-opt-header{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.exp-opt-num{width:18px;height:18px;border-radius:50%;background:rgba(255,255,255,.1);color:var(--dim);font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.exp-opt-title{font-size:11px;font-weight:700;color:var(--text);letter-spacing:.03em}
+.exp-opt-badge{font-size:9px;padding:1px 6px;border-radius:3px;letter-spacing:.04em;font-weight:600}
+.exp-opt-desc{font-size:10px;color:var(--dim);line-height:1.8}
 .dz{border:1px dashed var(--border);padding:22px 16px;text-align:center;cursor:pointer;transition:all .2s;margin-bottom:12px}
 .dz:hover{border-color:var(--green2);background:rgba(0,168,48,.03)}
 .dz-title{color:var(--mid);font-size:11px;margin-bottom:4px}.dz-hint{color:var(--dim);font-size:10px}
@@ -411,6 +417,25 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
        border:1px solid var(--green2);padding:8px 12px;font-size:10px;color:var(--green)"></div>
 
   <hr class="divider">
+  <div class="sec-lbl">STEP 4c — APPLE NAME FIX
+    <span style="color:var(--dim);font-weight:400"> — add first/last name where only a display name exists</span>
+  </div>
+  <div style="color:var(--dim);font-size:10px;line-height:1.9;margin-bottom:9px">
+    Apple / iOS ignores the display name (<code style="color:var(--text)">FN</code>) and builds the contact label from the structured
+    <code style="color:var(--text)">N</code> field (first + last). Contacts that only have a display name will appear as just their
+    prefix — e.g. <strong style="color:var(--text)">Ms</strong> — in the iOS Contacts app.
+    This step sets a <code style="color:var(--text)">X-IOS-GIVEN</code> / <code style="color:var(--text)">X-IOS-FAMILY</code> override
+    that is injected into the Apple export only — the real card data (KIND, name fields) is never modified.
+  </div>
+  <div id="apple-name-progress-bar" style="margin-bottom:10px"></div>
+  <div class="row" style="gap:8px">
+    <button class="btn btn-d" id="btn-fix-apple-names" onclick="openNameFix()" style="font-size:10px">✎ fix missing names manually</button>
+    <span id="apple-name-hint" style="font-size:10px;color:var(--dim)"></span>
+  </div>
+  <div id="apple-name-result" style="display:none;margin-top:8px;background:rgba(0,224,64,.06);
+       border:1px solid var(--green2);padding:8px 12px;font-size:10px;color:var(--green)"></div>
+
+  <hr class="divider">
   <div class="sec-lbl">STEP 5 — AUTO-REVIEW
     <span style="color:var(--dim);font-weight:400"> — scan for contacts that may need attention</span>
   </div>
@@ -722,6 +747,43 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
 </div>
 
 <!-- Gender Quick-Assign Modal -->
+<div class="modal-backdrop" id="name-fix-modal">
+  <div class="modal" style="width:420px">
+    <div class="modal-header">
+      <div class="modal-title">Fix Apple Names <span style="font-size:9px;font-weight:400;color:var(--dim)">— iOS display only, real card unchanged</span></div>
+      <button class="modal-close" onclick="closeNameFix()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:10px;color:var(--dim);margin-bottom:14px">
+        <span id="nf-progress" style="color:var(--cyan)"></span>
+        contacts need a first/last name for Apple&nbsp;/&nbsp;iOS.
+      </div>
+      <div id="nf-fn" style="font-size:15px;font-weight:700;color:var(--bright);margin-bottom:3px;min-height:22px"></div>
+      <div id="nf-prefix" style="font-size:10px;color:var(--dim);margin-bottom:14px;min-height:14px"></div>
+      <div style="display:flex;gap:10px;margin-bottom:16px">
+        <div style="flex:1">
+          <div style="font-size:9px;color:var(--dim);letter-spacing:.08em;margin-bottom:4px">FIRST NAME</div>
+          <input id="nf-given" class="form-inp" type="text" placeholder="e.g. Jane"
+                 style="width:100%;box-sizing:border-box"
+                 onkeydown="if(event.key==='Enter'){event.preventDefault();document.getElementById('nf-family').focus();}">
+        </div>
+        <div style="flex:1">
+          <div style="font-size:9px;color:var(--dim);letter-spacing:.08em;margin-bottom:4px">LAST NAME</div>
+          <input id="nf-family" class="form-inp" type="text" placeholder="e.g. Smith"
+                 style="width:100%;box-sizing:border-box"
+                 onkeydown="if(event.key==='Enter'){event.preventDefault();nameFixSave();}">
+        </div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-g" id="nf-next-btn" onclick="nameFixSave()" style="flex:1">Save &amp; Next →</button>
+        <button class="btn btn-d" onclick="nameFixSkip()" style="font-size:10px">skip</button>
+      </div>
+      <div style="font-size:9px;color:var(--dim);margin-top:10px">Enter → move between fields · Enter on last name saves · S skips · Esc closes</div>
+    </div>
+  </div>
+</div>
+
+<!-- Gender Quick-Assign Modal -->
 <div class="modal-backdrop" id="gender-assign-modal">
   <div class="modal" style="width:400px">
     <div class="modal-header">
@@ -778,9 +840,9 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
 <!-- §6 EXPORT -->
 <div id="panel-export" class="panel">
   <div class="ph"><div class="ph-title" style="color:var(--blue)"><span style="color:var(--blue);margin-right:5px">$</span>export</div><div class="ph-sub">write clean .vcf or .csv · filter by category</div></div>
+
   <div class="sec-lbl">SETTINGS</div>
   <div class="form-row"><span class="form-lbl">owner name</span><input class="form-in" id="exp-owner" placeholder="Your Name"></div>
-  <div class="form-row"><span class="form-lbl">vCard format</span><select class="form-sel" id="exp-ver"><option value="4.0">vCard 4.0 (recommended)</option><option value="3.0">vCard 3.0 (legacy apps)</option></select></div>
 
   <div class="sec-lbl" style="margin-top:14px">CATEGORY FILTER
     <span style="color:var(--dim);font-weight:400"> — tick the ones to include, or leave all ticked for a full export</span>
@@ -794,32 +856,79 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
     <button class="btn btn-d" style="font-size:9px;padding:1px 7px" onclick="toggleExpAll(true)">select all</button>
     <button class="btn btn-d" style="font-size:9px;padding:1px 7px" onclick="toggleExpAll(false)">clear all</button>
   </div>
-  <div id="exp-cat-checks" style="display:flex;flex-wrap:wrap;gap:5px 14px;margin-bottom:12px;max-width:640px">
+  <div id="exp-cat-checks" style="display:flex;flex-wrap:wrap;gap:5px 14px;margin-bottom:16px;max-width:640px">
     <span style="color:var(--dim);font-size:10px">Load contacts first to see categories.</span>
   </div>
 
-  <div class="row" style="margin-top:4px;gap:8px;flex-wrap:wrap">
-    <button class="btn btn-b" onclick="doExport()" id="btn-exp">⤒ export combined .vcf</button>
-    <button class="btn btn-d" onclick="doExportCSV()">⤒ export .csv</button>
-    <span id="exp-count-hint" style="font-size:10px;color:var(--dim);align-self:center"></span>
-  </div>
+  <!-- EXPORT OPTIONS -->
+  <div style="display:flex;flex-direction:column;gap:12px;max-width:720px">
 
-  <hr class="divider">
-  <div class="sec-lbl">INDIVIDUAL FILE EXPORT</div>
-  <div style="font-size:10px;color:var(--dim);line-height:1.9;margin-bottom:10px">
-    Exports each contact as a separate .vcf file inside <code style="color:var(--text)">cards-out/vcard-studio-&lt;date&gt;/</code><br>
-    Each file is named: <code style="color:var(--text)">vcard-&lt;ISO8601&gt;-&lt;LastName&gt;-&lt;FirstName&gt;.vcf</code>
-  </div>
-  <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
-    <button class="btn btn-b" onclick="doExportIndividual()" id="btn-exp-ind">⤒ export as individual files</button>
-    <span id="exp-ind-hint" style="font-size:10px;color:var(--dim)"></span>
-  </div>
-  <div id="exp-ind-result" style="display:none;margin-top:8px;background:rgba(72,152,248,.07);border:1px solid var(--blue);padding:8px 12px;font-size:10px;color:var(--blue)"></div>
+    <!-- Option 1: Combined vCard 4.0 -->
+    <div class="exp-opt-block" id="expopt-1">
+      <div class="exp-opt-header">
+        <span class="exp-opt-num">1</span>
+        <span class="exp-opt-title">Combined file · vCard 4.0</span>
+        <span class="exp-opt-badge" style="background:rgba(72,152,248,.15);color:var(--blue)">recommended</span>
+      </div>
+      <div class="exp-opt-desc">All contacts in a single <code>.vcf</code> file using the full vCard 4.0 standard. Preserves all fields including linked relationships, gender, kind, and custom fields. Best suited for Linux, ProtonMail, Thunderbird, and any modern CardDAV-based application.</div>
+      <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
+        <button class="btn btn-b" onclick="doExport(false)" id="btn-exp">⤒ export combined .vcf</button>
+        <button class="btn btn-d" onclick="doExportCSV()">⤒ export .csv</button>
+        <span id="exp-count-hint" style="font-size:10px;color:var(--dim);align-self:center"></span>
+      </div>
+    </div>
+
+    <!-- Option 2: Combined Apple compat -->
+    <div class="exp-opt-block" id="expopt-2">
+      <div class="exp-opt-header">
+        <span class="exp-opt-num">2</span>
+        <span class="exp-opt-title">Combined file · Apple / iOS compatibility mode</span>
+        <span class="exp-opt-badge" style="background:rgba(0,204,196,.12);color:var(--cyan)">iCloud · iPhone</span>
+      </div>
+      <div class="exp-opt-desc">All contacts in a single <code>.vcf</code> file using vCard 3.0 — the format iCloud and iOS actually accept reliably. Fields that are 4.0-only (linked relationships, gender, kind, anniversary) are not lost — they are preserved in each contact's Notes field as a compact <code>---vCard Studio---</code> block, ready for re-import later. Phone numbers are written as plain <code>+44...</code> values rather than URI format, which resolves silent import failures on iPhone.</div>
+      <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
+        <button class="btn btn-b" style="border-color:var(--cyan);color:var(--cyan)" onclick="doExport(true)" id="btn-exp-apple">⤒ export for Apple / iOS</button>
+        <span id="exp-apple-hint" style="font-size:10px;color:var(--dim);align-self:center"></span>
+      </div>
+    </div>
+
+    <!-- Option 3: Individual files vCard 4.0 -->
+    <div class="exp-opt-block" id="expopt-3">
+      <div class="exp-opt-header">
+        <span class="exp-opt-num">3</span>
+        <span class="exp-opt-title">Individual files · vCard 4.0</span>
+        <span class="exp-opt-badge" style="background:rgba(72,152,248,.15);color:var(--blue)">sharing</span>
+      </div>
+      <div class="exp-opt-desc">Each contact exported as its own <code>.vcf</code> file in <code>cards-out/vcard-studio-&lt;date&gt;/</code>, named <code>vcard-&lt;date&gt;-&lt;LastName&gt;-&lt;FirstName&gt;.vcf</code>. Full vCard 4.0 format. Ideal for sharing individual contacts or importing into applications that expect one file per contact.</div>
+      <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
+        <button class="btn btn-b" onclick="doExportIndividual(false)" id="btn-exp-ind">⤒ export as individual files</button>
+        <span id="exp-ind-hint" style="font-size:10px;color:var(--dim)"></span>
+      </div>
+      <div id="exp-ind-result" style="display:none;margin-top:8px;background:rgba(72,152,248,.07);border:1px solid var(--blue);padding:8px 12px;font-size:10px;color:var(--blue)"></div>
+    </div>
+
+    <!-- Option 4: Individual files Apple compat -->
+    <div class="exp-opt-block" id="expopt-4">
+      <div class="exp-opt-header">
+        <span class="exp-opt-num">4</span>
+        <span class="exp-opt-title">Individual files · Apple / iOS compatibility mode</span>
+        <span class="exp-opt-badge" style="background:rgba(0,204,196,.12);color:var(--cyan)">iCloud · iPhone</span>
+      </div>
+      <div class="exp-opt-desc">Each contact as its own vCard 3.0 file in <code>cards-out/apple-&lt;date&gt;/</code>. Applies the same Apple compatibility rules as Option 2 — plain phone numbers, 4.0-only fields preserved in Notes. Use this when you need to share or import individual contacts into the Apple ecosystem.</div>
+      <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
+        <button class="btn btn-b" style="border-color:var(--cyan);color:var(--cyan)" onclick="doExportIndividual(true)" id="btn-exp-ind-apple">⤒ export individual files for Apple</button>
+        <span id="exp-ind-apple-hint" style="font-size:10px;color:var(--dim)"></span>
+      </div>
+      <div id="exp-ind-apple-result" style="display:none;margin-top:8px;background:rgba(0,204,196,.07);border:1px solid var(--cyan);padding:8px 12px;font-size:10px;color:var(--cyan)"></div>
+    </div>
+
+  </div><!-- end export options -->
+
   <hr class="divider">
   <div class="sec-lbl">OUTPUT FILES <span style="color:var(--dim);font-weight:400">(cards-out/)</span></div>
   <div id="exp-files"></div>
   <hr class="divider">
-  <div style="color:var(--dim);font-size:10px;line-height:2.2">· All processing is local — no data leaves this machine<br>· vCard 4.0 recommended; use 3.0 for older apps<br>· GNU GPL v3 · no telemetry · no accounts</div>
+  <div style="color:var(--dim);font-size:10px;line-height:2.2">· All processing is local — no data leaves this machine<br>· vCard 4.0 preserves all fields; vCard 3.0 for Apple/iOS compatibility<br>· GNU GPL v3 · no telemetry · no accounts</div>
 </div>
 
 
@@ -2212,15 +2321,20 @@ function updateExpCountHint() {
   }
 }
 
-async function doExport() {
+async function doExport(appleCompat) {
   if (!S.total_cards){toast('No contacts loaded',true);return;}
-  const btn = document.getElementById('btn-exp');
+  const btnId = appleCompat ? 'btn-exp-apple' : 'btn-exp';
+  const hintId = appleCompat ? 'exp-apple-hint' : 'exp-count-hint';
+  const btn = document.getElementById(btnId);
+  const hint = document.getElementById(hintId);
   btn.disabled=true;
+  if(hint) hint.textContent='exporting…';
   try{
     const categories = getExpCategories();
     const d = await post('/api/export',{
       owner_name: document.getElementById('exp-owner').value||'Contacts',
-      version:    document.getElementById('exp-ver').value,
+      version:    appleCompat ? '3.0' : '4.0',
+      apple_compat: !!appleCompat,
       categories,
     });
     if (d.ok) {
@@ -2228,12 +2342,19 @@ async function doExport() {
         ? `✓ ${d.count} contacts → ${d.file}\n⚠ ${d.warning}`
         : `✓ ${d.count} contacts → ${d.file}`;
       toast(msg, !!d.warning);
+      if (appleCompat && d.apple_name_warning) {
+        const w = d.apple_name_warning;
+        const names = w.contacts.slice(0,5).map(n=>`<code>${esc(n)}</code>`).join(', ')
+          + (w.contacts.length > 5 ? ` <span style="color:var(--dim)">+${w.contacts.length-5} more</span>` : '');
+        const el = document.getElementById('exp-apple-hint');
+        if (el) el.innerHTML = `<span style="color:var(--amber)">⚠ ${w.count} contact(s) have no first/last name — Apple will show only the prefix (e.g. "Ms"). <a href="#" style="color:var(--amber);text-decoration:underline" onclick="show('clean');openNameFix();return false">Fix in Clean → Step 4c</a>: ${names}</span>`;
+      }
     } else {
       toast(d.error||'Export failed',true);
     }
     poll();
   } catch(e){toast('Export failed',true);}
-  finally{btn.disabled=false;}
+  finally{btn.disabled=false; if(hint && !hint.innerHTML.includes('⚠')) hint.textContent='';}
 }
 
 async function doExportCSV(){
@@ -3924,28 +4045,41 @@ async function doReissueUids() {
 
 
 // ══ Individual export ════════════════════════════════════════════════════════
-async function doExportIndividual() {
-  const btn = document.getElementById('btn-exp-ind');
-  const hint = document.getElementById('exp-ind-hint');
-  const result = document.getElementById('exp-ind-result');
+async function doExportIndividual(appleCompat) {
+  const btnId    = appleCompat ? 'btn-exp-ind-apple' : 'btn-exp-ind';
+  const hintId   = appleCompat ? 'exp-ind-apple-hint' : 'exp-ind-hint';
+  const resultId = appleCompat ? 'exp-ind-apple-result' : 'exp-ind-result';
+  const btn    = document.getElementById(btnId);
+  const hint   = document.getElementById(hintId);
+  const result = document.getElementById(resultId);
   btn.disabled = true;
   hint.textContent = 'exporting…';
   result.style.display = 'none';
 
-  const version = document.getElementById('exp-ver').value;
-  const cats = [...document.querySelectorAll('#exp-cat-checks input[type=checkbox]:checked')]
-    .map(cb => cb.value).filter(v => v !== '__all__');
+  const cats = getExpCategories();
 
   try {
-    const d = await post('/api/export_individual', { version, categories: cats });
+    const d = await post('/api/export_individual', {
+      version: appleCompat ? '3.0' : '4.0',
+      apple_compat: !!appleCompat,
+      categories: cats,
+    });
     btn.disabled = false;
-    if (!d.ok) { hint.textContent = ''; toast(d.error || 'Export failed', true); return; }
     hint.textContent = '';
+    if (!d.ok) { toast(d.error || 'Export failed', true); return; }
     result.style.display = '';
-    result.innerHTML = `✓ <strong>${d.written}</strong> individual files written to <code style="color:var(--bright)">${esc(d.folder)}/</code>` +
+    const col = appleCompat ? 'var(--cyan)' : 'var(--bright)';
+    result.innerHTML = `✓ <strong>${d.written}</strong> individual files written to <code style="color:${col}">${esc(d.folder)}/</code>` +
       (d.skipped ? `<br><span style="color:var(--amber)">⚠ ${d.skipped} skipped due to data errors</span>` : '');
     if (d.warning) result.innerHTML += `<br><span style="color:var(--amber)">${esc(d.warning)}</span>`;
+    if (appleCompat && d.apple_name_warning) {
+      const w = d.apple_name_warning;
+      const names = w.contacts.slice(0,5).map(n=>`<code>${esc(n)}</code>`).join(', ')
+        + (w.contacts.length > 5 ? ` +${w.contacts.length-5} more` : '');
+      result.innerHTML += `<br><span style="color:var(--amber)">⚠ ${w.count} contact(s) have no first/last name — Apple will show only the prefix. <a href="#" style="color:var(--amber);text-decoration:underline" onclick="show('clean');openNameFix();return false">Fix in Clean → Step 4c</a>: ${names}</span>`;
+    }
     toast(`✓ ${d.written} files exported`);
+    poll();
   } catch(e) {
     btn.disabled = false;
     hint.textContent = '';
@@ -4469,6 +4603,88 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'Enter') { e.preventDefault(); gaNext(); }
   else if (e.key === 'Escape') { closeGenderAssign(); }
   else if (e.key === 's' || e.key === 'S') { e.preventDefault(); gaSkip(); }
+});
+
+// ══ Apple Name Fix Modal ══════════════════════════════════════════════════════
+let _nfQueue = [], _nfIdx = 0;
+
+function _nfParseName(fn, prefix) {
+  // Strip leading "Prefix: " or "Prefix Name:" patterns, then split last word as family
+  let s = fn.trim();
+  if (prefix) {
+    // Remove leading prefix word(s)
+    const re = new RegExp('^' + prefix.replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + '[:\\s]+', 'i');
+    s = s.replace(re, '').trim();
+  }
+  // Strip anything up to and including a colon (e.g. "Laurels: Jane Smith" → "Jane Smith")
+  const colonIdx = s.indexOf(':');
+  if (colonIdx !== -1) s = s.slice(colonIdx + 1).trim();
+  const parts = s.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { given: '', family: '' };
+  if (parts.length === 1) return { given: parts[0], family: '' };
+  return { given: parts.slice(0, -1).join(' '), family: parts[parts.length - 1] };
+}
+
+async function openNameFix() {
+  const hint = document.getElementById('apple-name-hint');
+  if (hint) hint.textContent = 'loading…';
+  const d = await (await fetch('/api/apple_name_unset')).json();
+  if (hint) hint.textContent = '';
+  if (!d.ok || !d.cards.length) { toast('No contacts with missing names — all good!'); return; }
+  _nfQueue = d.cards;
+  _nfIdx = 0;
+  document.getElementById('name-fix-modal').classList.add('open');
+  nameFixRender();
+}
+
+function closeNameFix() {
+  document.getElementById('name-fix-modal').classList.remove('open');
+  _nfQueue = []; _nfIdx = 0;
+}
+
+function nameFixRender() {
+  if (_nfIdx >= _nfQueue.length) {
+    closeNameFix();
+    const res = document.getElementById('apple-name-result');
+    if (res) { res.textContent = `✓ Names assigned — contacts will now display correctly on Apple / iOS.`; res.style.display = ''; }
+    toast('✓ Apple name fix complete');
+    poll();
+    return;
+  }
+  const card = _nfQueue[_nfIdx];
+  const remaining = _nfQueue.length - _nfIdx;
+  document.getElementById('nf-progress').textContent = remaining;
+  document.getElementById('nf-fn').textContent = card.fn;
+  document.getElementById('nf-prefix').textContent = card.prefix ? `prefix: ${card.prefix}` : '';
+  const parsed = _nfParseName(card.fn, card.prefix);
+  document.getElementById('nf-given').value  = parsed.given;
+  document.getElementById('nf-family').value = parsed.family;
+  setTimeout(() => document.getElementById('nf-given').focus(), 50);
+}
+
+async function nameFixSave() {
+  const card   = _nfQueue[_nfIdx];
+  const given  = document.getElementById('nf-given').value.trim();
+  const family = document.getElementById('nf-family').value.trim();
+  if (!given && !family) { toast('Enter at least a first or last name', true); return; }
+  await post('/api/set_structured_name', { idx: card._idx, given, family });
+  _nfIdx++;
+  nameFixRender();
+}
+
+function nameFixSkip() {
+  _nfIdx++;
+  nameFixRender();
+}
+
+document.addEventListener('keydown', e => {
+  if (!document.getElementById('name-fix-modal')?.classList.contains('open')) return;
+  if (e.key === 'Escape') { closeNameFix(); }
+  else if (e.key === 's' || e.key === 'S') {
+    const active = document.activeElement;
+    if (active && (active.id === 'nf-given' || active.id === 'nf-family')) return; // typing
+    e.preventDefault(); nameFixSkip();
+  }
 });
 
 async function doAutoGender() {
