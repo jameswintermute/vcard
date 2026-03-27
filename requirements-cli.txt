@@ -1,0 +1,5 @@
+# vCard Studio — CLI dependencies (includes web UI dependencies)
+# Install with: pip install -r requirements-cli.txt
+-r requirements.txt
+typer>=0.12
+rich>=13.7

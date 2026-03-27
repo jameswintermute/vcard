@@ -211,13 +211,32 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
 .clone-banner.show{display:flex}
 /* Birthday panel */
 .bday-month-hdr{font-size:10px;font-weight:700;color:var(--cyan);letter-spacing:.08em;text-transform:uppercase;margin:18px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--border)}
-.bday-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:11px}
+.bday-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:11px;cursor:pointer}
 .bday-row:hover{background:var(--bg2)}
 .bday-icon{font-size:14px;flex-shrink:0}
 .bday-name{min-width:160px;color:var(--text);cursor:pointer;text-decoration-color:var(--dim)}
 .bday-name:hover{color:var(--green);text-decoration:underline}
 .bday-date{flex:1;color:var(--mid)}
 /* Type label badge */
+.issue-group{margin-bottom:10px}
+.issue-group-hdr{display:flex;align-items:center;gap:7px;font-size:10px;font-weight:700;padding:4px 8px;background:var(--bg2);border:1px solid var(--border);letter-spacing:.04em}
+.ig-count{font-size:9px;background:rgba(255,255,255,.08);padding:0 5px;border-radius:8px}
+.ig-selall{font-size:9px;padding:1px 7px;background:none;border:1px solid var(--border);color:var(--dim);cursor:pointer}
+.ig-selall:hover{border-color:var(--mid);color:var(--text)}
+.issue-card{display:flex;align-items:center;gap:8px;padding:5px 10px;border-bottom:1px solid rgba(255,255,255,.03);cursor:pointer;transition:background .1s}
+.issue-card:hover{background:var(--bg2)}
+.issue-card.warn{border-left:2px solid var(--amber)}
+.issue-card.error{border-left:2px solid var(--red)}
+.issue-card.info{border-left:2px solid var(--dim)}
+.issue-name{flex:1;font-size:11px;color:var(--text)}
+.issue-desc{font-size:10px;color:var(--dim);flex:2}
+.issue-fix{font-size:9px;padding:1px 8px;background:none;border:1px solid var(--border);color:var(--dim);cursor:pointer;white-space:nowrap}
+.issue-fix:hover{border-color:var(--mid);color:var(--text)}
+.bulk-bar{display:none;align-items:center;gap:10px;padding:6px 10px;background:var(--bg2);border:1px solid var(--amber);margin-top:8px;font-size:10px}
+.bulk-bar.show{display:flex}
+.bulk-count{color:var(--amber);font-weight:700}
+.bulk-actions{display:flex;gap:6px}
+.bulk-spacer{flex:1}
 .type-badge{font-size:8px;font-weight:700;letter-spacing:.06em;background:rgba(0,204,196,.1);color:var(--cyan);border:1px solid rgba(0,204,196,.2);padding:1px 5px;vertical-align:middle;margin-right:2px}
 .type-badge.work{background:rgba(232,160,0,.1);color:var(--amber);border-color:rgba(232,160,0,.2)}
 .type-badge.cell{background:rgba(0,224,64,.08);color:var(--green);border-color:rgba(0,224,64,.2)}
@@ -253,6 +272,7 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
     <div class="nav-item"        data-p="export"   onclick="show('export')">  <span class="nav-step">6</span> Export</div>
     <div class="nav-item"        data-p="viewer"   onclick="show('viewer')">  <span class="nav-step">◈</span> Raw Viewer</div>
     <div class="nav-item"        data-p="print"    onclick="show('print')">   <span class="nav-step">⎙</span> Print</div>
+    <div class="nav-item"        data-p="labels"   onclick="show('labels')">  <span class="nav-step" style="color:var(--amber)">⊞</span> Labels</div>
     <div class="nav-item"        data-p="birthdays" onclick="show('birthdays')"><span class="nav-step" style="color:var(--cyan)">◈</span> Birthdays</div>
     <div class="nav-item"        data-p="prefs"    onclick="show('prefs')">   <span class="nav-step">⚙</span> Preferences</div>
   </div>
@@ -1008,6 +1028,92 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
 </div>
 
 
+<!-- §7b LABELS -->
+<div id="panel-labels" class="panel">
+  <div class="ph">
+    <div class="ph-title" style="color:var(--amber)"><span style="color:var(--amber);margin-right:5px">⊞</span>print_labels</div>
+    <div class="ph-sub">address labels for Brother QL-820NWB · couples merged · DK tape</div>
+  </div>
+
+  <div class="sec-lbl">LABEL SETTINGS</div>
+
+  <div class="form-row">
+    <span class="form-lbl">category</span>
+    <select class="form-sel" id="lbl-cat" style="flex:1;max-width:240px">
+      <option value="">all contacts with addresses</option>
+    </select>
+  </div>
+
+  <div class="form-row" style="margin-top:8px">
+    <span class="form-lbl">printer</span>
+    <select class="form-sel" id="lbl-printer" style="flex:1;max-width:340px" onchange="onLblPrinterChange()">
+      <option value="">loading…</option>
+    </select>
+  </div>
+
+  <div class="form-row" style="margin-top:8px">
+    <span class="form-lbl">label / tape</span>
+    <select class="form-sel" id="lbl-profile" style="flex:1;max-width:340px">
+      <option value="">select printer first</option>
+    </select>
+  </div>
+
+  <div class="form-row" style="margin-top:8px">
+    <span class="form-lbl">name style</span>
+    <select class="form-sel" id="lbl-style" style="flex:1;max-width:300px">
+      <option value="formal">Formal — Mr J &amp; Mrs A Smith</option>
+      <option value="informal">Informal — James &amp; Alice Smith</option>
+    </select>
+  </div>
+
+  <div class="form-row" style="margin-top:8px">
+    <span class="form-lbl">country</span>
+    <select class="form-sel" id="lbl-country" style="flex:1;max-width:300px">
+      <option value="1">Include country (omit UK/England/GB)</option>
+      <option value="0">Omit country from all labels</option>
+    </select>
+  </div>
+
+  <div style="margin-top:12px;padding:10px 12px;background:rgba(0,204,196,.05);border:1px solid rgba(0,204,196,.2);font-size:10px;color:var(--dim);line-height:1.8;max-width:600px">
+    <span style="color:var(--cyan);font-weight:700">⚭ Couple merging</span> — two contacts are automatically merged onto a single label if they share the same surname, are linked via the relationship field, and have a matching address. Merged labels are marked with ⚭ in the preview.
+  </div>
+
+  <div style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <button class="btn btn-d" style="border-color:var(--cyan);color:var(--cyan)" id="btn-lbl-preview" onclick="doPreviewLabels()" disabled>
+      ◈ preview &amp; count
+    </button>
+    <button class="btn btn-d" style="border-color:var(--amber);color:var(--amber)" id="btn-lbl-test" onclick="doGenerateLabels(true)" disabled>
+      ⊞ test — first 3 labels
+    </button>
+    <button class="btn btn-b" style="border-color:var(--amber);color:var(--amber)" id="btn-gen-labels" onclick="doGenerateLabels(false)" disabled>
+      ⊞ generate all labels
+    </button>
+    <span id="lbl-hint" style="font-size:10px;color:var(--dim)">loading printers…</span>
+  </div>
+
+  <!-- Preview panel -->
+  <div id="lbl-preview-panel" style="display:none;margin-top:14px;max-width:640px">
+    <div id="lbl-preview-summary" style="font-size:10px;color:var(--cyan);margin-bottom:8px;padding:6px 10px;background:rgba(0,204,196,.07);border:1px solid rgba(0,204,196,.2)"></div>
+    <div id="lbl-preview-list" style="max-height:320px;overflow-y:auto;border:1px solid var(--border);background:var(--bg)"></div>
+  </div>
+
+  <div id="lbl-result" style="display:none;margin-top:12px;padding:10px 14px;background:rgba(232,160,0,.07);border:1px solid var(--amber);font-size:10px;color:var(--amber);line-height:2"></div>
+
+  <hr class="divider">
+  <div class="sec-lbl">PRINTING INSTRUCTIONS</div>
+  <div style="font-size:10px;color:var(--dim);line-height:2;max-width:580px">
+    1. Click <strong style="color:var(--text)">generate all labels</strong> — an HTML file opens in a new tab<br>
+    2. In the new tab, press <strong style="color:var(--text)">Ctrl+P</strong> (or ⌘P on Mac)<br>
+    3. Select printer: <strong style="color:var(--text)">Brother QL-820NWB</strong><br>
+    4. Set paper/label size: <strong style="color:var(--text)">62×38mm</strong> (DK-22205) or <strong style="color:var(--text)">29×90mm</strong> (DK-11201)<br>
+    5. Margins: <strong style="color:var(--text)">None</strong> or <strong style="color:var(--text)">Minimum</strong><br>
+    6. Scale: <strong style="color:var(--text)">100% / Actual size</strong> — do not fit to page<br>
+    <br>
+    Files are also saved to <code style="color:var(--text)">print/</code> in your vCard Studio folder.
+  </div>
+</div>
+
+
 <!-- §7 PREFERENCES -->
 <div id="panel-prefs" class="panel">
   <div class="ph">
@@ -1686,9 +1792,10 @@ function renderRevTable(d) {
     lastWasSelf = isSelf;
     const rowStyle = isSelf ? 'background:rgba(0,204,196,.04)' : '';
     return divider + `
-    <tr id="rev-row-${pi}" ondblclick="openEdit(${pi})" class="${_revSelected.has(pi)?'rev-row-sel':''}" style="${rowStyle}">
+    <tr id="rev-row-${pi}" onclick="openEdit(${pi})" class="${_revSelected.has(pi)?'rev-row-sel':''}" style="${rowStyle};cursor:pointer">
       <td style="width:28px;text-align:center">
         <input type="checkbox" class="rev-cb" data-pi="${pi}"
+               onclick="event.stopPropagation()"
                onchange="toggleRevRow(${pi},this.checked)"
                style="accent-color:var(--green)">
       </td>
@@ -1705,8 +1812,8 @@ function renderRevTable(d) {
       <td>${categories.map(cat=>`<span class="pill ${pc(cat)}">${esc(cat)}</span>`).join('')||'<span style="color:var(--dim)">—</span>'}${c.note?`<span title="${esc(c.note)}" style="color:var(--dim);margin-left:6px;cursor:help;font-size:12px">📝</span>`:''}</td>
       <td>
         <div class="row-actions">
-          <button class="row-btn" onclick="openEdit(${pi})">edit</button>
-          <button class="row-btn del" onclick="deleteCard(${pi}, event)">del</button>
+          <button class="row-btn" onclick="event.stopPropagation();openEdit(${pi})">edit</button>
+          <button class="row-btn del" onclick="event.stopPropagation();deleteCard(${pi}, event)">del</button>
         </div>
       </td>
     </tr>`;
@@ -2381,8 +2488,25 @@ function populateCatDrops(catCounts) {
       ).join('');
   }
 
-  // Populate Export checkbox grid
-  const grid = document.getElementById('exp-cat-checks');
+  // Populate print category dropdown
+  const printCat = document.getElementById('print-cat');
+  if (printCat) {
+    const cur = printCat.value;
+    printCat.innerHTML = '<option value="">all contacts</option>' +
+      Object.keys(catCounts).sort().map(c =>
+        `<option value="${esc(c)}"${c===cur?' selected':''}>${esc(c)} (${catCounts[c]})</option>`
+      ).join('');
+  }
+
+  // Populate labels category dropdown
+  const lblCat = document.getElementById('lbl-cat');
+  if (lblCat) {
+    const cur = lblCat.value;
+    lblCat.innerHTML = '<option value="">all contacts with addresses</option>' +
+      Object.keys(catCounts).sort().map(c =>
+        `<option value="${esc(c)}"${c===cur?' selected':''}>${esc(c)} (${catCounts[c]})</option>`
+      ).join('');
+  }
   if (!grid) return;
   const cats = Object.keys(catCounts).sort();
   if (!cats.length) {
@@ -2416,6 +2540,7 @@ function show(id) {
   if (id==='prefs') { checkSelfCards(); loadPrefCountry(); loadBdayCatPrefs(); }
   if (id==='viewer') renderViewerPage(1);
   if (id==='print') populatePrintCats();
+  if (id==='labels') { populateCatDrops(S.category_counts || {}); loadPrintModules(); }
   if (id==='birthdays') loadBirthdays();
 }
 
@@ -2995,14 +3120,15 @@ function renderReviewResults(issues, total) {
         const waiveField = {noEmail:'email', noPhone:'phone', noCategory:'category'}[g.key];
         const isWaived = waiveField && (c.waived||[]).includes(waiveField);
         return `
-        <div class="issue-card ${g.sev}" id="ic-${g.key}-${i}">
+        <div class="issue-card ${g.sev}" id="ic-${g.key}-${i}" onclick="jumpToLinkedCard(${c._idx})">
           <input type="checkbox" class="issue-cb" data-key="${g.key}" data-i="${i}" data-idx="${c._idx}"
+                 onclick="event.stopPropagation()"
                  onchange="toggleIssueSelect('${g.key}',${i},this.checked)">
           <span class="issue-name">${esc(c.fn||'—')}</span>
           <span class="issue-desc">${issueDetail(g.key, c)}</span>
-          <button class="issue-fix" onclick="openEditFromIssue(${c._idx})">edit →</button>
+          <button class="issue-fix" onclick="event.stopPropagation();jumpToLinkedCard(${c._idx})">edit →</button>
           ${waiveField ? `<button class="issue-fix" style="background:none;border:1px solid var(--border);color:var(--dim);margin-left:4px"
-            onclick="waiveField(${c._idx},'${waiveField}','${g.key}',${i})"
+            onclick="event.stopPropagation();waiveField(${c._idx},'${waiveField}','${g.key}',${i})"
             title="Mark as intentionally absent — removes from this report">
             ${isWaived ? '✓ not required' : '— not required'}
           </button>` : ''}
@@ -4799,6 +4925,148 @@ function onRevQualityFilter() {
 const MONTH_NAMES = ['January','February','March','April','May','June',
                      'July','August','September','October','November','December'];
 
+// ══ LABELS ════════════════════════════════════════════════════════════════════
+
+let _printModules = [];
+
+function _lblButtonsReady(ready) {
+  ['btn-lbl-preview','btn-lbl-test','btn-gen-labels'].forEach(id => {
+    const b = document.getElementById(id);
+    if (b) b.disabled = !ready;
+  });
+  const hint = document.getElementById('lbl-hint');
+  if (hint) hint.textContent = ready ? '' : 'loading printers…';
+}
+
+async function loadPrintModules() {
+  _lblButtonsReady(false);
+  try {
+    const d = await (await fetch('/api/print_modules')).json();
+    _printModules = d.modules || [];
+    const printerSel = document.getElementById('lbl-printer');
+    if (!printerSel) return;
+    if (!_printModules.length) {
+      printerSel.innerHTML = '<option value="">no print modules found</option>';
+      const hint = document.getElementById('lbl-hint');
+      if (hint) hint.textContent = d.error ? `error: ${d.error}` : 'no modules found in print_modules/ — check terminal';
+      return;
+    }
+    printerSel.innerHTML = _printModules.map(m =>
+      `<option value="${esc(m.printer_id)}">${esc(m.printer_name)} — ${esc(m.printer_desc)}</option>`
+    ).join('');
+    onLblPrinterChange();
+    _lblButtonsReady(true);
+  } catch(e) {
+    console.error('loadPrintModules:', e);
+    const hint = document.getElementById('lbl-hint');
+    if (hint) hint.textContent = `failed: ${e.message}`;
+    const sel = document.getElementById('lbl-printer');
+    if (sel) sel.innerHTML = '<option value="">load failed — check terminal</option>';
+  }
+}
+
+function onLblPrinterChange() {
+  const pid = document.getElementById('lbl-printer')?.value;
+  const mod = _printModules.find(m => m.printer_id === pid);
+  const profSel = document.getElementById('lbl-profile');
+  if (!profSel || !mod) return;
+  profSel.innerHTML = mod.profiles.map(p =>
+    `<option value="${esc(p.id)}"${p.id===mod.default_profile?' selected':''}>${esc(p.name)}</option>`
+  ).join('');
+  // Reset preview when printer changes
+  document.getElementById('lbl-preview-panel').style.display = 'none';
+}
+
+function _lblParams(extras) {
+  return {
+    category:        document.getElementById('lbl-cat').value,
+    printer_id:      document.getElementById('lbl-printer').value,
+    profile_id:      document.getElementById('lbl-profile').value,
+    style:           document.getElementById('lbl-style').value,
+    include_country: document.getElementById('lbl-country').value === '1',
+    ...extras,
+  };
+}
+
+async function doPreviewLabels() {
+  if (!S.total_cards) { toast('No contacts loaded', true); return; }
+  const btn = document.getElementById('btn-lbl-preview');
+  const hint = document.getElementById('lbl-hint');
+  btn.disabled = true;
+  hint.textContent = 'counting…';
+  document.getElementById('lbl-preview-panel').style.display = 'none';
+  try {
+    const d = await post('/api/preview_labels', {
+      category:        document.getElementById('lbl-cat').value,
+      style:           document.getElementById('lbl-style').value,
+      include_country: document.getElementById('lbl-country').value === '1',
+    });
+    btn.disabled = false;
+    hint.textContent = '';
+    if (!d.ok) { toast(d.error || 'Preview failed', true); return; }
+
+    const panel   = document.getElementById('lbl-preview-panel');
+    const summary = document.getElementById('lbl-preview-summary');
+    const list    = document.getElementById('lbl-preview-list');
+
+    const mText = d.merged ? ` · <strong>${d.merged}</strong> couple${d.merged!==1?'s':''} merged` : '';
+    const cat = document.getElementById('lbl-cat').value || 'all contacts';
+    summary.innerHTML = `<strong>${d.total}</strong> label${d.total!==1?'s':''} for <strong>${esc(cat)}</strong>${mText}`;
+
+    list.innerHTML = (d.records || []).map((r, i) => {
+      const addr = (r.address || []).join(', ');
+      const mergedMark = r.merged ? ' <span style="color:var(--cyan);font-size:9px">⚭ merged</span>' : '';
+      return `<div style="display:flex;align-items:baseline;gap:10px;padding:5px 10px;border-bottom:1px solid rgba(255,255,255,.04);font-size:10px">
+        <span style="color:var(--dim);min-width:24px;text-align:right">${i+1}</span>
+        <span style="font-weight:700;color:var(--text);min-width:180px">${esc(r.name)}${mergedMark}</span>
+        <span style="color:var(--dim);flex:1">${esc(addr)}</span>
+      </div>`;
+    }).join('');
+
+    panel.style.display = '';
+  } catch(e) {
+    btn.disabled = false;
+    hint.textContent = '';
+    toast('Preview failed', true);
+    console.error(e);
+  }
+}
+
+async function doGenerateLabels(testMode) {
+  if (!S.total_cards) { toast('No contacts loaded', true); return; }
+  const pid = document.getElementById('lbl-printer')?.value;
+  const prof = document.getElementById('lbl-profile')?.value;
+  if (!pid || !prof) { toast('Select a printer and label type first', true); return; }
+  const btn  = document.getElementById('btn-gen-labels');
+  const hint = document.getElementById('lbl-hint');
+  const res  = document.getElementById('lbl-result');
+  btn.disabled = true;
+  hint.textContent = 'generating…';
+  res.style.display = 'none';
+  try {
+    const d = await post('/api/print_labels', _lblParams({ test_mode: !!testMode }));
+    btn.disabled = false;
+    hint.textContent = '';
+    if (!d.ok) { toast(d.error || 'Failed to generate labels', true); return; }
+    const mText = d.merged ? ` · <strong>${d.merged}</strong> couple${d.merged!==1?'s':''} merged` : '';
+    const tBadge = d.test_mode ? ' <span style="color:var(--amber)">[TEST — 3 labels]</span>' : '';
+    res.style.display = '';
+    res.innerHTML = `✓ <strong>${d.total}</strong> label${d.total!==1?'s':''} generated${mText}${tBadge}<br>
+      File: <code style="color:var(--bright)">${esc(d.filename)}</code><br>
+      <a href="/print/${esc(d.filename)}" target="_blank"
+         style="color:var(--amber);font-weight:700;text-decoration:underline">
+        ⊞ open labels in new tab →
+      </a>
+      <span style="color:var(--dim);margin-left:10px">then Ctrl+P to print</span>`;
+  } catch(e) {
+    btn.disabled = false;
+    hint.textContent = '';
+    toast('Label generation failed', true);
+    console.error(e);
+  }
+}
+
+
 async function loadBirthdays() {
   const resultsEl = document.getElementById('bday-results');
   if (!resultsEl) return;
@@ -4841,9 +5109,9 @@ async function loadBirthdays() {
           : '';
         const typeLabel = ev.event_type === 'anniversary'
           ? `<span style="color:var(--purple);font-size:9px;margin-left:6px;letter-spacing:.05em">ANNIV</span>` : `<span style="color:var(--cyan);font-size:9px;margin-left:6px;letter-spacing:.05em">BDAY</span>`;
-        html += `<div class="bday-row">
+        html += `<div class="bday-row" onclick="jumpToLinkedCard(${ev._idx})" title="Open contact">
           <span class="bday-icon">${icon}</span>
-          <span class="bday-name" onclick="jumpRevByName(${JSON.stringify(ev.fn)})" title="Open in Review">${esc(ev.fn)}</span>
+          <span class="bday-name">${esc(ev.fn)}</span>
           <span class="bday-date">${dateLabel}${ageLabel}${typeLabel}</span>
         </div>`;
       }

@@ -129,12 +129,12 @@ sudo apt update && sudo apt install python3 python3-pip git
 git clone https://github.com/jameswintermute/vcard.git
 cd vcard
 
-# Install all dependencies (recommended)
-pip install -e ".[phonenumbers]"
-# Ubuntu 23.04+ may require: pip install --break-system-packages -e ".[phonenumbers]"
-# Or use a virtual environment (see Troubleshooting below)
-# Alternatively — plain requirements file:
-# pip install -r requirements.txt
+# Install web UI dependencies (no Xcode / compiler needed)
+pip install -r requirements.txt
+# Ubuntu 23.04+ may require: pip install --break-system-packages -r requirements.txt
+
+# Or install everything including the CLI terminal launcher:
+# pip install -e ".[full]"
 
 # Launch
 python3 start-webui.py
@@ -146,29 +146,40 @@ Then open: **http://localhost:8421**
 
 ### macOS
 
-macOS ships with Python 2.7. You need Python 3.11+.
+**Important:** Do not use Homebrew to install Python — Homebrew requires Xcode Command Line Tools, which triggers a large download. Use the official Python installer from python.org instead.
+
+**Step 1 — Install Python 3.12 from python.org:**
+
+Go to [https://www.python.org/downloads/](https://www.python.org/downloads/) and download the macOS installer. Run it and follow the prompts. No Xcode or Homebrew needed.
+
+**Step 2 — Download vCard Studio:**
 
 ```bash
-# Install Homebrew if not already present
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-# Install Python 3.12
-brew install python@3.12
-
-# Clone the project
 git clone https://github.com/jameswintermute/vcard.git
 cd vcard
+```
 
-# Install dependencies
-pip3 install -e ".[phonenumbers]"
+Or download and unzip the repository from GitHub.
 
-# Launch
+**Step 3 — Launch:**
+
+**Option A — Double-click (easiest):**
+
+Find `vcard-studio.command` in the project folder and double-click it. The first time, macOS will ask if you're sure — click Open. The script checks for Python, installs any missing dependencies automatically, and opens your browser.
+
+**Option B — Terminal:**
+
+```bash
+cd /path/to/vcard
+pip3 install -r requirements.txt
 python3 start-webui.py
 ```
 
 Then open: **http://localhost:8421**
 
-> **Apple Silicon:** All dependencies have native ARM wheels — no Rosetta needed.
+> **Apple Silicon (M1/M2/M3):** All dependencies have native ARM wheels — no Rosetta needed.
+
+> **"Cannot be opened because it is from an unidentified developer":** Right-click `vcard-studio.command` → Open → Open. You only need to do this once.
 
 ---
 
@@ -281,6 +292,7 @@ python3 start-webui.py
 cards-in/           ← drop your exported .vcf source files here
 cards-out/          ← clean output files written here
 cards-wip/          ← autosave checkpoint (do not edit manually)
+print/              ← generated address label HTML files written here
 local/vcard.conf    ← your personal config (auto-created on first run)
 src/vcard_normalizer/
   server.py         ← local HTTP server and all API endpoints
@@ -293,6 +305,11 @@ src/vcard_normalizer/
   checkpoint.py     ← autosave and resume
   config.py         ← TOML config and workspace initialisation
   proprietary.py    ← X-* field stripping rules
+  print_modules/    ← pluggable printer support (see below)
+    __init__.py     ← auto-discovers modules at startup
+    brother_ql820nwb.py  ← Brother QL-820NWB label printer
+    generic_a4.py   ← generic A4 / US Letter office printer
+    README.md       ← contributor guide for adding new printers
 start-webui.py      ← launch script
 ```
 

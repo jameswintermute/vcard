@@ -1070,6 +1070,321 @@ def _api_strip_proprietary(body: dict) -> dict:
         return {"ok": False, "error": str(exc)}
 
 
+        return {"ok": False, "error": str(exc)}
+
+
+def _api_print_modules() -> dict:
+    """Return all discovered print modules and their label profiles."""
+    from .print_modules import get_all_modules
+    try:
+        modules = get_all_modules()
+        print(f"[print_modules] {len(modules)} module(s): {[m['printer_id'] for m in modules]}", flush=True)
+        return {"ok": True, "modules": modules}
+    except Exception as exc:
+        import traceback
+        print(f"[print_modules error] {traceback.format_exc()}", flush=True)
+        return {"ok": False, "modules": [], "error": str(exc)}
+
+
+def _build_label_records(cards, category: str, style: str, include_country: bool) -> list:
+    """Shared helper: build sorted label records with couple merging.
+
+    Returns list of {"name": str, "address": [str], "merged": bool}.
+    """
+    uid_map: dict[str, object] = {c.uid: c for c in cards if c.uid}
+
+    # Filter to cards in category with a real street address
+    if category:
+        pool = [c for c in cards if category in (c.categories or [])]
+    else:
+        pool = list(cards)
+    pool = [c for c in pool if c.addresses and c.addresses[0].street]
+
+    def _addr_key(card):
+        if not card.addresses: return None
+        a = card.addresses[0]
+        s = (a.street or "").strip().lower()
+        p = (a.postal_code or "").strip().lower()
+        return (s, p) if s or p else None
+
+    def _initial(card):
+        return card.name.given[0].upper() if card.name and card.name.given else ""
+
+    def _prefix(card):
+        if card.name and card.name.prefix: return card.name.prefix.strip()
+        if card.gender == "M": return "Mr"
+        if card.gender == "F": return "Mrs"
+        return ""
+
+    def _given(card):
+        return (card.name.given.strip() if card.name and card.name.given else card.fn or "")
+
+    def _family(card):
+        return (card.name.family.strip() if card.name and card.name.family else "")
+
+    def _format_couple(c1, c2):
+        fam = _family(c1) or _family(c2)
+        def _is_male(c):
+            if c.gender == "M": return True
+            if c.gender == "F": return False
+            return _prefix(c).lower() in ("mr", "master", "sir", "lord")
+        male   = c1 if _is_male(c1) else (c2 if _is_male(c2) else c1)
+        female = c2 if male is c1 else c1
+        p_m, p_f = _prefix(male), _prefix(female)
+        if style == "informal":
+            return f"{_given(male)} & {_given(female)} {fam}".strip()
+        if p_m and p_f: return f"{p_m} {_initial(male)} & {p_f} {_initial(female)} {fam}".strip()
+        if p_m:         return f"{p_m} & {_initial(female)} {fam}".strip()
+        if p_f:         return f"{_initial(male)} & {p_f} {fam}".strip()
+        return f"{_initial(male)} & {_initial(female)} {fam}".strip()
+
+    def _format_single(card):
+        p = _prefix(card)
+        if card.kind == "org" or not card.name or (not _family(card) and not card.name.given):
+            return card.fn or card.org or "Unknown"
+        fn = card.fn or ""
+        return f"{p} {fn}".strip() if p and not fn.startswith(p) else fn
+
+    def _format_address(card):
+        if not card.addresses: return []
+        a = card.addresses[0]
+        lines = []
+        if a.street:      lines.append(a.street.strip())
+        if a.extended:    lines.append(a.extended.strip())
+        if a.locality:    lines.append(a.locality.strip())
+        if a.region:      lines.append(a.region.strip())
+        if a.postal_code: lines.append(a.postal_code.strip())
+        if include_country and a.country and a.country.strip().lower() not in (
+            "uk", "united kingdom", "england", "scotland", "wales", "gb"
+        ):
+            lines.append(a.country.strip())
+        return lines
+
+    used_uids: set = set()
+    pool_by_uid = {c.uid: c for c in pool if c.uid}
+    records = []
+
+    for card in pool:
+        if card.uid in used_uids:
+            continue
+        partner = None
+        for rel in (card.related or []):
+            uid_ref = rel.uid
+            if not uid_ref: continue
+            candidate = pool_by_uid.get(uid_ref) or uid_map.get(uid_ref)
+            if not candidate or candidate.uid in used_uids: continue
+            if not candidate.addresses or not candidate.addresses[0].street: continue
+            if _family(card) and _family(card) == _family(candidate):
+                if _addr_key(card) and _addr_key(card) == _addr_key(candidate):
+                    partner = candidate
+                    break
+        if partner:
+            used_uids.add(card.uid)
+            used_uids.add(partner.uid)
+            records.append({"name": _format_couple(card, partner),
+                            "address": _format_address(card), "merged": True})
+        else:
+            if card.uid: used_uids.add(card.uid)
+            records.append({"name": _format_single(card),
+                            "address": _format_address(card), "merged": False})
+
+    records.sort(key=lambda r: r["name"].lower())
+    return records
+
+
+def _api_preview_labels(body: dict) -> dict:
+    """Return label records for preview without generating a file."""
+    cards = _state["cards"]
+    if not cards:
+        return {"ok": False, "error": "No contacts loaded"}
+    try:
+        records = _build_label_records(
+            cards,
+            category        = body.get("category", ""),
+            style           = body.get("style", "formal"),
+            include_country = bool(body.get("include_country", True)),
+        )
+        merged = sum(1 for r in records if r["merged"])
+        return {"ok": True, "records": records, "total": len(records), "merged": merged}
+    except Exception as exc:
+        import traceback
+        print(f"[preview_labels error] {traceback.format_exc()}", flush=True)
+        return {"ok": False, "error": str(exc)}
+
+
+def _api_print_labels(body: dict) -> dict:
+    """Generate an address-label HTML file for a given category."""
+    cards = _state["cards"]
+    if not cards:
+        return {"ok": False, "error": "No contacts loaded"}
+
+    try:
+        from .print_modules import get_profile, get_all_modules
+        category    = body.get("category", "")
+        style       = body.get("style", "formal")
+        printer_id  = body.get("printer_id", "") or "brother_ql820nwb"
+        profile_id  = body.get("profile_id", "") or "DK22205"
+        test_mode   = bool(body.get("test_mode", False))
+        include_country = bool(body.get("include_country", True))
+
+        # Fallback: if ids are missing/invalid, use first available module+profile
+        profile = get_profile(printer_id, profile_id)
+        if not profile:
+            modules = get_all_modules()
+            if not modules:
+                return {"ok": False, "error": "No print modules found in print_modules/"}
+            printer_id = modules[0]["printer_id"]
+            profile_id = modules[0]["default_profile"]
+            profile    = get_profile(printer_id, profile_id)
+        if not profile:
+            return {"ok": False, "error": f"Could not resolve a print profile"}
+
+        page_css   = profile["page_css"]
+        label_css  = profile["label_css"]
+        name_size  = profile["name_size"]
+        print_hint = profile["hint"]
+
+        records = _build_label_records(cards, category, style, include_country)
+
+        if test_mode:
+            records = records[:3]
+
+        total = len(records)
+        merged_count = sum(1 for r in records if r["merged"])
+
+        # Generate HTML
+        label_htmls = []
+        for r in records:
+            addr_lines = "".join(f"<div class='aline'>{_esc_html(l)}</div>" for l in r["address"])
+            merged_mark = " <span class='mmark'>⚭</span>" if r["merged"] else ""
+            label_htmls.append(f"""<div class='label'>
+  <div class='name'>{_esc_html(r['name'])}{merged_mark}</div>
+  <div class='addr'>{addr_lines}</div>
+</div>""")
+
+        test_banner = """<div style='position:fixed;top:0;left:0;right:0;background:#ff0;color:#000;
+            text-align:center;font-size:10pt;padding:4px;font-family:sans-serif;
+            print-color-adjust:exact;-webkit-print-color-adjust:exact'>
+            ⚠ TEST MODE — first 3 labels only</div>
+            <div style='height:24pt'></div>""" if test_mode else ""
+
+        from datetime import datetime
+        generated = datetime.now().strftime("%Y-%m-%d %H:%M")
+        cat_label = category or "all contacts"
+
+        html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Address Labels — {_esc_html(cat_label)}</title>
+<style>
+@page {{ {page_css} }}
+* {{ box-sizing: border-box; margin: 0; padding: 0; }}
+body {{ font-family: Arial, Helvetica, sans-serif; background: white; }}
+.label {{
+  {label_css}
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  page-break-after: always;
+  break-after: page;
+  padding: 1mm;
+}}
+.name {{
+  font-size: {name_size};
+  font-weight: bold;
+  color: #000;
+  margin-bottom: 1.5mm;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}}
+.addr {{ color: #111; }}
+.aline {{ white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+.mmark {{ font-size: 7pt; color: #555; font-weight: normal; }}
+/* Screen preview — show label outlines */
+@media screen {{
+  body {{
+    background: #eee;
+    padding: 10px;
+    font-family: Arial, sans-serif;
+  }}
+  .label {{
+    background: white;
+    border: 1px solid #bbb;
+    border-radius: 3px;
+    margin: 8px auto;
+    box-shadow: 0 1px 4px rgba(0,0,0,.15);
+    padding: 4mm 5mm;
+  }}
+  .screen-header {{
+    text-align: center;
+    font-family: monospace;
+    font-size: 11px;
+    color: #555;
+    margin-bottom: 16px;
+    padding: 8px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+  }}
+  .screen-header strong {{ color: #222; }}
+}}
+@media print {{
+  .screen-header {{ display: none; }}
+  body {{ background: white; }}
+}}
+</style>
+</head>
+<body>
+{test_banner}
+<div class="screen-header">
+  <strong>vCard Studio — Address Labels</strong><br>
+  Category: <strong>{_esc_html(cat_label)}</strong> &nbsp;|&nbsp;
+  {total} label{'s' if total != 1 else ''} &nbsp;|&nbsp;
+  {merged_count} couple{'s' if merged_count != 1 else ''} merged &nbsp;|&nbsp;
+  Label: <strong>{label_type}</strong> &nbsp;|&nbsp;
+  Style: <strong>{style}</strong> &nbsp;|&nbsp;
+  Generated: {generated}<br><br>
+  <strong>Print:</strong> Ctrl+P / ⌘P &nbsp;·&nbsp;
+  Select printer: <strong>Brother QL-820NWB</strong> &nbsp;·&nbsp;
+  {print_hint} &nbsp;·&nbsp;
+  Margins: <strong>None / Minimum</strong>
+</div>
+{''.join(label_htmls)}
+</body>
+</html>"""
+
+        # Write to print/ folder
+        out_dir = _ROOT / "print"
+        out_dir.mkdir(exist_ok=True)
+        from datetime import datetime as _dt
+        ts = _dt.now().strftime("%Y-%m-%d-%H%M")
+        safe_cat = re.sub(r"[^\w-]", "-", category or "all").strip("-")
+        mode_sfx = "-TEST" if test_mode else ""
+        out_path = out_dir / f"labels-{safe_cat}-{ts}{mode_sfx}.html"
+        out_path.write_text(html, encoding="utf-8")
+
+        return {
+            "ok": True,
+            "file": str(out_path),
+            "filename": out_path.name,
+            "total": total,
+            "merged": merged_count,
+            "test_mode": test_mode,
+        }
+
+    except Exception as exc:
+        import traceback
+        print(f"[print_labels error] {traceback.format_exc()}", flush=True)
+        return {"ok": False, "error": str(exc)}
+
+
+def _esc_html(s: str) -> str:
+    """Minimal HTML escaping for label output."""
+    return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+
 def _api_birthdays(body: dict) -> dict:
     """Return all contacts that have a birthday or anniversary, sorted month-first.
 
@@ -1824,6 +2139,8 @@ class VCardHandler(BaseHTTPRequestHandler):
             self._send_json(_api_apple_name_unset(params))
         elif path == "/api/print_cards":
             self._send_json(_api_print_cards(params))
+        elif path == "/api/print_modules":
+            self._send_json(_api_print_modules())
         elif path == "/api/search_orgs":
             self._send_json(_api_search_orgs(params))
         elif path == "/api/birthdays":
@@ -1834,6 +2151,8 @@ class VCardHandler(BaseHTTPRequestHandler):
             self._send_json(_api_quit())
         elif path.startswith("/static/"):
             self._send_file(_STATIC / path[8:])
+        elif path.startswith("/print/"):
+            self._send_file(_ROOT / "print" / path[7:])
         else:
             self.send_response(404)
             self.end_headers()
@@ -1880,6 +2199,10 @@ class VCardHandler(BaseHTTPRequestHandler):
             self._send_json(_api_strip_proprietary(body))
         elif path == "/api/birthdays":
             self._send_json(_api_birthdays(body))
+        elif path == "/api/print_labels":
+            self._send_json(_api_print_labels(body))
+        elif path == "/api/preview_labels":
+            self._send_json(_api_preview_labels(body))
         elif path == "/api/merge_cards":
             self._send_json(_api_merge_cards(body))
         elif path == "/api/reformat_phones":
@@ -1933,6 +2256,7 @@ def main():
     # Ensure cards-in exists so the UI can show the drop zone
     (_ROOT / "cards-in").mkdir(parents=True, exist_ok=True)
     (_ROOT / "cards-out").mkdir(parents=True, exist_ok=True)
+    (_ROOT / "print").mkdir(parents=True, exist_ok=True)
 
     # Auto-detect any existing output from a previous merge
     _load_existing_output()
