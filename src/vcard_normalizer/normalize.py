@@ -232,6 +232,51 @@ def normalize_cards(
 
         note = _get_text(getattr(vc, "note", None))
 
+        # ── Parse [vCS: ...] block written by Apple-compat export ─────────────
+        # When exporting for Apple/iOS, vCard Studio preserves 4.0-only fields
+        # in the NOTE as a compact inline block:
+        #   [vCS: GENDER: M | CATEGORIES: Army, Friends | KIND: self | ...]
+        # On re-import we parse this back into the correct structured fields
+        # and strip the block from the visible note text.
+        _vcs_gender: str | None = None
+        _vcs_kind: str | None = None
+        _vcs_categories: list[str] = []
+        _vcs_anniversary: str | None = None
+        _vcs_related: list[Related] = []
+
+        if note and "[vCS:" in note:
+            # Pattern allows inner [...] pairs (e.g. RELATED[spouse])
+            _vcs_match = re.search(r"\[vCS:\s*((?:[^\[\]]|\[[^\[\]]*\])*)\]", note)
+            if _vcs_match:
+                _vcs_block = _vcs_match.group(1)
+                for _pair in _vcs_block.split("|"):
+                    _pair = _pair.strip()
+                    if ":" not in _pair:
+                        continue
+                    _key, _, _val = _pair.partition(":")
+                    _key = _key.strip().upper()
+                    _val = _val.strip()
+                    if _key == "GENDER":
+                        _vcs_gender = _val.upper() or None
+                    elif _key == "KIND":
+                        _vcs_kind = _val.lower() or None
+                    elif _key == "CATEGORIES":
+                        _vcs_categories = [c.strip() for c in _val.split(",") if c.strip()]
+                    elif _key == "ANNIVERSARY":
+                        _vcs_anniversary = _val or None
+                    elif _key.startswith("RELATED"):
+                        # RELATED[spouse]: uid-or-text
+                        _rtype_match = re.match(r"RELATED\[([^\]]+)\]", _key)
+                        _rtype = _rtype_match.group(1).lower() if _rtype_match else "contact"
+                        if _val.startswith("vcard-studio-") or (
+                            len(_val) == 36 and _val.count("-") == 4
+                        ):
+                            _vcs_related.append(Related(rel_type=_rtype, uid=_val))
+                        elif _val:
+                            _vcs_related.append(Related(rel_type=_rtype, text=_val))
+                # Strip the [vCS: ...] block from the visible note
+                note = re.sub(r"\s*\[vCS:(?:[^\[\]]|\[[^\[\]]*\])*\]", "", note).strip() or None
+
         # Parse X-VCARD-STUDIO-WAIVED — "not required" field markers
         # vobject stores X- properties with hyphens converted to underscores
         waived_raw = _get_text(getattr(vc, "x_vcard_studio_waived", None))
@@ -255,6 +300,25 @@ def normalize_cards(
         # vobject converts hyphens to underscores in attribute names
         x_ios_given  = _get_text(getattr(vc, "x_ios_given",  None)) or None
         x_ios_family = _get_text(getattr(vc, "x_ios_family", None)) or None
+
+        # Apply vCS-recovered fields — only fill gaps, never overwrite existing values
+        if _vcs_gender and not gender:
+            gender = _vcs_gender
+        if _vcs_kind and not kind:
+            kind = _vcs_kind
+        if _vcs_anniversary and not anniversary:
+            anniversary = _vcs_anniversary
+        if _vcs_categories:
+            # Merge — add any categories from the vCS block not already present
+            categories = sorted(set(categories) | set(_vcs_categories))
+        if _vcs_related:
+            # Append recovered relationships not already in related list
+            existing_uids = {r.uid for r in related if r.uid}
+            for r in _vcs_related:
+                if r.uid and r.uid not in existing_uids:
+                    related.append(r)
+                elif not r.uid:
+                    related.append(r)
 
         card = Card(
             raw=vc,

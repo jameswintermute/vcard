@@ -211,13 +211,32 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
 .clone-banner.show{display:flex}
 /* Birthday panel */
 .bday-month-hdr{font-size:10px;font-weight:700;color:var(--cyan);letter-spacing:.08em;text-transform:uppercase;margin:18px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--border)}
-.bday-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:11px}
+.bday-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:11px;cursor:pointer}
 .bday-row:hover{background:var(--bg2)}
 .bday-icon{font-size:14px;flex-shrink:0}
 .bday-name{min-width:160px;color:var(--text);cursor:pointer;text-decoration-color:var(--dim)}
 .bday-name:hover{color:var(--green);text-decoration:underline}
 .bday-date{flex:1;color:var(--mid)}
 /* Type label badge */
+.issue-group{margin-bottom:10px}
+.issue-group-hdr{display:flex;align-items:center;gap:7px;font-size:10px;font-weight:700;padding:4px 8px;background:var(--bg2);border:1px solid var(--border);letter-spacing:.04em}
+.ig-count{font-size:9px;background:rgba(255,255,255,.08);padding:0 5px;border-radius:8px}
+.ig-selall{font-size:9px;padding:1px 7px;background:none;border:1px solid var(--border);color:var(--dim);cursor:pointer}
+.ig-selall:hover{border-color:var(--mid);color:var(--text)}
+.issue-card{display:flex;align-items:center;gap:8px;padding:5px 10px;border-bottom:1px solid rgba(255,255,255,.03);cursor:pointer;transition:background .1s}
+.issue-card:hover{background:var(--bg2)}
+.issue-card.warn{border-left:2px solid var(--amber)}
+.issue-card.error{border-left:2px solid var(--red)}
+.issue-card.info{border-left:2px solid var(--dim)}
+.issue-name{flex:1;font-size:11px;color:var(--text)}
+.issue-desc{font-size:10px;color:var(--dim);flex:2}
+.issue-fix{font-size:9px;padding:1px 8px;background:none;border:1px solid var(--border);color:var(--dim);cursor:pointer;white-space:nowrap}
+.issue-fix:hover{border-color:var(--mid);color:var(--text)}
+.bulk-bar{display:none;align-items:center;gap:10px;padding:6px 10px;background:var(--bg2);border:1px solid var(--amber);margin-top:8px;font-size:10px}
+.bulk-bar.show{display:flex}
+.bulk-count{color:var(--amber);font-weight:700}
+.bulk-actions{display:flex;gap:6px}
+.bulk-spacer{flex:1}
 .type-badge{font-size:8px;font-weight:700;letter-spacing:.06em;background:rgba(0,204,196,.1);color:var(--cyan);border:1px solid rgba(0,204,196,.2);padding:1px 5px;vertical-align:middle;margin-right:2px}
 .type-badge.work{background:rgba(232,160,0,.1);color:var(--amber);border-color:rgba(232,160,0,.2)}
 .type-badge.cell{background:rgba(0,224,64,.08);color:var(--green);border-color:rgba(0,224,64,.2)}
@@ -253,6 +272,7 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
     <div class="nav-item"        data-p="export"   onclick="show('export')">  <span class="nav-step">6</span> Export</div>
     <div class="nav-item"        data-p="viewer"   onclick="show('viewer')">  <span class="nav-step">◈</span> Raw Viewer</div>
     <div class="nav-item"        data-p="print"    onclick="show('print')">   <span class="nav-step">⎙</span> Print</div>
+    <div class="nav-item"        data-p="labels"   onclick="show('labels')">  <span class="nav-step" style="color:var(--amber)">⊞</span> Labels</div>
     <div class="nav-item"        data-p="birthdays" onclick="show('birthdays')"><span class="nav-step" style="color:var(--cyan)">◈</span> Birthdays</div>
     <div class="nav-item"        data-p="prefs"    onclick="show('prefs')">   <span class="nav-step">⚙</span> Preferences</div>
   </div>
@@ -520,11 +540,15 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
        border-top:1px solid var(--amber);padding:8px 12px;
        align-items:center;gap:12px;z-index:50">
     <span id="rev-merge-count" style="font-size:11px;color:var(--amber)">0 selected</span>
-    <button class="btn" style="background:rgba(255,170,0,.1);border-color:var(--amber);color:var(--amber);font-size:10px"
-            onclick="doMergeSelected()">⊕ merge selected into one card</button>
+    <button class="btn" style="background:rgba(0,204,196,.1);border-color:var(--cyan);color:var(--cyan);font-size:10px"
+            onclick="openBulkTagModal()">⊕ add category</button>
+    <button class="btn" style="background:rgba(232,160,0,.08);border-color:var(--amber);color:var(--amber);font-size:10px"
+            onclick="doPrintSelectedLabels()">⊞ print label</button>
+    <button class="btn" id="rev-btn-merge" style="background:rgba(255,170,0,.1);border-color:var(--amber);color:var(--amber);font-size:10px"
+            onclick="doMergeSelected()">⊕ merge into one card</button>
     <button class="btn" style="background:rgba(255,60,60,.1);border-color:var(--red);color:var(--red);font-size:10px"
             onclick="doDeleteSelected()">✕ delete selected</button>
-    <span style="font-size:10px;color:var(--dim)">Fields are unioned — richest card wins</span>
+    <span id="rev-bar-hint" style="font-size:10px;color:var(--dim)"></span>
     <button class="btn btn-d" style="margin-left:auto;font-size:10px" onclick="clearRevSelection()">✕ clear</button>
   </div>
   <hr class="divider">
@@ -995,6 +1019,9 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
         <input type="checkbox" id="print-incl-note" style="accent-color:var(--cyan)"> notes
       </label>
       <label style="display:flex;align-items:center;gap:7px;font-size:11px;cursor:pointer">
+        <input type="checkbox" id="print-incl-rels" checked style="accent-color:var(--cyan)"> relationships
+      </label>
+      <label style="display:flex;align-items:center;gap:7px;font-size:11px;cursor:pointer">
         <input type="checkbox" id="print-incl-cats" checked style="accent-color:var(--cyan)"> categories
       </label>
     </div>
@@ -1005,6 +1032,105 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
     <span style="font-size:10px;color:var(--dim)">Opens in a new window — use browser Print (Ctrl+P / ⌘P)</span>
   </div>
   <div id="print-status" style="display:none;margin-top:8px;font-size:10px;color:var(--dim)"></div>
+</div>
+
+
+<!-- §7b LABELS -->
+<div id="panel-labels" class="panel">
+  <div class="ph">
+    <div class="ph-title" style="color:var(--amber)"><span style="color:var(--amber);margin-right:5px">⊞</span>print_labels</div>
+    <div class="ph-sub">address labels · couple merging · pluggable printer support</div>
+  </div>
+
+  <!-- ── STEP 1: PREVIEW ─────────────────────────────────────────── -->
+  <div class="sec-lbl">STEP 1 — PREVIEW YOUR LIST</div>
+  <div style="font-size:10px;color:var(--dim);margin-bottom:10px">
+    Check who's on the list and how couples are merged before printing anything.
+  </div>
+
+  <div class="form-row">
+    <span class="form-lbl">category</span>
+    <select class="form-sel" id="lbl-cat" style="flex:1;max-width:240px">
+      <option value="">all contacts with addresses</option>
+    </select>
+  </div>
+
+  <div class="form-row" style="margin-top:8px">
+    <span class="form-lbl">country</span>
+    <select class="form-sel" id="lbl-country" style="flex:1;max-width:300px">
+      <option value="1">Include country (omit UK/England/GB)</option>
+      <option value="0">Omit country from all labels</option>
+    </select>
+  </div>
+
+  <div style="margin-top:10px;padding:8px 12px;background:rgba(0,204,196,.05);border:1px solid rgba(0,204,196,.2);font-size:10px;color:var(--dim);line-height:1.8;max-width:600px">
+    <span style="color:var(--cyan);font-weight:700">⚭ Couple merging</span> — contacts with the same surname, a RELATED link, and matching address are merged onto one label.
+  </div>
+
+  <div style="margin-top:12px;display:flex;gap:10px;align-items:center">
+    <button class="btn btn-b" style="border-color:var(--cyan);color:var(--cyan)" id="btn-lbl-preview" onclick="doPreviewLabels()">
+      ◈ preview &amp; count
+    </button>
+    <span id="lbl-preview-hint" style="font-size:10px;color:var(--dim)"></span>
+  </div>
+
+  <!-- Preview results -->
+  <div id="lbl-preview-panel" style="display:none;margin-top:12px;max-width:680px">
+    <div id="lbl-preview-summary" style="font-size:10px;color:var(--cyan);margin-bottom:6px;padding:6px 10px;background:rgba(0,204,196,.07);border:1px solid rgba(0,204,196,.2);display:flex;align-items:center;gap:10px">
+      <span id="lbl-preview-count"></span>
+      <button class="btn btn-d" style="font-size:9px;padding:1px 6px" onclick="document.getElementById('lbl-preview-panel').style.display='none'">✕</button>
+    </div>
+    <div id="lbl-preview-list" style="max-height:300px;overflow-y:auto;border:1px solid var(--border);background:var(--bg)"></div>
+  </div>
+
+  <!-- No-address warnings -->
+  <div id="lbl-preview-warnings" style="display:none;margin-top:8px;max-width:680px;border:1px solid rgba(255,60,60,.3);background:rgba(255,60,60,.04)"></div>
+
+  <hr class="divider">
+
+  <!-- ── STEP 2: GENERATE ────────────────────────────────────────── -->
+  <div class="sec-lbl">STEP 2 — SELECT PRINTER &amp; GENERATE</div>
+  <div style="font-size:10px;color:var(--dim);margin-bottom:10px">
+    Choose your label tape, then generate. The file opens in a new tab — use Ctrl+P / ⌘P to print.
+  </div>
+
+  <div class="form-row">
+    <span class="form-lbl">printer</span>
+    <select class="form-sel" id="lbl-printer" style="flex:1;max-width:340px" onchange="onLblPrinterChange()">
+      <option value="">loading…</option>
+    </select>
+  </div>
+
+  <div class="form-row" style="margin-top:8px">
+    <span class="form-lbl">label / tape</span>
+    <select class="form-sel" id="lbl-profile" style="flex:1;max-width:340px">
+      <option value="">select printer first</option>
+    </select>
+  </div>
+
+  <div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <button class="btn btn-d" style="border-color:var(--amber);color:var(--amber)" id="btn-lbl-test" onclick="doGenerateLabels(true)">
+      ⊞ test — first 3 labels
+    </button>
+    <button class="btn btn-b" style="border-color:var(--amber);color:var(--amber)" id="btn-gen-labels" onclick="doGenerateLabels(false)">
+      ⊞ generate all labels
+    </button>
+    <span id="lbl-hint" style="font-size:10px;color:var(--dim)"></span>
+  </div>
+
+  <div id="lbl-result" style="display:none;margin-top:12px;padding:10px 14px;background:rgba(232,160,0,.07);border:1px solid var(--amber);font-size:10px;color:var(--amber);line-height:2"></div>
+
+  <hr class="divider">
+  <div class="sec-lbl">PRINTING INSTRUCTIONS</div>
+  <div style="font-size:10px;color:var(--dim);line-height:2;max-width:580px">
+    1. Click <strong style="color:var(--text)">generate all labels</strong> — an HTML file opens in a new tab<br>
+    2. Press <strong style="color:var(--text)">Ctrl+P</strong> (Windows/Linux) or <strong style="color:var(--text)">⌘P</strong> (Mac)<br>
+    3. Select your label printer<br>
+    4. Set paper size to match your tape — shown in the label/tape dropdown<br>
+    5. Margins: <strong style="color:var(--text)">None</strong> · Scale: <strong style="color:var(--text)">100% / Actual size</strong><br>
+    <br>
+    Files are also saved to <code style="color:var(--text)">print/</code> in your vCard Studio folder.
+  </div>
 </div>
 
 
@@ -1089,6 +1215,46 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
   </div>
 
   <hr class="divider">
+  <div class="sec-lbl">LABEL ADDRESSING</div>
+  <div style="font-size:10px;color:var(--dim);margin-bottom:10px">
+    How couples are addressed on printed labels. Applied in the Labels panel.
+  </div>
+  <div style="display:flex;flex-direction:column;gap:9px;margin-bottom:6px">
+    <label style="display:flex;align-items:flex-start;gap:9px;cursor:pointer;font-size:11px;color:var(--text)">
+      <input type="radio" name="pref-couple-style" value="british_formal" checked
+             onchange="savePref('couple_style',this.value)" style="accent-color:var(--green);margin-top:1px">
+      <span><strong style="color:var(--bright)">Mr &amp; Mrs B Smith</strong>
+        <span style="color:var(--dim)"> — British traditional · husband's initial only (default)</span></span>
+    </label>
+    <label style="display:flex;align-items:flex-start;gap:9px;cursor:pointer;font-size:11px;color:var(--text)">
+      <input type="radio" name="pref-couple-style" value="formal_both"
+             onchange="savePref('couple_style',this.value)" style="accent-color:var(--green);margin-top:1px">
+      <span><strong style="color:var(--bright)">Mr J &amp; Mrs A Smith</strong>
+        <span style="color:var(--dim)"> — both initials</span></span>
+    </label>
+    <label style="display:flex;align-items:flex-start;gap:9px;cursor:pointer;font-size:11px;color:var(--text)">
+      <input type="radio" name="pref-couple-style" value="formal_no_initial"
+             onchange="savePref('couple_style',this.value)" style="accent-color:var(--green);margin-top:1px">
+      <span><strong style="color:var(--bright)">Mr &amp; Mrs Smith</strong>
+        <span style="color:var(--dim)"> — very formal · no initials</span></span>
+    </label>
+    <label style="display:flex;align-items:flex-start;gap:9px;cursor:pointer;font-size:11px;color:var(--text)">
+      <input type="radio" name="pref-couple-style" value="informal"
+             onchange="savePref('couple_style',this.value)" style="accent-color:var(--green);margin-top:1px">
+      <span><strong style="color:var(--bright)">James &amp; Alice Smith</strong>
+        <span style="color:var(--dim)"> — informal · first names</span></span>
+    </label>
+    <label style="display:flex;align-items:flex-start;gap:9px;cursor:pointer;font-size:11px;color:var(--text)">
+      <input type="radio" name="pref-couple-style" value="family"
+             onchange="savePref('couple_style',this.value)" style="accent-color:var(--green);margin-top:1px">
+      <span><strong style="color:var(--bright)">The Smith Family</strong>
+        <span style="color:var(--dim)"> — family style</span></span>
+    </label>
+  </div>
+  <div style="font-size:10px;color:var(--dim);margin-bottom:16px">
+    Singles: always formatted as <code style="color:var(--text)">Mr J Smith</code> regardless of couple style.
+  </div>
+
   <div class="sec-lbl">PRINT OUTPUT</div>
   <div style="font-size:10px;color:var(--dim);margin-bottom:10px">Paper size for the print / PDF view.</div>
   <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
@@ -1151,6 +1317,63 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
 </div>
 
 </main>
+</div>
+
+<!-- PRINT LABEL MODAL -->
+<div class="modal-backdrop" id="print-label-modal" style="display:none" onclick="if(event.target===this)closePrintLabelModal()">
+  <div class="modal" style="max-width:460px;min-height:unset">
+    <div class="modal-header">
+      <div class="modal-title">⊞ Print label</div>
+      <button class="modal-close" onclick="closePrintLabelModal()">✕</button>
+    </div>
+    <div style="padding:16px 20px">
+      <div style="font-size:10px;color:var(--dim);margin-bottom:14px">
+        Choose how to address each label. Couple format uses your Preferences style.
+      </div>
+      <div id="plm-contacts" style="display:flex;flex-direction:column;gap:10px"></div>
+      <div style="margin-top:18px;display:flex;gap:8px;align-items:center">
+        <button class="btn btn-b" onclick="doExecutePrintLabels()" style="flex:1">
+          ⊞ generate labels
+        </button>
+        <button class="btn btn-d" onclick="closePrintLabelModal()">cancel</button>
+      </div>
+      <div id="plm-hint" style="font-size:10px;color:var(--dim);margin-top:8px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- BULK TAG MODAL -->
+<div class="modal-backdrop" id="bulk-tag-modal" style="display:none" onclick="if(event.target===this)closeBulkTagModal()">
+  <div class="modal" style="max-width:420px;min-height:unset">
+    <div class="modal-header">
+      <div class="modal-title">⊕ Add category to selected contacts</div>
+      <button class="modal-close" onclick="closeBulkTagModal()">✕</button>
+    </div>
+    <div style="padding:16px 20px">
+      <div style="font-size:10px;color:var(--dim);margin-bottom:12px">
+        Type a category name or pick from your existing categories.
+        Existing categories on each contact are preserved.
+      </div>
+      <div style="position:relative">
+        <input class="form-in" id="bulk-tag-input" placeholder="e.g. Christmas-Card"
+               autocomplete="off"
+               oninput="onBulkTagInput()"
+               onkeydown="onBulkTagKey(event)"
+               style="width:100%;font-size:12px;padding:8px 10px">
+        <div id="bulk-tag-drop" style="display:none;position:absolute;left:0;right:0;top:100%;
+             background:var(--bg2);border:1px solid var(--border);border-top:none;
+             max-height:180px;overflow-y:auto;z-index:200"></div>
+      </div>
+      <div id="bulk-tag-existing" style="display:flex;flex-wrap:wrap;gap:5px;margin-top:10px"></div>
+      <div style="margin-top:16px;display:flex;gap:8px;align-items:center">
+        <button class="btn btn-b" id="bulk-tag-apply" onclick="doBulkTag()" style="flex:1">
+          ⊕ apply to <span id="bulk-tag-n">0</span> contact<span id="bulk-tag-plural">s</span>
+        </button>
+        <button class="btn btn-d" onclick="closeBulkTagModal()">cancel</button>
+      </div>
+      <div id="bulk-tag-result" style="display:none;margin-top:10px;font-size:10px;color:var(--green)"></div>
+    </div>
+  </div>
 </div>
 
 <!-- EDIT MODAL -->
@@ -1297,6 +1520,12 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
         <button class="btn btn-c" style="font-size:10px;padding:2px 8px" onclick="cloneAddress()">copy address</button>
         <button class="btn btn-d" style="font-size:10px;padding:2px 8px" onclick="dismissClone()">dismiss</button>
       </div>
+      <div id="edit-rel-clone-banner" class="clone-banner" style="margin-top:4px;margin-bottom:4px">
+        <span style="color:var(--cyan);font-size:13px">⊕</span>
+        <span id="edit-rel-clone-msg" style="flex:1"></span>
+        <button class="btn btn-c" style="font-size:10px;padding:2px 8px" onclick="cloneRelationships()">copy relationships</button>
+        <button class="btn btn-d" style="font-size:10px;padding:2px 8px" onclick="dismissRelClone()">dismiss</button>
+      </div>
       <!-- Rel picker -->
       <div class="rel-picker-wrap">
         <div style="font-size:10px;color:var(--dim);margin-bottom:7px">Select type, then search and click a contact to link. Repeat to add multiple links.</div>
@@ -1314,6 +1543,21 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
                  oninput="relSearchPicker(this.value,'edit-rel-picker-grid','edit')"
                  autocomplete="off">
           <button class="btn btn-d" style="font-size:10px;padding:3px 8px;flex-shrink:0" onclick="addRelManual('edit')" title="Add by name only (no UID link)">+ text only</button>
+        </div>
+        <div id="edit-rel-textonly-hint" style="display:none;font-size:10px;color:var(--dim);margin-top:5px;padding:5px 8px;background:var(--bg2);border:1px solid var(--border)">
+          No match found — adding as text-only. For a spouse, include their prefix so labels format correctly:
+          <span style="color:var(--text)">Mrs Laura</span> · <span style="color:var(--text)">Dr Sarah</span> · <span style="color:var(--text)">Ms Jane</span>
+          <select id="edit-rel-prefix-hint" class="form-sel" style="width:80px;margin-left:6px;font-size:10px"
+                  onchange="prefixRelSearch(this.value,'edit')">
+            <option value="">prefix…</option>
+            <option value="Mrs">Mrs</option>
+            <option value="Ms">Ms</option>
+            <option value="Miss">Miss</option>
+            <option value="Mr">Mr</option>
+            <option value="Dr">Dr</option>
+            <option value="Prof">Prof</option>
+            <option value="Rev">Rev</option>
+          </select>
         </div>
         <!-- Linked confirmations appear here, above the grid -->
         <div id="edit-rel-confirmations" style="display:none;margin-bottom:6px;background:rgba(0,224,64,.06);border:1px solid var(--green2);padding:6px 10px;font-size:10px;color:var(--green)"></div>
@@ -1454,11 +1698,20 @@ window.addEventListener('load', () => {
 async function poll() {
   loadPrefs();
   try {
-    const resp = await fetch('/api/status?_=' + Date.now());
+    const controller = new AbortController();
+    const tid = setTimeout(() => {
+      controller.abort();
+    }, 8000);  // 8s timeout — single-threaded server can be slow under load
+    const resp = await fetch('/api/status?_=' + Date.now(), { signal: controller.signal });
+    clearTimeout(tid);
     if (!resp.ok) { document.getElementById('hdr-status').textContent = 'server error ' + resp.status; return; }
     applyState(await resp.json());
   } catch(e) {
-    document.getElementById('hdr-status').textContent = 'no response';
+    if (e.name === 'AbortError') {
+      document.getElementById('hdr-status').textContent = 'slow response…';
+    } else {
+      document.getElementById('hdr-status').textContent = 'no response';
+    }
   }
 }
 
@@ -1488,7 +1741,13 @@ function applyState(d) {
     checkSelfCards();
     checkFirstRun(d);
   }
-  if (d.total_cards && (!window._state_cards_by_uid || !Object.keys(window._state_cards_by_uid).length)) {
+  // Refresh UID cache when card count changes or cache is empty
+  if (d.total_cards && (
+    !window._state_cards_by_uid ||
+    !Object.keys(window._state_cards_by_uid).length ||
+    window._state_cards_uid_count !== d.total_cards
+  )) {
+    window._state_cards_uid_count = d.total_cards;
     fetch('/api/cards?per_page=1000').then(r=>r.json()).then(all => {
       window._state_cards_by_uid = {};
       (all.cards||[]).forEach(c => { if (c.uid) window._state_cards_by_uid[c.uid] = c; });
@@ -1686,9 +1945,10 @@ function renderRevTable(d) {
     lastWasSelf = isSelf;
     const rowStyle = isSelf ? 'background:rgba(0,204,196,.04)' : '';
     return divider + `
-    <tr id="rev-row-${pi}" ondblclick="openEdit(${pi})" class="${_revSelected.has(pi)?'rev-row-sel':''}" style="${rowStyle}">
+    <tr id="rev-row-${pi}" onclick="openEdit(${pi})" class="${_revSelected.has(pi)?'rev-row-sel':''}" style="${rowStyle};cursor:pointer">
       <td style="width:28px;text-align:center">
         <input type="checkbox" class="rev-cb" data-pi="${pi}"
+               onclick="event.stopPropagation()"
                onchange="toggleRevRow(${pi},this.checked)"
                style="accent-color:var(--green)">
       </td>
@@ -1705,8 +1965,8 @@ function renderRevTable(d) {
       <td>${categories.map(cat=>`<span class="pill ${pc(cat)}">${esc(cat)}</span>`).join('')||'<span style="color:var(--dim)">—</span>'}${c.note?`<span title="${esc(c.note)}" style="color:var(--dim);margin-left:6px;cursor:help;font-size:12px">📝</span>`:''}</td>
       <td>
         <div class="row-actions">
-          <button class="row-btn" onclick="openEdit(${pi})">edit</button>
-          <button class="row-btn del" onclick="deleteCard(${pi}, event)">del</button>
+          <button class="row-btn" onclick="event.stopPropagation();openEdit(${pi})">edit</button>
+          <button class="row-btn del" onclick="event.stopPropagation();deleteCard(${pi}, event)">del</button>
         </div>
       </td>
     </tr>`;
@@ -1767,6 +2027,230 @@ function toggleRevSelectAll(checked) {
   });
 }
 
+// ══ BULK TAG ══════════════════════════════════════════════════════════════════
+
+function openBulkTagModal() {
+  if (_revSelected.size === 0) { toast('Select at least one contact first', true); return; }
+  const n = _revSelected.size;
+  document.getElementById('bulk-tag-n').textContent = n;
+  document.getElementById('bulk-tag-plural').textContent = n === 1 ? '' : 's';
+  document.getElementById('bulk-tag-input').value = '';
+  document.getElementById('bulk-tag-drop').style.display = 'none';
+  document.getElementById('bulk-tag-result').style.display = 'none';
+
+  const existingEl = document.getElementById('bulk-tag-existing');
+  const cats = Object.keys(S.category_counts || {}).sort();
+  existingEl.innerHTML = cats.map(c =>
+    `<span onclick="pickBulkTagCat('${esc(c)}')"
+           style="cursor:pointer;padding:2px 8px;font-size:10px;background:var(--bg2);
+                  border:1px solid var(--border);border-radius:2px;color:var(--dim)"
+           onmouseover="this.style.borderColor='var(--cyan)';this.style.color='var(--cyan)'"
+           onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--dim)'">
+      ${esc(c)}
+    </span>`
+  ).join('');
+
+  document.getElementById('bulk-tag-modal').style.display = 'flex';
+  setTimeout(() => document.getElementById('bulk-tag-input').focus(), 50);
+}
+
+function closeBulkTagModal() {
+  document.getElementById('bulk-tag-modal').style.display = 'none';
+  document.getElementById('bulk-tag-drop').style.display = 'none';
+}
+
+function pickBulkTagCat(cat) {
+  document.getElementById('bulk-tag-input').value = cat;
+  document.getElementById('bulk-tag-drop').style.display = 'none';
+  document.getElementById('bulk-tag-input').focus();
+}
+
+function onBulkTagInput() {
+  const val = document.getElementById('bulk-tag-input').value.toLowerCase();
+  const drop = document.getElementById('bulk-tag-drop');
+  if (!val) { drop.style.display = 'none'; return; }
+  const cats = Object.keys(S.category_counts || {}).filter(c => c.toLowerCase().includes(val)).sort();
+  if (!cats.length) { drop.style.display = 'none'; return; }
+  drop.innerHTML = cats.map(c =>
+    `<div onclick="pickBulkTagCat('${esc(c)}')"
+          style="padding:5px 10px;font-size:11px;cursor:pointer;color:var(--text)"
+          onmouseover="this.style.background='var(--bg3)'"
+          onmouseout="this.style.background=''">
+      ${esc(c)}
+    </div>`
+  ).join('');
+  drop.style.display = '';
+}
+
+function onBulkTagKey(e) {
+  if (e.key === 'Enter')  { e.preventDefault(); doBulkTag(); }
+  if (e.key === 'Escape') { closeBulkTagModal(); }
+}
+
+async function doBulkTag() {
+  const cat = document.getElementById('bulk-tag-input').value.trim();
+  if (!cat) { document.getElementById('bulk-tag-input').focus(); return; }
+  const indices = [..._revSelected]
+    .map(pi => _currentPageCards[pi]?._idx)
+    .filter(i => i !== undefined);
+  if (!indices.length) { toast('Could not resolve card indices', true); return; }
+  const applyBtn = document.getElementById('bulk-tag-apply');
+  applyBtn.disabled = true;
+  try {
+    const d = await post('/api/bulk_add_category', { category: cat, indices });
+    applyBtn.disabled = false;
+    if (!d.ok) { toast(d.error || 'Failed', true); return; }
+    const res = document.getElementById('bulk-tag-result');
+    res.textContent = `✓ Added "${d.category}" to ${d.changed} contact${d.changed!==1?'s':''}`;
+    res.style.display = '';
+    toast(`✓ "${d.category}" added to ${d.changed} contact${d.changed!==1?'s':''}`);
+    clearRevSelection();
+    poll();
+    setTimeout(closeBulkTagModal, 1200);
+  } catch(e) {
+    applyBtn.disabled = false;
+    toast('Failed', true);
+  }
+}
+
+// ══ PRINT SELECTED LABELS ═════════════════════════════════════════════════════
+
+let _plmOptions = [];  // [{_idx, fn, single_name, couple_name, couple_idx, chosen}]
+
+async function doPrintSelectedLabels() {
+  if (_revSelected.size === 0) { toast('Select at least one contact first', true); return; }
+
+  const indices = [..._revSelected]
+    .map(pi => _currentPageCards[pi]?._idx)
+    .filter(i => i !== undefined);
+  if (!indices.length) { toast('Could not resolve card indices', true); return; }
+
+  const hint = document.getElementById('plm-hint');
+  if (hint) hint.textContent = 'Resolving contacts…';
+  document.getElementById('print-label-modal').style.display = 'flex';
+  document.getElementById('plm-contacts').innerHTML =
+    '<div style="color:var(--dim);font-size:10px;padding:8px 0">Loading…</div>';
+
+  try {
+    const d = await post('/api/label_options', {
+      indices,
+      style: _PREFS.couple_style,
+      include_country: true,
+    });
+    if (!d.ok) { toast(d.error || 'Failed', true); closePrintLabelModal(); return; }
+
+    _plmOptions = d.options.map(o => ({...o, chosen: o.couple_name ? 'couple' : 'individual'}));
+    renderPrintLabelModal();
+    if (hint) hint.textContent = '';
+  } catch(e) {
+    toast('Failed: ' + e.message, true);
+    closePrintLabelModal();
+  }
+}
+
+function renderPrintLabelModal() {
+  const el = document.getElementById('plm-contacts');
+  if (!el) return;
+  el.innerHTML = _plmOptions.map((o, i) => {
+    const hasCouple = !!o.couple_name;
+    return `<div style="padding:10px 12px;background:var(--bg2);border:1px solid var(--border)">
+      <div style="font-size:11px;font-weight:700;color:var(--bright);margin-bottom:8px">${esc(o.fn)}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 12px;
+               border:1px solid ${o.chosen==='individual'?'var(--cyan)':'var(--border)'};
+               background:${o.chosen==='individual'?'rgba(0,204,196,.08)':'transparent'};
+               font-size:10px;color:var(--text);flex:1;min-width:140px"
+               onclick="plmChoose(${i},'individual')">
+          <input type="radio" name="plm-${i}" ${o.chosen==='individual'?'checked':''} style="accent-color:var(--cyan)">
+          <span>${esc(o.single_name)}</span>
+        </label>
+        ${hasCouple ? `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 12px;
+               border:1px solid ${o.chosen==='couple'?'var(--cyan)':'var(--border)'};
+               background:${o.chosen==='couple'?'rgba(0,204,196,.08)':'transparent'};
+               font-size:10px;color:var(--text);flex:1;min-width:140px"
+               onclick="plmChoose(${i},'couple')">
+          <input type="radio" name="plm-${i}" ${o.chosen==='couple'?'checked':''} style="accent-color:var(--cyan)">
+          <span>${esc(o.couple_name)} <span style="color:var(--dim);font-size:9px">⚭</span></span>
+        </label>` : `<div style="flex:1;min-width:140px;font-size:9px;color:var(--dim);padding:6px 12px;
+             border:1px solid transparent">no linked partner at same address</div>`}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function plmChoose(i, choice) {
+  _plmOptions[i].chosen = choice;
+  renderPrintLabelModal();
+}
+
+function closePrintLabelModal() {
+  document.getElementById('print-label-modal').style.display = 'none';
+  _plmOptions = [];
+}
+
+async function doExecutePrintLabels() {
+  if (!_plmOptions.length) return;
+
+  // Build index list — for 'couple', include both the card and the partner
+  // so _build_label_records can do its couple merging
+  const individualIndices = _plmOptions
+    .filter(o => o.chosen === 'individual')
+    .map(o => o._idx);
+
+  const coupleIndices = [];
+  _plmOptions.filter(o => o.chosen === 'couple').forEach(o => {
+    coupleIndices.push(o._idx);
+    if (o.couple_idx != null) coupleIndices.push(o.couple_idx);
+  });
+
+  const printerId = document.getElementById('lbl-printer')?.value || '';
+  const profileId = document.getElementById('lbl-profile')?.value || '';
+
+  const hint = document.getElementById('plm-hint');
+  if (hint) hint.textContent = 'Generating…';
+
+  try {
+    const results = [];
+
+    // Individual labels — pass indices with couple merging disabled by using
+    // an empty style that won't match any couple (individual mode)
+    if (individualIndices.length) {
+      const d = await post('/api/print_labels', {
+        indices:         individualIndices,
+        printer_id:      printerId,
+        profile_id:      profileId,
+        style:           'individual',  // signals: no couple merging
+        include_country: true,
+        category:        '',
+      });
+      if (d.ok) results.push(d.filename);
+      else { toast(d.error || 'Failed', true); return; }
+    }
+
+    // Couple labels — normal flow with couple merging
+    if (coupleIndices.length) {
+      const d = await post('/api/print_labels', {
+        indices:         [...new Set(coupleIndices)],
+        printer_id:      printerId,
+        profile_id:      profileId,
+        style:           _PREFS.couple_style,
+        include_country: true,
+        category:        '',
+      });
+      if (d.ok) results.push(d.filename);
+      else { toast(d.error || 'Failed', true); return; }
+    }
+
+    closePrintLabelModal();
+    clearRevSelection();
+    results.forEach(f => window.open('/print/' + encodeURIComponent(f), '_blank'));
+    toast(`✓ ${results.length} file${results.length!==1?'s':''} — Ctrl+P / ⌘P to print`);
+  } catch(e) {
+    if (hint) hint.textContent = '';
+    toast('Print failed: ' + e.message, true);
+  }
+}
+
 function clearRevSelection() {
   _revSelected.clear();
   document.querySelectorAll('.rev-cb').forEach(cb => cb.checked = false);
@@ -1779,11 +2263,15 @@ function clearRevSelection() {
 function updateRevMergeBar() {
   const bar   = document.getElementById('rev-merge-bar');
   const count = document.getElementById('rev-merge-count');
+  const hint  = document.getElementById('rev-bar-hint');
+  const mergeBtn = document.getElementById('rev-btn-merge');
   if (!bar) return;
   const n = _revSelected.size;
-  if (n >= 2) {
+  if (n >= 1) {
     bar.style.display = 'flex';
     count.textContent = `${n} selected`;
+    if (mergeBtn) mergeBtn.style.display = n >= 2 ? '' : 'none';
+    if (hint) hint.textContent = n >= 2 ? 'merge: fields unioned — richest card wins' : '';
   } else {
     bar.style.display = 'none';
   }
@@ -1948,11 +2436,12 @@ function openEdit(pageIdx) {
   document.getElementById('edit-postal').value  = adr.postal_code||'';
   document.getElementById('edit-country').value = adr.country||'';
   updateCountryPreview('edit-country');
-  // Check if street looks like a single-line full address (city/postal already empty)
-  detectSingleLineAddress(document.getElementById('edit-street'), !(adr.locality) && !(adr.postal_code));
+  // Check if street looks like a single-line full address
+  detectSingleLineAddress(document.getElementById('edit-street'));
 
   // Related — always reload from server to get latest bidirectional links
   _editRelated = (c.related||[]).map(r=>({...r}));
+  _editOrigRelUids = new Set(_editRelated.filter(r=>r.uid).map(r=>r.uid));
   renderRelList('edit');
   // Also kick off a fresh server fetch in background to catch any links added since last page load
   reloadEditRelated(c._idx);
@@ -1967,6 +2456,7 @@ function openEdit(pageIdx) {
   if (relType) relType.value = 'spouse';
   // Show clone banner if any linked person has an address
   checkCloneBanner(c);
+  checkRelCloneBanner(c);
 
   // UID / REV metadata strip
   const strip = document.getElementById('edit-meta-strip');
@@ -2031,6 +2521,7 @@ function closeEditModal() {
   _editRelated = [];
   _editMembers = [];
   dismissClone();
+  dismissRelClone();
   const relSearch = document.getElementById('edit-rel-search');
   if (relSearch) relSearch.value = '';
   const relResults = document.getElementById('edit-rel-results');
@@ -2041,6 +2532,9 @@ function closeEditModal() {
 }
 
 async function saveEdit(silent) {
+  // Invalidate UID cache so checkRelCloneBanner always uses fresh data
+  window._state_cards_by_uid = {};
+  window._state_cards_uid_count = 0;
   const idx = parseInt(document.getElementById('edit-idx').value);
   const fn  = document.getElementById('edit-fn').value.trim();
   if (!fn) { toast('Name is required', true); return; }
@@ -2381,6 +2875,25 @@ function populateCatDrops(catCounts) {
       ).join('');
   }
 
+  // Populate print category dropdown
+  const printCat = document.getElementById('print-cat');
+  if (printCat) {
+    const cur = printCat.value;
+    printCat.innerHTML = '<option value="">all contacts</option>' +
+      Object.keys(catCounts).sort().map(c =>
+        `<option value="${esc(c)}"${c===cur?' selected':''}>${esc(c)} (${catCounts[c]})</option>`
+      ).join('');
+  }
+
+  // Populate labels category dropdown
+  const lblCat = document.getElementById('lbl-cat');
+  if (lblCat) {
+    const cur = lblCat.value;
+    lblCat.innerHTML = '<option value="">all contacts with addresses</option>' +
+      Object.keys(catCounts).sort().map(c =>
+        `<option value="${esc(c)}"${c===cur?' selected':''}>${esc(c)} (${catCounts[c]})</option>`
+      ).join('');
+  }
   // Populate Export checkbox grid
   const grid = document.getElementById('exp-cat-checks');
   if (!grid) return;
@@ -2415,7 +2928,8 @@ function show(id) {
   if (id==='review') loadRevCards(revPage||1);
   if (id==='prefs') { checkSelfCards(); loadPrefCountry(); loadBdayCatPrefs(); }
   if (id==='viewer') renderViewerPage(1);
-  if (id==='print') populatePrintCats();
+  if (id==='print') populateCatDrops(S.category_counts || {});
+  if (id==='labels') { populateCatDrops(S.category_counts || {}); loadPrintModules(); }
   if (id==='birthdays') loadBirthdays();
 }
 
@@ -2507,6 +3021,7 @@ function collectPrefixes() {
 // ══ Related / Spouse picker ═══════════════════════════════════════════════════
 let _addRelated  = [];   // [{rel_type, uid, text}]
 let _editRelated = [];
+let _editOrigRelUids = new Set();  // UIDs that existed on the server when modal opened
 
 function renderRelList(ctx) {
   const list = ctx === 'add' ? _addRelated : _editRelated;
@@ -2574,14 +3089,32 @@ async function jumpToLinkedCard(globalIdx) {
 
 async function removeRelUid(ctx, uid, i) {
   // For UID-linked entries in the edit modal, remove via server (bidirectional unlink)
+  // BUT only if this UID was on the server when the modal opened — if it was just
+  // cloned in this session, it only exists in _editRelated, so splice it locally
+  // to avoid reloadEditRelated wiping out all other unsaved changes.
   if (ctx !== 'edit') { removeRel(ctx, i); return; }
+  if (!_editOrigRelUids.has(uid)) {
+    // Newly added this session — just remove from local list
+    removeRel(ctx, i);
+    return;
+  }
   const fromIdx = parseInt(document.getElementById('edit-idx').value);
   if (isNaN(fromIdx)) { removeRel(ctx, i); return; }
   try {
     const d = await post('/api/unlink_related', { from_idx: fromIdx, uid });
     if (d.ok) {
       toast(`✓ Unlinked`);
+      // Reload from server but preserve any unsaved text-only or newly added entries
+      const unsavedNew = _editRelated.filter(r => r.uid && !_editOrigRelUids.has(r.uid));
+      const unsavedText = _editRelated.filter(r => !r.uid);
       await reloadEditRelated(fromIdx);
+      // Re-append unsaved entries that weren't on the server
+      unsavedNew.forEach(r => { if (!_editRelated.some(x => x.uid === r.uid)) _editRelated.push(r); });
+      unsavedText.forEach(r => {
+        if (!_editRelated.some(x => !x.uid && x.text === r.text && x.rel_type === r.rel_type))
+          _editRelated.push(r);
+      });
+      renderRelList('edit');
     } else {
       toast(d.error || 'Unlink failed', true);
     }
@@ -2727,15 +3260,13 @@ function checkCloneBanner(card) {
   };
 
   // If UID map is populated, check immediately; otherwise fetch first
-  if (window._state_cards_by_uid && Object.keys(window._state_cards_by_uid).length) {
+  // Always fetch fresh — stale cache from a previous save would miss new relationships
+  fetch('/api/cards?per_page=1000').then(r=>r.json()).then(d => {
+    window._state_cards_by_uid = {};
+    window._state_cards_uid_count = d.cards?.length || 0;
+    (d.cards||[]).forEach(c => { if (c.uid) window._state_cards_by_uid[c.uid] = c; });
     _doCheck();
-  } else {
-    fetch('/api/cards?per_page=1000').then(r=>r.json()).then(d => {
-      window._state_cards_by_uid = {};
-      (d.cards||[]).forEach(c => { if (c.uid) window._state_cards_by_uid[c.uid] = c; });
-      _doCheck();
-    }).catch(()=>{});
-  }
+  }).catch(()=>{});
 }
 
 function dismissClone() {
@@ -2745,6 +3276,101 @@ function dismissClone() {
     const b = document.getElementById(`${ctx}-clone-banner`);
     if (b) b.classList.remove('show');
   });
+}
+
+// ── Relationship cloning ───────────────────────────────────────────────────────
+
+let _pendingCloneRels = [];  // [{rel_type, uid, text}] to add
+
+function dismissRelClone() {
+  _pendingCloneRels = [];
+  const b = document.getElementById('edit-rel-clone-banner');
+  if (b) b.classList.remove('show');
+}
+
+function showRelCloneBanner(rels, sourceName) {
+  _pendingCloneRels = rels;
+  const banner = document.getElementById('edit-rel-clone-banner');
+  const msg    = document.getElementById('edit-rel-clone-msg');
+  if (!banner || !msg) return;
+  const names = rels.map(r => {
+    const type = (r.rel_type || 'contact').toLowerCase();
+    const name = r.text || (window._state_cards_by_uid || {})[r.uid]?.fn || r.uid || '?';
+    return `${type}: ${name}`;
+  });
+  const preview = names.slice(0, 3).join(', ') + (names.length > 3 ? ` +${names.length-3} more` : '');
+  msg.textContent = `${sourceName} has: ${preview}. Copy to this contact?`;
+  banner.classList.add('show');
+}
+
+function cloneRelationships() {
+  if (!_pendingCloneRels.length) return;
+  for (const r of _pendingCloneRels) {
+    // Don't add duplicates — check by uid or by text+type
+    const already = _editRelated.some(x =>
+      (r.uid && x.uid === r.uid) ||
+      (!r.uid && x.text === r.text && x.rel_type === r.rel_type)
+    );
+    if (!already) _editRelated.push({...r});
+  }
+  renderRelList('edit');
+  toast(`✓ ${_pendingCloneRels.length} relationship${_pendingCloneRels.length!==1?'s':''} copied`);
+  dismissRelClone();
+}
+
+function checkRelCloneBanner(card) {
+  dismissRelClone();
+  const cardUid = card.uid || '';
+  const existing = card.related || [];
+
+  const _doCheck = () => {
+    const byUid = window._state_cards_by_uid || {};
+    let best = null;
+    let bestSource = '';
+
+    for (const r of existing) {
+      if (!r.uid) continue;
+      // Only offer to clone across a couple link — a spouse shares your household.
+      // Siblings, parents, children, friends do not.
+      const _COUPLE_TYPES = ['spouse','partner','husband','wife','co-habitant','domestic partner'];
+      if (!_COUPLE_TYPES.includes((r.rel_type||'').toLowerCase())) continue;
+      const linked = byUid[r.uid];
+      if (!linked) continue;
+
+      // Collect relationships from linked card that this card doesn't have
+      // Exclude: back-link to this card, and types that are parent/self
+      const toClone = (linked.related || []).filter(lr => {
+        // Skip back-link pointing at the card being edited
+        if (lr.uid && lr.uid === cardUid) return false;
+        // Skip if already on this card (by uid or text+type)
+        const alreadyHave = existing.some(ex =>
+          (lr.uid && ex.uid === lr.uid) ||
+          (!lr.uid && ex.text === lr.text && ex.rel_type === lr.rel_type)
+        );
+        return !alreadyHave;
+      });
+
+      if (toClone.length > 0 && best === null) {
+        best = toClone;
+        bestSource = linked.fn || linked.org || '?';
+        break;  // take the first (and likely only) spouse
+      }
+    }
+
+    if (best && best.length > 0) {
+      showRelCloneBanner(best, bestSource);
+    }
+  };
+
+  if (window._state_cards_by_uid && Object.keys(window._state_cards_by_uid).length) {
+    _doCheck();
+  } else {
+    fetch('/api/cards?per_page=1000').then(r=>r.json()).then(d => {
+      window._state_cards_by_uid = {};
+      (d.cards||[]).forEach(c => { if (c.uid) window._state_cards_by_uid[c.uid] = c; });
+      _doCheck();
+    }).catch(()=>{});
+  }
 }
 
 function copyRelAddress(event, idx, resultsId, ctx) {
@@ -2995,14 +3621,15 @@ function renderReviewResults(issues, total) {
         const waiveField = {noEmail:'email', noPhone:'phone', noCategory:'category'}[g.key];
         const isWaived = waiveField && (c.waived||[]).includes(waiveField);
         return `
-        <div class="issue-card ${g.sev}" id="ic-${g.key}-${i}">
+        <div class="issue-card ${g.sev}" id="ic-${g.key}-${i}" onclick="jumpToLinkedCard(${c._idx})">
           <input type="checkbox" class="issue-cb" data-key="${g.key}" data-i="${i}" data-idx="${c._idx}"
+                 onclick="event.stopPropagation()"
                  onchange="toggleIssueSelect('${g.key}',${i},this.checked)">
           <span class="issue-name">${esc(c.fn||'—')}</span>
           <span class="issue-desc">${issueDetail(g.key, c)}</span>
-          <button class="issue-fix" onclick="openEditFromIssue(${c._idx})">edit →</button>
+          <button class="issue-fix" onclick="event.stopPropagation();jumpToLinkedCard(${c._idx})">edit →</button>
           ${waiveField ? `<button class="issue-fix" style="background:none;border:1px solid var(--border);color:var(--dim);margin-left:4px"
-            onclick="waiveField(${c._idx},'${waiveField}','${g.key}',${i})"
+            onclick="event.stopPropagation();waiveField(${c._idx},'${waiveField}','${g.key}',${i})"
             title="Mark as intentionally absent — removes from this report">
             ${isWaived ? '✓ not required' : '— not required'}
           </button>` : ''}
@@ -3501,7 +4128,7 @@ function countryFlag(name) {
 }
 
 // ══ Preferences ═══════════════════════════════════════════════════════════════
-const _PREFS = { sort_order: 'last_name', show_flags: 'show', ignore_multi_self: false, paper_size: 'A5' };
+const _PREFS = { sort_order: 'last_name', show_flags: 'show', ignore_multi_self: false, paper_size: 'A5', couple_style: 'british_formal' };
 
 function savePref(key, value) {
   _PREFS[key] = value;
@@ -3512,18 +4139,21 @@ function savePref(key, value) {
 
 function loadPrefs() {
   try {
-    const so = sessionStorage.getItem('vcard_pref_sort_order');
-    const sf = sessionStorage.getItem('vcard_pref_show_flags');
+    const so  = sessionStorage.getItem('vcard_pref_sort_order');
+    const sf  = sessionStorage.getItem('vcard_pref_show_flags');
     const ims = sessionStorage.getItem('vcard_pref_ignore_multi_self');
-    const ps = sessionStorage.getItem('vcard_pref_paper_size');
-    if (so) _PREFS.sort_order = so;
-    if (sf) _PREFS.show_flags = sf;
+    const ps  = sessionStorage.getItem('vcard_pref_paper_size');
+    const cs  = sessionStorage.getItem('vcard_pref_couple_style');
+    if (so)  _PREFS.sort_order       = so;
+    if (sf)  _PREFS.show_flags       = sf;
     if (ims) _PREFS.ignore_multi_self = ims === 'true';
-    if (ps) _PREFS.paper_size = ps;
+    if (ps)  _PREFS.paper_size       = ps;
+    if (cs)  _PREFS.couple_style     = cs;
   } catch(e) {}
   document.querySelectorAll('input[name="pref-sort"]').forEach(r => r.checked = r.value === _PREFS.sort_order);
   document.querySelectorAll('input[name="pref-flags"]').forEach(r => r.checked = r.value === _PREFS.show_flags);
   document.querySelectorAll('input[name="pref-paper"]').forEach(r => r.checked = r.value === _PREFS.paper_size);
+  document.querySelectorAll('input[name="pref-couple-style"]').forEach(r => r.checked = r.value === _PREFS.couple_style);
   const paperSel = document.getElementById('print-paper');
   if (paperSel) paperSel.value = _PREFS.paper_size;
   const imsCb = document.getElementById('pref-ignore-multi-self');
@@ -3745,9 +4375,11 @@ async function relSearchPicker(q, gridId, ctx) {
   clearTimeout(_relSearchTimer2);
   const grid = document.getElementById(gridId);
   const noRes = document.getElementById(`${ctx}-rel-no-results`);
+  const hint  = document.getElementById(`${ctx}-rel-textonly-hint`);
   if (!q || q.length < 1) {
     grid.innerHTML = noRes ? noRes.outerHTML : '';
     if (noRes) { noRes.style.display=''; noRes.textContent='Type a name above to search contacts'; }
+    if (hint) hint.style.display = 'none';
     return;
   }
   _relSearchTimer2 = setTimeout(async () => {
@@ -3755,8 +4387,32 @@ async function relSearchPicker(q, gridId, ctx) {
       const d = await (await fetch(`/api/search_cards?q=${encodeURIComponent(q)}`)).json();
       const filtered = (d.results||[]).filter(r => r.kind !== 'org');
       renderRelPickerGrid(filtered, gridId, ctx);
+      // Show prefix hint when no results found and rel type is a couple type
+      if (hint) {
+        const relType = document.getElementById(`${ctx}-rel-type`)?.value || '';
+        const isCouple = ['spouse','partner','husband','wife'].includes(relType);
+        hint.style.display = (!filtered.length && isCouple && q.length > 1) ? '' : 'none';
+        // Reset prefix dropdown
+        const pref = document.getElementById(`${ctx}-rel-prefix-hint`);
+        if (pref) pref.value = '';
+      }
     } catch(e) {}
   }, 180);
+}
+
+function prefixRelSearch(prefix, ctx) {
+  if (!prefix) return;
+  const searchEl = document.getElementById(`${ctx}-rel-search`);
+  if (!searchEl) return;
+  const current = searchEl.value.trim();
+  // If the current text already starts with a known prefix, replace it
+  const _KNOWN = /^(Mr|Mrs|Ms|Miss|Dr|Prof|Rev|Capt|Maj|Col)\b\.?\s*/i;
+  const bare = current.replace(_KNOWN, '').trim();
+  searchEl.value = bare ? `${prefix} ${bare}` : prefix + ' ';
+  searchEl.focus();
+  // Reset dropdown
+  const pref = document.getElementById(`${ctx}-rel-prefix-hint`);
+  if (pref) pref.value = '';
 }
 
 function renderRelPickerGrid(results, gridId, ctx) {
@@ -3839,6 +4495,7 @@ async function reloadEditRelated(cardIdx) {
     const card = (d.cards || []).find(c => c._idx === cardIdx);
     if (card) {
       _editRelated = (card.related || []).map(r => ({...r}));
+      _editOrigRelUids = new Set(_editRelated.filter(r=>r.uid).map(r=>r.uid));
       renderRelList('edit');
     }
   } catch(e) {}
@@ -4292,22 +4949,39 @@ function openViewerForCurrent() {
 // Detects when the street field contains what looks like a full address string
 // e.g. "12 High Street, Easton, Bristol, BS5 6TY, UK"
 function _looksLikeSingleLineAddress(val) {
-  if (!val || val.length < 10) return false;
-  const commaCount = (val.match(/,/g) || []).length;
-  // Heuristics: 2+ commas, or contains a postcode-like pattern, or very long
-  const hasPostcode = /[A-Z]{1,2}\d[\d A-Z]*\d[A-Z]{2}|^\d{5}/i.test(val);
-  return commaCount >= 2 || (commaCount >= 1 && hasPostcode) || (hasPostcode && val.length > 20);
+  if (!val || val.length < 8) return false;
+  // Normalise separators — semicolons are common in European/Polish addresses
+  const normalised = val.replace(/;/g, ',');
+  const commaCount = (normalised.match(/,/g) || []).length;
+  // UK postcode: GU14 7HT, SW1A 2AA
+  const hasUKPostcode = /\b[A-Z]{1,2}\d[\d A-Z]*\s*\d[A-Z]{2}\b/i.test(val);
+  // Canadian postcode: K1A 0B1
+  const hasCAPostcode = /\b[A-Z]\d[A-Z]\s?\d[A-Z]\d\b/i.test(val);
+  // US zip: 90210, 10001-1234
+  const hasUSZip = /\b\d{5}(-\d{4})?\b/.test(val);
+  // European postcodes: Polish 60-258, German 80331, French 75001, Dutch 1234 AB
+  const hasEUPostcode = /\b\d{2}-\d{3}\b/.test(val) ||   // PL: 60-258
+                        /\b\d{5}\b/.test(val) ||           // DE/FR/IT/ES
+                        /\b\d{4}\s?[A-Z]{2}\b/i.test(val); // NL: 1234 AB
+  const hasPostcode = hasUKPostcode || hasCAPostcode || hasUSZip || hasEUPostcode;
+  if (commaCount === 0) return hasPostcode && val.length > 15;
+  return commaCount >= 2 || (commaCount >= 1 && hasPostcode);
 }
 
 function detectSingleLineAddress(input, forceShow) {
   const hint = document.getElementById('edit-addr-hint');
   if (!hint) return;
-  const city = document.getElementById('edit-city')?.value?.trim();
-  const postal = document.getElementById('edit-postal')?.value?.trim();
-  const otherFieldsEmpty = !city && !postal;
-  if (forceShow === undefined) forceShow = otherFieldsEmpty;
-  const show = forceShow && _looksLikeSingleLineAddress(input.value.trim());
-  hint.style.display = show ? '' : 'none';
+  const val = (input.value || '').trim();
+  if (forceShow === undefined) {
+    // On typing: show if other structured fields are still empty
+    const city   = document.getElementById('edit-city')?.value?.trim();
+    const postal = document.getElementById('edit-postal')?.value?.trim();
+    forceShow = !city && !postal;
+  }
+  // Also show if the street value itself looks like a full address
+  // even if city/postal were populated (e.g. contact loaded with full address in street)
+  const looksLike = _looksLikeSingleLineAddress(val);
+  hint.style.display = (forceShow && looksLike) || looksLike ? '' : 'none';
 }
 
 function dismissAddrHint() {
@@ -4323,34 +4997,109 @@ function detectSingleLineAddressAdd(input) {
 }
 
 function _parseAddressLine(raw) {
-  // Split on commas, trim parts
+  if (!raw || raw.length < 5) return null;
+
+  // ── Step 0: extract inline postcode from end of a field with no commas ──────
+  // e.g. "12 Baker Street London SW1A 2AA" → add a synthetic comma before postcode
+  const inlinePC = raw.match(/^(.*?)\s+([A-Z]{1,2}\d[\d A-Z]*\s*\d[A-Z]{2})\s*$/i);
+  const inlineUS = raw.match(/^(.*?)\s+(\d{5}(?:-\d{4})?)\s*$/);
+  if (!raw.includes(',') && (inlinePC || inlineUS)) {
+    const m = inlinePC || inlineUS;
+    raw = m[1].trim() + ', ' + m[2].trim();
+  }
+
+  // Normalise separators — semicolons used in European/Polish addresses
+  raw = raw.replace(/;/g, ',').replace(/,+/g, ',').replace(/^,|,$/, '');
   const parts = raw.split(',').map(p => p.trim()).filter(Boolean);
   if (parts.length < 2) return null;
 
-  // Common patterns: [street, [extended], city/town, [region], postcode, [country]]
-  // Strategy: detect postcode (UK/US patterns), country (last if text), then work backwards
-  const postcodeRe = /^([A-Z]{1,2}\d[\d A-Z]*\d[A-Z]{2}|\d{5}(-\d{4})?)$/i;
-  const countryLike = p => /^(uk|united kingdom|england|scotland|wales|ireland|usa|united states|australia|canada|france|germany|spain|italy|netherlands|new zealand)$/i.test(p);
+  // Postcode matchers — UK, US, AU/NZ, EU (PL/DE/FR/NL)
+  const ukPostcodeRe  = /^[A-Z]{1,2}\d[\d A-Z]*\s*\d[A-Z]{2}$/i;
+  const caPostcodeRe  = /^[A-Z]\d[A-Z]\s?\d[A-Z]\d$/i;
+  const usZipRe       = /^\d{5}(-\d{4})?$/;
+  const auNzPostcode  = /^\d{4}$/;
+  const euPostcodeRe  = /^\d{2}-\d{3}$|^\d{5}$|^\d{4}\s?[A-Z]{2}$/i;
+  const usStateZipRe  = /^([A-Z]{2})\s+(\d{5}(-\d{4})?)$/;
+  const isNL          = /netherlands|holland/i.test(raw);
+  const isPostcode    = p => ukPostcodeRe.test(p.trim()) || caPostcodeRe.test(p.trim()) ||
+                             usZipRe.test(p.trim()) || euPostcodeRe.test(p.trim()) ||
+                             (isNL && auNzPostcode.test(p.trim())) ||
+                             (!isNL && auNzPostcode.test(p.trim()) && /australia|new zealand/i.test(raw));
 
-  let result = { street: '', city: '', region: '', postal: '', country: '' };
+  // Expanded country list — common values seen in contact databases
+  const COUNTRIES = new Set([
+    'uk','united kingdom','great britain','england','scotland','wales','northern ireland',
+    'ireland','republic of ireland','eire',
+    'usa','united states','united states of america','us',
+    'australia','canada','new zealand','nz',
+    'france','germany','spain','italy','netherlands','belgium','switzerland',
+    'sweden','norway','denmark','finland','austria','portugal','greece',
+    'south africa','india','china','japan','singapore','hong kong',
+    'uae','united arab emirates','saudi arabia','dubai',
+    'guernsey','jersey','isle of man','gibraltar','cyprus','malta',
+  ]);
+  const isCountry = p => COUNTRIES.has(p.trim().toLowerCase());
 
   let remaining = [...parts];
+  let result = { street: '', city: '', region: '', postal: '', country: '' };
 
-  // Extract country from end
-  if (remaining.length > 1 && countryLike(remaining[remaining.length - 1])) {
+  // Pre-process: split "SC 29401" style combined state+zip into two parts
+  for (let i = remaining.length - 1; i >= 0; i--) {
+    const m = remaining[i].trim().match(usStateZipRe);
+    if (m) { remaining.splice(i, 1, m[1], m[2]); break; }
+  }
+
+  // Pre-process: split "60-258 Poznań", "80331 München", "1017 Amsterdam" style EU postcode+city
+  const isNLctx     = /netherlands|holland/i.test(raw);
+  // NL bare-4-digit context: match \d{4} followed by a city name (not a 2-letter suffix like "BN")
+  // Require the trailing text to be 3+ chars to avoid splitting "1017 BN" (complete postcode)
+  const euPcCityRe  = isNLctx
+    ? /^(\d{2}-\d{3}|\d{5}|\d{4}\s?[A-Z]{2}|\d{4})\s+([A-Z].{2,})$/i
+    : /^(\d{2}-\d{3}|\d{5}|\d{4}\s?[A-Z]{2})\s+(.+)$/i;
+  for (let i = remaining.length - 1; i >= 0; i--) {
+    const m = remaining[i].trim().match(euPcCityRe);
+    if (m) { remaining.splice(i, 1, m[1].trim(), m[2].trim()); break; }
+  }
+
+  // ── Extract postcode first (from end or wherever it appears) ────────────────
+  for (let i = remaining.length - 1; i >= 0; i--) {
+    if (isPostcode(remaining[i])) {
+      result.postal = remaining.splice(i, 1)[0].replace(/\s+/, ' ').toUpperCase();
+      break;
+    }
+  }
+
+  // ── Extract known country from end (after postcode is removed) ───────────────
+  if (remaining.length > 1 && isCountry(remaining[remaining.length - 1])) {
     result.country = remaining.pop();
   }
-  // Extract postcode
-  const pcIdx = remaining.findIndex(p => postcodeRe.test(p));
-  if (pcIdx >= 0) {
-    result.postal = remaining.splice(pcIdx, 1)[0];
+
+  // Remove orphan 2-letter US state abbreviation left after "SC 29401" was split
+  if (result.postal && usZipRe.test(result.postal)) {
+    const _si = remaining.findIndex(p => /^[A-Z]{2}$/.test(p.trim()));
+    if (_si >= 0) remaining.splice(_si, 1);
   }
-  // Now what's left: street, [ext], city, [region]
-  if (remaining.length >= 1) result.street  = remaining.shift();
-  if (remaining.length >= 2) result.region  = remaining.pop();
-  if (remaining.length >= 1) result.city    = remaining.pop();
-  // If still bits left, append them to street
-  if (remaining.length) result.street += ', ' + remaining.join(', ');
+
+  // ── Remaining: [street...], [city], [region] ─────────────────────────────────
+  // UK pattern: street, [village/extended], town, county
+  // last = region/county, second-to-last = city/town, rest = street
+  if (remaining.length === 0) {
+    // nothing
+  } else if (remaining.length === 1) {
+    result.street = remaining[0];
+  } else if (remaining.length === 2) {
+    result.street = remaining[0];
+    result.city   = remaining[1];
+  } else if (remaining.length === 3) {
+    result.street = remaining[0];
+    result.city   = remaining[1];
+    result.region = remaining[2];
+  } else {
+    // 4+: last = region, second-to-last = city, rest joined = street
+    result.region = remaining.pop();
+    result.city   = remaining.pop();
+    result.street = remaining.join(', ');
+  }
 
   return result;
 }
@@ -4799,6 +5548,176 @@ function onRevQualityFilter() {
 const MONTH_NAMES = ['January','February','March','April','May','June',
                      'July','August','September','October','November','December'];
 
+// ══ LABELS ════════════════════════════════════════════════════════════════════
+
+let _printModules = [];
+
+function _lblButtonsReady(ready) {
+  // Only the generate buttons depend on printer loading — preview is always available
+  ['btn-lbl-test', 'btn-gen-labels'].forEach(id => {
+    const b = document.getElementById(id);
+    if (b) b.disabled = !ready;
+  });
+  const hint = document.getElementById('lbl-hint');
+  if (hint) hint.textContent = ready ? '' : 'loading printers…';
+}
+
+async function loadPrintModules() {
+  _lblButtonsReady(false);
+  try {
+    const d = await (await fetch('/api/print_modules')).json();
+    _printModules = d.modules || [];
+    const printerSel = document.getElementById('lbl-printer');
+    if (!printerSel) return;
+    if (!_printModules.length) {
+      printerSel.innerHTML = '<option value="">no print modules found</option>';
+      const hint = document.getElementById('lbl-hint');
+      if (hint) hint.textContent = d.error ? `error: ${d.error}` : 'no modules found in print_modules/ — check terminal';
+      return;
+    }
+    printerSel.innerHTML = _printModules.map(m =>
+      `<option value="${esc(m.printer_id)}">${esc(m.printer_name)} — ${esc(m.printer_desc)}</option>`
+    ).join('');
+    onLblPrinterChange();
+    _lblButtonsReady(true);
+  } catch(e) {
+    console.error('loadPrintModules:', e);
+    const hint = document.getElementById('lbl-hint');
+    if (hint) hint.textContent = `failed: ${e.message}`;
+    const sel = document.getElementById('lbl-printer');
+    if (sel) sel.innerHTML = '<option value="">load failed — check terminal</option>';
+  }
+}
+
+function onLblPrinterChange() {
+  const pid = document.getElementById('lbl-printer')?.value;
+  const mod = _printModules.find(m => m.printer_id === pid);
+  const profSel = document.getElementById('lbl-profile');
+  if (!profSel || !mod) return;
+  profSel.innerHTML = mod.profiles.map(p =>
+    `<option value="${esc(p.id)}"${p.id===mod.default_profile?' selected':''}>${esc(p.name)}</option>`
+  ).join('');
+  // Reset preview when printer changes
+  document.getElementById('lbl-preview-panel').style.display = 'none';
+}
+
+function _lblParams(extras) {
+  return {
+    category:        document.getElementById('lbl-cat').value,
+    printer_id:      document.getElementById('lbl-printer').value,
+    profile_id:      document.getElementById('lbl-profile').value,
+    style:           _PREFS.couple_style,
+    include_country: document.getElementById('lbl-country').value === '1',
+    ...extras,
+  };
+}
+
+async function doPreviewLabels() {
+  if (!S.total_cards) { toast('No contacts loaded', true); return; }
+  const btn  = document.getElementById('btn-lbl-preview');
+  const hint = document.getElementById('lbl-preview-hint');
+  btn.disabled = true;
+  if (hint) hint.textContent = 'counting…';
+  document.getElementById('lbl-preview-panel').style.display = 'none';
+  const _warnEl = document.getElementById('lbl-preview-warnings');
+  if (_warnEl) { _warnEl.style.display = 'none'; _warnEl.innerHTML = ''; }
+  try {
+    const d = await post('/api/preview_labels', {
+      category:        document.getElementById('lbl-cat').value,
+      style:           _PREFS.couple_style,
+      include_country: document.getElementById('lbl-country').value === '1',
+    });
+    btn.disabled = false;
+    if (hint) hint.textContent = '';
+    if (!d.ok) { toast(d.error || 'Preview failed', true); return; }
+
+    const panel   = document.getElementById('lbl-preview-panel');
+    const countEl = document.getElementById('lbl-preview-count');
+    const list    = document.getElementById('lbl-preview-list');
+
+    const cat    = document.getElementById('lbl-cat').value || 'all contacts';
+    const mText  = d.merged ? ` · <strong>${d.merged}</strong> couple${d.merged!==1?'s':''} merged ⚭` : '';
+    countEl.innerHTML = `<strong>${d.total}</strong> label${d.total!==1?'s':''} for <strong>${esc(cat)}</strong>${mText}`;
+
+    list.innerHTML = (d.records || []).map((r, i) => {
+      const addr = (r.address || []).join(', ');
+      const mergedMark = r.merged
+        ? ' <span style="color:var(--cyan);font-size:9px;margin-left:4px">⚭</span>' : '';
+      return `<div style="display:flex;align-items:baseline;gap:8px;padding:4px 10px;border-bottom:1px solid rgba(255,255,255,.04)">
+        <span style="color:var(--dim);min-width:26px;text-align:right;font-size:10px">${i+1}</span>
+        <span style="font-weight:700;color:var(--text);min-width:200px;font-size:10px">${esc(r.name)}${mergedMark}</span>
+        <span style="color:var(--dim);flex:1;font-size:10px">${esc(addr)}</span>
+      </div>`;
+    }).join('');
+
+    panel.style.display = '';
+
+    // No-address warnings
+    const warnEl = document.getElementById('lbl-preview-warnings');
+    if (warnEl) {
+      const missing = d.no_address || [];
+      if (missing.length) {
+        warnEl.style.display = '';
+        warnEl.innerHTML = `<div style="font-size:10px;font-weight:700;color:var(--red);margin-bottom:5px">
+          ⚠ ${missing.length} contact${missing.length!==1?'s':''} in this category have no address — excluded from labels:</div>` +
+          missing.map(r =>
+            `<div onclick="jumpToLinkedCard(${r._idx})"
+                  style="display:flex;align-items:baseline;gap:8px;padding:3px 8px;
+                         border-bottom:1px solid rgba(255,60,60,.1);cursor:pointer"
+                  onmouseover="this.style.background='rgba(255,60,60,.06)'"
+                  onmouseout="this.style.background=''">
+              <span style="font-size:10px;color:var(--red);font-weight:700;flex:1">${esc(r.fn)}</span>
+              <span style="font-size:9px;color:var(--dim)">no address — click to edit</span>
+            </div>`
+          ).join('');
+      } else {
+        warnEl.style.display = 'none';
+        warnEl.innerHTML = '';
+      }
+    }
+  } catch(e) {
+    btn.disabled = false;
+    if (hint) hint.textContent = '';
+    toast('Preview failed', true);
+    console.error(e);
+  }
+}
+
+async function doGenerateLabels(testMode) {
+  if (!S.total_cards) { toast('No contacts loaded', true); return; }
+  const pid = document.getElementById('lbl-printer')?.value;
+  const prof = document.getElementById('lbl-profile')?.value;
+  if (!pid || !prof) { toast('Select a printer and label type first', true); return; }
+  const btn  = document.getElementById('btn-gen-labels');
+  const hint = document.getElementById('lbl-hint');
+  const res  = document.getElementById('lbl-result');
+  btn.disabled = true;
+  hint.textContent = 'generating…';
+  res.style.display = 'none';
+  try {
+    const d = await post('/api/print_labels', _lblParams({ test_mode: !!testMode }));
+    btn.disabled = false;
+    hint.textContent = '';
+    if (!d.ok) { toast(d.error || 'Failed to generate labels', true); return; }
+    const mText = d.merged ? ` · <strong>${d.merged}</strong> couple${d.merged!==1?'s':''} merged` : '';
+    const tBadge = d.test_mode ? ' <span style="color:var(--amber)">[TEST — 3 labels]</span>' : '';
+    res.style.display = '';
+    res.innerHTML = `✓ <strong>${d.total}</strong> label${d.total!==1?'s':''} generated${mText}${tBadge}<br>
+      File: <code style="color:var(--bright)">${esc(d.filename)}</code><br>
+      <a href="/print/${esc(d.filename)}" target="_blank"
+         style="color:var(--amber);font-weight:700;text-decoration:underline">
+        ⊞ open labels in new tab →
+      </a>
+      <span style="color:var(--dim);margin-left:10px">then Ctrl+P to print</span>`;
+  } catch(e) {
+    btn.disabled = false;
+    hint.textContent = '';
+    toast('Label generation failed', true);
+    console.error(e);
+  }
+}
+
+
 async function loadBirthdays() {
   const resultsEl = document.getElementById('bday-results');
   if (!resultsEl) return;
@@ -4840,10 +5759,15 @@ async function loadBirthdays() {
           ? `<span style="color:var(--dim);font-size:10px"> (${ev.event_type==='anniversary' ? ev.age+'yr' : 'turns '+ev.age})</span>`
           : '';
         const typeLabel = ev.event_type === 'anniversary'
-          ? `<span style="color:var(--purple);font-size:9px;margin-left:6px;letter-spacing:.05em">ANNIV</span>` : `<span style="color:var(--cyan);font-size:9px;margin-left:6px;letter-spacing:.05em">BDAY</span>`;
-        html += `<div class="bday-row">
+          ? `<span style="color:var(--purple);font-size:9px;margin-left:6px;letter-spacing:.05em">ANNIV</span>`
+          : `<span style="color:var(--cyan);font-size:9px;margin-left:6px;letter-spacing:.05em">BDAY</span>`;
+        const mergedMark = ev.merged
+          ? `<span style="color:var(--cyan);font-size:9px;margin-left:4px">⚭</span>` : '';
+        // Merged couple anniversaries: clicking opens first card; show ⚭
+        const clickHandler = `onclick="jumpToLinkedCard(${ev._idx})"`;
+        html += `<div class="bday-row" ${clickHandler} title="Open contact">
           <span class="bday-icon">${icon}</span>
-          <span class="bday-name" onclick="jumpRevByName(${JSON.stringify(ev.fn)})" title="Open in Review">${esc(ev.fn)}</span>
+          <span class="bday-name">${esc(ev.fn)}${mergedMark}</span>
           <span class="bday-date">${dateLabel}${ageLabel}${typeLabel}</span>
         </div>`;
       }
@@ -4862,6 +5786,42 @@ function jumpRevByName(name) {
   const qEl = document.getElementById('rev-q');
   if (qEl) qEl.value = name;
   loadRevCards(1);
+}
+
+async function openPrintPreview() {
+  if (!S.total_cards) { toast('No contacts loaded', true); return; }
+  const btn = document.getElementById('btn-print-preview');
+  const status = document.getElementById('print-status');
+  btn.disabled = true;
+  if (status) { status.textContent = 'Generating…'; status.style.display = ''; }
+
+  const params = new URLSearchParams({
+    category: document.getElementById('print-cat').value,
+    paper:    document.getElementById('print-paper').value,
+    email:    document.getElementById('print-incl-email').checked  ? '1' : '0',
+    phone:    document.getElementById('print-incl-phone').checked  ? '1' : '0',
+    address:  document.getElementById('print-incl-address').checked? '1' : '0',
+    org:      document.getElementById('print-incl-org').checked    ? '1' : '0',
+    note:     document.getElementById('print-incl-note').checked   ? '1' : '0',
+    rels:     document.getElementById('print-incl-rels').checked   ? '1' : '0',
+    cats:     document.getElementById('print-incl-cats').checked   ? '1' : '0',
+  });
+  try {
+    const d = await (await fetch('/api/print_cards?' + params)).json();
+    btn.disabled = false;
+    if (!d.ok) {
+      if (status) { status.textContent = d.error || 'Failed'; }
+      toast(d.error || 'Print failed', true);
+      return;
+    }
+    if (status) status.style.display = 'none';
+    window.open('/print/' + encodeURIComponent(d.filename), '_blank');
+    toast(`✓ ${d.count} contacts — use Ctrl+P / ⌘P in the new tab`);
+  } catch(e) {
+    btn.disabled = false;
+    if (status) { status.textContent = 'Error: ' + e.message; }
+    toast('Print failed', true);
+  }
 }
 
 function printBirthdays() {
