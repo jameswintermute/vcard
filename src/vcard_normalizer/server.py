@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
+import re
 import sys
 import threading
 import time
@@ -79,22 +80,23 @@ _server_ref: HTTPServer | None = None
 
 # ── Helper: card → dict ────────────────────────────────────────────────────────
 
+def _fmt_tel(t: str) -> str:
+    """Format a phone number for display using libphonenumber if available."""
+    try:
+        from .formatters import _format_spaced_e164 as _spaced
+        import phonenumbers as _pn
+        n = _pn.parse(t, "GB")
+        if _pn.is_possible_number(n):
+            return _spaced(n)
+    except Exception:
+        pass
+    return t
+
+
 def _card_to_dict(card) -> dict:
     # Guard against old checkpoint cards that predate NameComponents
     from .model import NameComponents
     name = getattr(card, "name", None) or NameComponents()
-
-    # Format phone numbers using libphonenumber for display
-    def _fmt_tel(t: str) -> str:
-        try:
-            from .formatters import _format_spaced_e164 as _spaced
-            import phonenumbers as _pn
-            n = _pn.parse(t, "GB")
-            if _pn.is_possible_number(n):
-                return _spaced(n)
-        except Exception:
-            pass
-        return t
 
     return {
         "fn": card.fn or "",
@@ -937,28 +939,30 @@ def _api_full_update_card(body: dict) -> dict:
 
     # Related people — server state is authoritative; only link_related() mutates this.
     # The edit modal sends _editRelated as a convenience display, but we never let it
-    # overwrite the server's RELATED list (which may contain bidirectional links
-    # created by link_related on the OTHER card that the modal knows nothing about).
-    # Exception: if a rel entry has no UID (text-only), it was added manually in the
-    # modal and must be preserved. We merge: keep all server UIDs, add any new text-only.
+    # RELATED merge strategy:
+    #   UID-linked entries: server is authoritative — never remove via saveEdit.
+    #     Use /api/unlink_related which handles both directions.
+    #     New UID entries from the modal are added if not already present.
+    #   Text-only entries: modal is authoritative — user deleted "Laura" so honour it.
     incoming_related = []
     for r in body.get("related", []):
         rt = r.get("rel_type", "spouse")
         incoming_related.append(Related(rel_type=rt, uid=r.get("uid") or None, text=r.get("text") or None))
 
-    # Merge: server UID-links are authoritative; absorb new text-only entries from modal
-    server_related = list(card.related or [])
-    server_uids = {r.uid for r in server_related if r.uid}
+    # Keep all existing UID-linked entries from the server
+    server_uid_rels = [r for r in (card.related or []) if r.uid]
+    server_uids = {r.uid for r in server_uid_rels}
+
+    # Add any new UID-linked entries from the modal
     for r in incoming_related:
-        if not r.uid:
-            # Text-only entry — add if not already present
-            if not any(x.text == r.text and x.rel_type == r.rel_type for x in server_related):
-                server_related.append(r)
-        # UID-linked entries: only add if server doesn't already have this UID
-        elif r.uid not in server_uids:
-            server_related.append(r)
+        if r.uid and r.uid not in server_uids:
+            server_uid_rels.append(r)
             server_uids.add(r.uid)
-    card.related = server_related
+
+    # Text-only entries: use exactly what the modal sent (deletions are honoured)
+    incoming_text_rels = [r for r in incoming_related if not r.uid]
+
+    card.related = server_uid_rels + incoming_text_rels
 
     # MEMBER — list of UID strings (org/group cards)
     card.member = [m.strip() for m in body.get("member", []) if m and m.strip()]
@@ -972,6 +976,29 @@ def _api_full_update_card(body: dict) -> dict:
     return {"ok": True, "normalised_tels": normalised}
 
 
+
+
+def _api_bulk_add_category(body: dict) -> dict:
+    """Add a category to multiple cards by their global _idx values."""
+    cards = _state["cards"]
+    if not cards:
+        return {"ok": False, "error": "No contacts loaded"}
+    cat = (body.get("category") or "").strip()
+    if not cat:
+        return {"ok": False, "error": "Category name is required"}
+    indices = body.get("indices", [])
+    if not indices:
+        return {"ok": False, "error": "No contacts selected"}
+    changed = 0
+    for idx in indices:
+        if 0 <= idx < len(cards):
+            c = cards[idx]
+            if cat not in c.categories:
+                c.categories = sorted(set(c.categories) | {cat})
+                changed += 1
+    if changed:
+        _autosave_checkpoint()
+    return {"ok": True, "changed": changed, "category": cat}
 
 
 def _api_waive_field(body: dict) -> dict:
@@ -1073,6 +1100,479 @@ def _api_strip_proprietary(body: dict) -> dict:
         return {"ok": False, "error": str(exc)}
 
 
+def _api_print_cards(params: dict) -> dict:
+    """Generate a structured printable HTML address book.
+
+    Structure:
+      Page 1  — Cover: owner name, date, contact count
+      Page 2  — Birthdays & anniversaries (all months)
+      Page 3+ — Contacts A–Z, two-column, with letter dividers
+    """
+    cards = _state["cards"]
+    if not cards:
+        return {"ok": False, "error": "No contacts loaded"}
+    try:
+        category   = params.get("category",  [""])[0]
+        paper      = params.get("paper",     ["A5"])[0]
+        incl_email = params.get("email",     ["1"])[0] == "1"
+        incl_phone = params.get("phone",     ["1"])[0] == "1"
+        incl_addr  = params.get("address",   ["1"])[0] == "1"
+        incl_org   = params.get("org",       ["1"])[0] == "1"
+        incl_note  = params.get("note",      ["0"])[0] == "1"
+        incl_rels  = params.get("rels",      ["1"])[0] == "1"
+        incl_cats  = params.get("cats",      ["1"])[0] == "1"
+
+        # Self card → owner name
+        owner_name = ""
+        for c in cards:
+            if c.kind == "self":
+                owner_name = c.fn or ""
+                break
+
+        # Contact pool
+        pool = [c for c in cards if category in (c.categories or [])] if category else list(cards)
+        pool = [c for c in pool if c.kind != "self"]
+        pool.sort(key=lambda c: (
+            (c.name.family or c.fn or "").lower(),
+            (c.name.given  or "").lower()
+        ))
+
+        from datetime import datetime, date as _date
+        generated   = datetime.now().strftime("%d %B %Y")
+        cat_label   = category or "All Contacts"
+        paper_dims  = {"A5": "148mm 210mm", "A4": "210mm 297mm",
+                       "Letter": "8.5in 11in"}.get(paper, "148mm 210mm")
+
+        # ── Page 1: Cover ────────────────────────────────────────────────────
+        cover_owner = f"<div class='cov-owner'>{_esc_html(owner_name)}</div>" if owner_name else ""
+        cover = f"""<div class='cover'>
+  <div class='cov-logo'>vCard Studio</div>
+  <div class='cov-title'>{_esc_html(cat_label)}</div>
+  {cover_owner}
+  <div class='cov-meta'>{len(pool)} contact{'s' if len(pool)!=1 else ''}</div>
+  <div class='cov-meta'>Generated {generated}</div>
+  <div class='cov-foot'>local · no cloud · GNU GPL v3</div>
+</div>"""
+
+        # ── Page 2: Birthdays & anniversaries ────────────────────────────────
+        MONTH_NAMES = ["January","February","March","April","May","June",
+                       "July","August","September","October","November","December"]
+
+        def _parse_bday(s):
+            if not s: return None, None
+            s = s.strip()
+            for fmt in ("%Y-%m-%d", "%Y%m%d", "--%m%d", "%m-%d"):
+                try:
+                    d = datetime.strptime(s, fmt)
+                    return d.month, d.day
+                except ValueError:
+                    pass
+            return None, None
+
+        _COUPLE_TYPES_PRINT = frozenset({
+            "spouse", "partner", "husband", "wife",
+            "co-habitant", "cohabitant", "domestic partner",
+        })
+        pool_uid_map = {c.uid: c for c in pool if c.uid}
+
+        def _couple_anniv_name(c1, c2):
+            def _gv(c): return (c.name.given or "").strip() if c.name else ""
+            def _fm(c): return (c.name.family or "").strip() if c.name else ((c.fn or "").split()[-1] if c.fn and len((c.fn or "").split())>1 else "")
+            fam = _fm(c1) or _fm(c2)
+            names = sorted([n for n in [_gv(c1), _gv(c2)] if n])
+            return f"{' & '.join(names)} {fam}".strip()
+
+        bday_by_month: dict[int, list] = {}
+        seen_anniv_print: set = set()
+
+        for c in sorted(pool, key=lambda c: c.fn or ""):
+            name = c.fn or c.org or "Unknown"
+            if c.bday:
+                m, d = _parse_bday(c.bday)
+                if m:
+                    bday_by_month.setdefault(m, []).append((d or 0, name, "birthday"))
+            if c.anniversary:
+                m, d = _parse_bday(c.anniversary)
+                if m:
+                    # Check for spouse with matching anniversary
+                    partner = None
+                    for rel in (c.related or []):
+                        if (rel.rel_type or "").lower() not in _COUPLE_TYPES_PRINT: continue
+                        if not rel.uid: continue
+                        pc = pool_uid_map.get(rel.uid)
+                        if not pc or not pc.anniversary: continue
+                        pm, pd = _parse_bday(pc.anniversary)
+                        if pm == m and pd == d:
+                            partner = pc
+                            break
+                    if partner:
+                        pair = frozenset([id(c), id(partner)])
+                        if pair not in seen_anniv_print:
+                            seen_anniv_print.add(pair)
+                            bday_by_month.setdefault(m, []).append(
+                                (d or 0, _couple_anniv_name(c, partner), "anniversary"))
+                    else:
+                        bday_by_month.setdefault(m, []).append((d or 0, name, "anniversary"))
+
+        bday_rows = ""
+        this_year = datetime.now().year
+        for m in range(1, 13):
+            entries = sorted(bday_by_month.get(m, []))
+            if not entries:
+                continue
+            bday_rows += f"<div class='bd-month'>{MONTH_NAMES[m-1]}</div>"
+            for (day, name, etype) in entries:
+                day_str = f"{day:02d}" if day else "—"
+                badge = "<span class='bd-anniv'>anniv</span>" if etype == "anniversary" \
+                        else "<span class='bd-bday'>bday</span>"
+                bday_rows += f"<div class='bd-row'><span class='bd-day'>{day_str}</span>" \
+                             f"<span class='bd-name'>{_esc_html(name)}</span>{badge}</div>"
+
+        if not bday_rows:
+            bday_rows = "<div style='color:#888;font-size:8pt'>No birthdays or anniversaries recorded.</div>"
+
+        bday_page = f"""<div class='page-break'></div>
+<div class='section-title'>Birthdays &amp; Anniversaries</div>
+<div class='bd-grid'>{bday_rows}</div>"""
+
+        # ── Page 3+: Contacts A–Z ─────────────────────────────────────────────
+        # Build UID→display name map for resolving linked relationships
+        uid_to_name: dict[str, str] = {}
+        for c in cards:
+            if c.uid:
+                uid_to_name[c.uid] = c.fn or c.org or ""
+
+        def _fmt_card(c) -> str:
+            name = c.fn or c.org or "Unknown"
+            if c.name and c.name.prefix and not name.startswith(c.name.prefix):
+                name = f"{c.name.prefix} {name}"
+            rows = [f"<div class='cn'>{_esc_html(name)}</div>"]
+            if incl_org and c.org and c.kind != "org":
+                org_line = _esc_html(c.org)
+                if c.title: org_line += f" · {_esc_html(c.title)}"
+                rows.append(f"<div class='cd org'>{org_line}</div>")
+            if incl_rels and c.related:
+                for r in c.related:
+                    # Resolve UID to name, fall back to stored text
+                    if r.uid:
+                        rname = uid_to_name.get(r.uid, r.text or r.uid)
+                    else:
+                        rname = r.text or ""
+                    if not rname:
+                        continue
+                    rtype = (r.rel_type or "").capitalize()
+                    rows.append(f"<div class='cd rel'>"
+                                f"<span class='rel-type'>{_esc_html(rtype)}</span> "
+                                f"{_esc_html(rname)}</div>")
+            if incl_addr and c.addresses:
+                a = c.addresses[0]
+                parts = [p for p in [a.street, a.extended, a.locality,
+                                      a.region, a.postal_code, a.country] if p]
+                if parts:
+                    rows.append("<div class='cd adr'>" +
+                                ", ".join(_esc_html(p) for p in parts) + "</div>")
+            if incl_phone:
+                for t in c.tels[:2]:
+                    rows.append(f"<div class='cd ph'>{_esc_html(_fmt_tel(t))}</div>")
+            if incl_email:
+                for e in c.emails[:2]:
+                    rows.append(f"<div class='cd em'>{_esc_html(e)}</div>")
+            if incl_cats and c.categories:
+                pills = "".join(f"<span class='cpill'>{_esc_html(x)}</span>"
+                                for x in sorted(c.categories))
+                rows.append(f"<div class='cd ct'>{pills}</div>")
+            if incl_note and c.note:
+                # Strip vCS metadata block from visible note
+                import re as _re
+                note = _re.sub(r'\s*\[vCS:[^\]]*\]', '', c.note).strip()
+                if note:
+                    rows.append(f"<div class='cd nt'>{_esc_html(note)}</div>")
+            return "<div class='card'>" + "".join(rows) + "</div>"
+
+        contacts_html = "<div class='page-break'></div><div class='contact-grid'>"
+        cur_letter = ""
+        for c in pool:
+            first = (c.name.family or c.fn or c.org or "?")[0].upper()
+            if first != cur_letter:
+                cur_letter = first
+                contacts_html += f"<div class='letter-div'>{_esc_html(first)}</div>"
+            contacts_html += _fmt_card(c)
+        contacts_html += "</div>"
+
+        # ── CSS ───────────────────────────────────────────────────────────────
+        css = f"""
+@page {{ size: {paper_dims}; margin: 12mm 14mm; }}
+* {{ box-sizing: border-box; margin: 0; padding: 0; }}
+body {{ font-family: Arial, Helvetica, sans-serif; font-size: 8pt; color: #111; background: white; }}
+
+/* Cover */
+.cover {{ height: 100vh; display: flex; flex-direction: column; justify-content: center;
+          align-items: center; text-align: center; page-break-after: always; gap: 8mm; }}
+.cov-logo {{ font-size: 10pt; color: #888; letter-spacing: .15em; text-transform: uppercase; }}
+.cov-title {{ font-size: 22pt; font-weight: bold; color: #111; }}
+.cov-owner {{ font-size: 13pt; color: #333; }}
+.cov-meta  {{ font-size: 9pt; color: #666; }}
+.cov-foot  {{ font-size: 7pt; color: #bbb; margin-top: 12mm; }}
+
+/* Page breaks */
+.page-break {{ page-break-before: always; }}
+
+/* Section title */
+.section-title {{ font-size: 12pt; font-weight: bold; color: #111;
+                  border-bottom: 1pt solid #ccc; padding-bottom: 2mm; margin-bottom: 4mm; }}
+
+/* Birthdays */
+.bd-grid {{ columns: 2; column-gap: 8mm; }}
+.bd-month {{ font-weight: bold; font-size: 8.5pt; color: #333; margin: 3mm 0 1mm;
+             break-inside: avoid; border-bottom: 0.5pt solid #eee; padding-bottom: 1pt; }}
+.bd-row {{ display: flex; align-items: baseline; gap: 3mm; padding: 1.5pt 0;
+           border-bottom: 0.3pt solid #f0f0f0; break-inside: avoid; }}
+.bd-day  {{ font-size: 8pt; color: #888; min-width: 10mm; text-align: right; flex-shrink: 0; }}
+.bd-name {{ flex: 1; font-size: 8pt; }}
+.bd-bday   {{ font-size: 6.5pt; color: #1a7abf; background: #e8f3fb;
+              padding: 0 3pt; border-radius: 2pt; flex-shrink: 0; }}
+.bd-anniv  {{ font-size: 6.5pt; color: #7a3fbf; background: #f3ebfb;
+              padding: 0 3pt; border-radius: 2pt; flex-shrink: 0; }}
+
+/* Contact grid */
+.contact-grid {{ columns: 2; column-gap: 8mm; }}
+.letter-div {{ font-size: 14pt; font-weight: bold; color: #ccc;
+               border-bottom: 1pt solid #eee; margin: 4mm 0 2mm;
+               break-inside: avoid; break-after: avoid; column-span: all; }}
+.card {{ break-inside: avoid; padding: 2.5pt 0 3.5pt; border-bottom: 0.4pt solid #e8e8e8; }}
+.cn  {{ font-size: 8.5pt; font-weight: bold; color: #000; margin-bottom: 1pt; }}
+.cd  {{ color: #333; margin-top: 1pt; font-size: 7.5pt; }}
+.org {{ color: #555; font-style: italic; }}
+.rel {{ color: #333; }}
+.rel-type {{ font-size: 6.5pt; color: #7a3fbf; background: #f3ebfb;
+             padding: 0 3pt; border-radius: 2pt; margin-right: 2pt;
+             text-transform: lowercase; font-variant: small-caps; }}
+.ph  {{ color: #1a6ea8; }}
+.em  {{ color: #1a6ea8; }}
+.ct  {{ margin-top: 1.5pt; }}
+.cpill {{ font-size: 6.5pt; color: #555; background: #f0f0f0;
+          padding: 0 3pt; border-radius: 2pt; margin-right: 2pt; }}
+.nt  {{ color: #777; font-size: 7pt; font-style: italic; }}
+
+/* Screen preview */
+@media screen {{
+  body {{ background: #ddd; padding: 20px; }}
+  .cover, .contact-grid, .bd-grid {{ background: white; padding: 20px 24px;
+    margin-bottom: 12px; box-shadow: 0 1px 6px rgba(0,0,0,.2); max-width: 600px; }}
+  .cover {{ min-height: 400px; }}
+  .section-title {{ margin-top: 8px; }}
+  .page-break {{ height: 0; }}
+  .contact-grid {{ columns: 2; }}
+}}
+@media print {{
+  body {{ background: white; }}
+}}"""
+
+        html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>{_esc_html(cat_label)} — Address Book</title>
+<style>{css}</style>
+</head>
+<body>
+{cover}
+{bday_page}
+{contacts_html}
+</body>
+</html>"""
+
+        out_dir = _ROOT / "print"
+        out_dir.mkdir(exist_ok=True)
+        ts = datetime.now().strftime("%Y-%m-%d-%H%M")
+        safe_cat = re.sub(r"[^\w-]", "-", category or "all").strip("-")
+        out_path = out_dir / f"addressbook-{safe_cat}-{ts}.html"
+        out_path.write_text(html, encoding="utf-8")
+        return {"ok": True, "filename": out_path.name, "count": len(pool)}
+
+    except Exception as exc:
+        import traceback
+        print(f"[print_cards error] {traceback.format_exc()}", flush=True)
+        return {"ok": False, "error": str(exc)}
+
+
+def _api_label_options(body: dict) -> dict:
+    """For a list of card indices, return the formatted single and couple label options.
+
+    Used by the print label modal so the user can choose per-contact.
+    """
+    cards = _state["cards"]
+    if not cards:
+        return {"ok": False, "error": "No contacts loaded"}
+
+    indices  = body.get("indices", [])
+    style    = body.get("style", "british_formal")
+    include_country = bool(body.get("include_country", True))
+
+    # Build a minimal label record pass — reuse _build_label_records internals
+    # by calling it with indices and extracting the merged/unmerged names
+    uid_map: dict[str, object] = {c.uid: c for c in cards if c.uid}
+
+    _COUPLE_TYPES = frozenset({
+        "spouse", "partner", "husband", "wife",
+        "co-habitant", "cohabitant", "domestic partner",
+    })
+
+    def _prefix(c):
+        if c.name and c.name.prefix: return c.name.prefix.strip()
+        return ""
+
+    def _given(c):
+        if c.name and c.name.given: return c.name.given.strip()
+        return (c.fn or "").split()[0] if c.fn else ""
+
+    def _family(c):
+        if c.name and c.name.family: return c.name.family.strip()
+        parts = (c.fn or "").split()
+        return parts[-1] if len(parts) > 1 else ""
+
+    def _initial(c):
+        g = _given(c)
+        return g[0].upper() if g else ""
+
+    def _addr_key(c):
+        if not c.addresses: return None
+        a = c.addresses[0]
+        s = (a.street or "").strip().lower()
+        p = (a.postal_code or "").strip().lower()
+        return (s, p) if s or p else None
+
+    def _fmt_single(c):
+        p = _prefix(c)
+        if c.kind == "org" or not c.name or (not _family(c) and not c.name.given):
+            return c.fn or c.org or "Unknown"
+        fn = c.fn or ""
+        return f"{p} {fn}".strip() if p and not fn.startswith(p) else fn
+
+    def _fmt_couple_names(c1, c2):
+        """Simplified couple formatter using the user's style preference."""
+        fam = _family(c1) or _family(c2)
+        _MALE = {"mr", "master", "sir", "lord"}
+        _FEMALE = {"mrs", "ms", "miss", "lady", "dame"}
+
+        def _is_male(c):
+            if c.gender == "M": return True
+            if c.gender == "F": return False
+            return _prefix(c).lower() in _MALE
+
+        def _is_female(c):
+            if c.gender == "F": return True
+            if c.gender == "M": return False
+            return _prefix(c).lower() in _FEMALE
+
+        both_male = _is_male(c1) and _is_male(c2)
+        both_female = _is_female(c1) and _is_female(c2)
+
+        if both_male or both_female:
+            a, b = (c1, c2) if (_given(c1) or "") <= (_given(c2) or "") else (c2, c1)
+            p_a, p_b = _prefix(a), _prefix(b)
+            if style == "informal": return f"{_given(a)} & {_given(b)} {fam}".strip()
+            if style == "family": return f"The {fam} Family".strip()
+            if style == "formal_no_initial":
+                return f"{p_a or _initial(a)} & {p_b or _initial(b)} {fam}".strip()
+            if p_a and p_b:
+                return f"{p_a} {_initial(a)} & {p_b} {_initial(b)} {fam}".strip()
+            return f"{_initial(a)} & {_initial(b)} {fam}".strip()
+
+        male = c1 if _is_male(c1) else (c2 if _is_male(c2) else c1)
+        female = c2 if male is c1 else c1
+        p_m, p_f = _prefix(male), _prefix(female)
+
+        if style == "informal": return f"{_given(male)} & {_given(female)} {fam}".strip()
+        if style == "family": return f"The {fam} Family".strip()
+        if style == "formal_no_initial":
+            if p_m and p_f: return f"{p_m} & {p_f} {fam}".strip()
+            return f"{p_m or p_f} {fam}".strip()
+        if style == "formal_both":
+            if p_m and p_f: return f"{p_m} {_initial(male)} & {p_f} {_initial(female)} {fam}".strip()
+            return f"{_initial(male)} & {_initial(female)} {fam}".strip()
+        # british_formal default
+        if p_m and p_f: return f"{p_m} & {p_f} {_initial(male)} {fam}".strip()
+        if p_m: return f"{p_m} {_initial(male)} {fam}".strip()
+        return f"{_initial(male)} & {_initial(female)} {fam}".strip()
+
+    results = []
+    for idx in indices:
+        if not (0 <= idx < len(cards)):
+            continue
+        card = cards[idx]
+        single_name = _fmt_single(card)
+        couple_name = None
+        couple_idx  = None
+
+        # Check for a spouse/partner — UID-linked first, text-only as fallback
+        card_addr = _addr_key(card)
+        sorted_rels = sorted(card.related or [],
+                             key=lambda r: 0 if (r.rel_type or "").lower() in _COUPLE_TYPES else 1)
+        for rel in sorted_rels:
+            if (rel.rel_type or "").lower() not in _COUPLE_TYPES: continue
+            if rel.uid:
+                # UID-linked partner — must share address
+                if not card_addr: continue
+                partner = uid_map.get(rel.uid)
+                if not partner: continue
+                if not (partner.addresses and partner.addresses[0].street): continue
+                if _addr_key(partner) == card_addr:
+                    couple_name = _fmt_couple_names(card, partner)
+                    couple_idx  = next((i for i, c in enumerate(cards) if c is partner), None)
+                    break
+            elif rel.text and rel.text.strip():
+                # Text-only spouse — address check not possible, always offer
+                sp_text = rel.text.strip()
+                # Reuse the same inference logic as _build_label_records
+                _KNOWN_PREFIXES = ("mr", "mrs", "ms", "miss", "dr", "prof", "rev",
+                                   "capt", "maj", "col", "lt", "sgt", "cpl")
+                _MALE_PREFIXES   = {"mr", "master", "sir", "lord"}
+                _FEMALE_PREFIXES = {"mrs", "ms", "miss", "lady", "dame"}
+                parts = sp_text.split()
+                sp_prefix = ""
+                if parts and parts[0].rstrip(".").lower() in _KNOWN_PREFIXES:
+                    sp_prefix = parts[0]
+                p_card = _prefix(card)
+                card_is_male = p_card.lower() in _MALE_PREFIXES or card.gender == "M"
+                card_is_female = p_card.lower() in _FEMALE_PREFIXES or card.gender == "F"
+                sp_is_male = sp_prefix.lower() in _MALE_PREFIXES if sp_prefix else None
+                sp_is_female = sp_prefix.lower() in _FEMALE_PREFIXES if sp_prefix else None
+                same_sex = (card_is_male and sp_is_male) or (card_is_female and sp_is_female)
+                # Infer prefix if none stored
+                if not sp_prefix and not same_sex:
+                    if card_is_male:   sp_prefix = "Mrs"
+                    elif card_is_female: sp_prefix = "Mr"
+                # Build a minimal couple name
+                fam = _family(card)
+                sp_given = parts[1] if sp_prefix and len(parts) > 1 else (parts[0] if parts else "")
+                sp_initial = sp_given[0].upper() if sp_given else ""
+                card_initial = _initial(card)
+                p_c = _prefix(card)
+                if style == "informal":
+                    couple_name = f"{_given(card)} & {sp_given} {fam}".strip()
+                elif style == "family":
+                    couple_name = f"The {fam} Family".strip()
+                elif style == "formal_no_initial":
+                    couple_name = f"{p_c} & {sp_prefix} {fam}".strip() if p_c and sp_prefix else f"{p_c or sp_prefix} {fam}".strip()
+                elif style == "formal_both":
+                    couple_name = f"{p_c} {card_initial} & {sp_prefix} {sp_initial} {fam}".strip() if p_c and sp_prefix else f"{_fmt_single(card)} & {sp_text}".strip()
+                else:  # british_formal
+                    couple_name = f"{p_c} & {sp_prefix} {card_initial} {fam}".strip() if p_c and sp_prefix else f"{_fmt_single(card)} & {sp_text}".strip()
+                couple_idx = None  # no card to reference
+                break
+
+        results.append({
+            "_idx":        idx,
+            "fn":          card.fn or card.org or "Unknown",
+            "single_name": single_name,
+            "couple_name": couple_name,   # None if no eligible partner
+            "couple_idx":  couple_idx,
+        })
+
+    return {"ok": True, "options": results}
+
+
 def _api_print_modules() -> dict:
     """Return all discovered print modules and their label profiles."""
     from .print_modules import get_all_modules
@@ -1086,15 +1586,19 @@ def _api_print_modules() -> dict:
         return {"ok": False, "modules": [], "error": str(exc)}
 
 
-def _build_label_records(cards, category: str, style: str, include_country: bool) -> list:
+def _build_label_records(cards, category: str, style: str, include_country: bool,
+                         indices: list | None = None) -> list:
     """Shared helper: build sorted label records with couple merging.
 
     Returns list of {"name": str, "address": [str], "merged": bool}.
+    If indices is provided, use those specific card indices instead of category filter.
     """
     uid_map: dict[str, object] = {c.uid: c for c in cards if c.uid}
 
-    # Filter to cards in category with a real street address
-    if category:
+    # Filter pool — specific indices override category
+    if indices is not None:
+        pool = [cards[i] for i in indices if 0 <= i < len(cards)]
+    elif category:
         pool = [c for c in cards if category in (c.categories or [])]
     else:
         pool = list(cards)
@@ -1122,20 +1626,167 @@ def _build_label_records(cards, category: str, style: str, include_country: bool
     def _family(card):
         return (card.name.family.strip() if card.name and card.name.family else "")
 
+    def _format_couple_from_text(card, spouse_name: str) -> str:
+        """Format a couple name when we have one full card and a text-only spouse name.
+
+        Opposite-gender inference (covers ~95% of cases):
+          Mr Smith + "Laura"  → infers Mrs → Mr & Mrs B Smith
+          Mrs Smith + "James" → infers Mr  → Mr & Mrs J Brown
+
+        Same-sex detection: if the stored text includes an explicit prefix that matches
+        the card holder's gender (e.g. card is Mr, text is "Mr Tom"), the inference is
+        skipped and both initials are shown: Mr J & Mr T Smith.
+
+        Override inference by storing a prefix via the edit modal prefix dropdown.
+        """
+        fam = _family(card)
+
+        _KNOWN_PREFIXES = ("mr", "mrs", "ms", "miss", "dr", "prof", "rev",
+                           "capt", "maj", "col", "lt", "sgt", "cpl")
+        _MALE_PREFIXES   = {"mr", "master", "sir", "lord"}
+        _FEMALE_PREFIXES = {"mrs", "ms", "miss", "lady", "dame"}
+
+        parts = spouse_name.strip().split()
+        sp_prefix, sp_given, sp_initial = "", "", ""
+        if parts:
+            first = parts[0].rstrip(".").lower()
+            if first in _KNOWN_PREFIXES:
+                sp_prefix = parts[0]
+                sp_given  = parts[1] if len(parts) > 1 else ""
+            else:
+                sp_given = parts[0]
+            sp_initial = sp_given[0].upper() if sp_given else ""
+
+        def _is_male(c):
+            if c.gender == "M": return True
+            if c.gender == "F": return False
+            return _prefix(c).lower() in _MALE_PREFIXES
+
+        card_is_male   = _is_male(card)
+        card_is_female = not card_is_male and _prefix(card).lower() in _FEMALE_PREFIXES
+        p_card       = _prefix(card)
+        card_initial = _initial(card)
+
+        # Detect same-sex from explicit prefix on the stored text
+        sp_is_male   = sp_prefix.lower() in _MALE_PREFIXES   if sp_prefix else None
+        sp_is_female = sp_prefix.lower() in _FEMALE_PREFIXES if sp_prefix else None
+        same_sex = (card_is_male and sp_is_male) or (card_is_female and sp_is_female)
+
+        # Infer opposite-gender prefix only for mixed-sex couples with no stored prefix
+        if not sp_prefix and not same_sex and style not in ("informal", "family"):
+            if card_is_male:
+                sp_prefix  = "Mrs"
+                sp_is_male = False
+            elif card_is_female:
+                sp_prefix  = "Mr"
+                sp_is_male = True
+
+        if style == "informal":
+            card_first = _given(card)
+            sp_name    = sp_given or spouse_name
+            return f"{card_first} & {sp_name} {fam}".strip() if fam else                    f"{card_first} & {sp_name}".strip()
+
+        if style == "family":
+            return f"The {fam} Family".strip() if fam else spouse_name
+
+        if same_sex:
+            # Both initials shown — alphabetical by initial within the couple
+            a_init, b_init = sorted([card_initial, sp_initial])
+            a_pref = p_card  # both should be same prefix
+            if style == "formal_no_initial":
+                return f"{p_card} & {sp_prefix or p_card} {fam}".strip()
+            # formal_both and british_formal both show initials for same-sex
+            if p_card and sp_prefix:
+                # Order by initial alphabetically
+                if card_initial <= sp_initial:
+                    return f"{p_card} {card_initial} & {sp_prefix} {sp_initial} {fam}".strip()
+                else:
+                    return f"{sp_prefix} {sp_initial} & {p_card} {card_initial} {fam}".strip()
+            return f"{_format_single(card)} & {spouse_name}".strip()
+
+        if style == "formal_no_initial":
+            if p_card and sp_prefix:
+                pair = (f"{p_card} & {sp_prefix}") if card_is_male else (f"{sp_prefix} & {p_card}")
+                return f"{pair} {fam}".strip()
+            return f"{p_card or sp_prefix} {fam}".strip()
+
+        if style == "formal_both":
+            if p_card and sp_prefix:
+                if card_is_male:
+                    return f"{p_card} {card_initial} & {sp_prefix} {sp_initial} {fam}".strip()
+                else:
+                    return f"{sp_prefix} {sp_initial} & {p_card} {card_initial} {fam}".strip()
+            return f"{_format_single(card)} & {spouse_name}".strip()
+
+        # Default: british_formal — "Mr & Mrs B Smith" (husband's initial only)
+        if p_card and sp_prefix:
+            if card_is_male:
+                return f"{p_card} & {sp_prefix} {card_initial} {fam}".strip()
+            else:
+                return f"{sp_prefix} & {p_card} {sp_initial} {fam}".strip()
+        return f"{_format_single(card)} & {spouse_name}".strip()
+
     def _format_couple(c1, c2):
         fam = _family(c1) or _family(c2)
+
         def _is_male(c):
             if c.gender == "M": return True
             if c.gender == "F": return False
             return _prefix(c).lower() in ("mr", "master", "sir", "lord")
+
+        def _is_female(c):
+            if c.gender == "F": return True
+            if c.gender == "M": return False
+            return _prefix(c).lower() in ("mrs", "ms", "miss", "lady", "dame")
+
+        both_male   = _is_male(c1)   and _is_male(c2)
+        both_female = _is_female(c1) and _is_female(c2)
+        same_sex    = both_male or both_female
+
+        if same_sex:
+            # Same-sex couple: use both initials, alphabetical by given name
+            a, b = (c1, c2) if (_given(c1) or "") <= (_given(c2) or "") else (c2, c1)
+            p_a, p_b = _prefix(a), _prefix(b)
+            if style == "informal":
+                return f"{_given(a)} & {_given(b)} {fam}".strip()
+            if style == "family":
+                return f"The {fam} Family".strip()
+            if style == "formal_no_initial":
+                if p_a and p_b and p_a == p_b:
+                    return f"{p_a} & {p_b} {fam}".strip()  # Mr & Mr Smith
+                return f"{p_a or _initial(a)} & {p_b or _initial(b)} {fam}".strip()
+            # formal_both and british_formal: both initials
+            if p_a and p_b:
+                return f"{p_a} {_initial(a)} & {p_b} {_initial(b)} {fam}".strip()
+            return f"{_initial(a)} & {_initial(b)} {fam}".strip()
+
+        # Mixed-sex couple: order male then female
         male   = c1 if _is_male(c1) else (c2 if _is_male(c2) else c1)
         female = c2 if male is c1 else c1
         p_m, p_f = _prefix(male), _prefix(female)
+
         if style == "informal":
             return f"{_given(male)} & {_given(female)} {fam}".strip()
-        if p_m and p_f: return f"{p_m} {_initial(male)} & {p_f} {_initial(female)} {fam}".strip()
-        if p_m:         return f"{p_m} & {_initial(female)} {fam}".strip()
-        if p_f:         return f"{_initial(male)} & {p_f} {fam}".strip()
+
+        if style == "family":
+            return f"The {fam} Family".strip()
+
+        if style == "formal_no_initial":
+            if p_m and p_f: return f"{p_m} & {p_f} {fam}".strip()
+            if p_m:         return f"{p_m} & {fam}".strip()
+            if p_f:         return f"{p_f} {fam}".strip()
+            return fam
+
+        if style == "formal_both":
+            if p_m and p_f: return f"{p_m} {_initial(male)} & {p_f} {_initial(female)} {fam}".strip()
+            if p_m:         return f"{p_m} & {_initial(female)} {fam}".strip()
+            if p_f:         return f"{_initial(male)} & {p_f} {fam}".strip()
+            return f"{_initial(male)} & {_initial(female)} {fam}".strip()
+
+        # Default: british_formal — "Mr & Mrs B Smith" (husband's initial only)
+        if p_m and p_f: return f"{p_m} & {p_f} {_initial(male)} {fam}".strip()
+        if p_m:         return f"{p_m} {_initial(male)} {fam}".strip()
+        if p_f:         return f"{p_f} {_initial(female)} {fam}".strip()
         return f"{_initial(male)} & {_initial(female)} {fam}".strip()
 
     def _format_single(card):
@@ -1164,48 +1815,108 @@ def _build_label_records(cards, category: str, style: str, include_country: bool
     pool_by_uid = {c.uid: c for c in pool if c.uid}
     records = []
 
+    # Relationship types that qualify as a couple for label merging
+    _COUPLE_TYPES = frozenset({
+        "spouse", "partner", "husband", "wife",
+        "co-habitant", "cohabitant", "domestic partner",
+    })
+
+    def _couple_priority(rel):
+        """Lower number = checked first. Spouse/partner always checked before others."""
+        rt = (rel.rel_type or "").lower().strip()
+        return 0 if rt in _COUPLE_TYPES else 1
+
     for card in pool:
         if card.uid in used_uids:
             continue
         partner = None
-        for rel in (card.related or []):
-            uid_ref = rel.uid
-            if not uid_ref: continue
-            candidate = pool_by_uid.get(uid_ref) or uid_map.get(uid_ref)
-            if not candidate or candidate.uid in used_uids: continue
-            if not candidate.addresses or not candidate.addresses[0].street: continue
-            if _family(card) and _family(card) == _family(candidate):
-                if _addr_key(card) and _addr_key(card) == _addr_key(candidate):
-                    partner = candidate
-                    break
+        partner_text = None  # name from text-only RELATED (no full card)
+
+        # style='individual' means the user explicitly wants no couple merging
+        if style != "individual":
+            # Sort relations so spouse/partner types are tried before any other type
+            sorted_rels = sorted(card.related or [], key=_couple_priority)
+            for rel in sorted_rels:
+                if (rel.rel_type or "").lower().strip() not in _COUPLE_TYPES:
+                    continue
+                if rel.uid:
+                    # ── UID-linked partner (full card) ────────────────────────────
+                    candidate = pool_by_uid.get(rel.uid) or uid_map.get(rel.uid)
+                    if not candidate or candidate.uid in used_uids: continue
+                    if not candidate.addresses or not candidate.addresses[0].street: continue
+                    if _family(card) and _family(card) == _family(candidate):
+                        if _addr_key(card) and _addr_key(card) == _addr_key(candidate):
+                            partner = candidate
+                            break
+                elif rel.text and rel.text.strip():
+                    # ── Text-only spouse name — no separate card needed ───────────
+                    if partner_text is None:
+                        partner_text = rel.text.strip()
+
         if partner:
+            # Full card merge
             used_uids.add(card.uid)
             used_uids.add(partner.uid)
             records.append({"name": _format_couple(card, partner),
+                            "address": _format_address(card), "merged": True})
+        elif partner_text:
+            # Text-only spouse: compose name from card + spouse name string
+            used_uids.add(card.uid) if card.uid else None
+            couple_name = _format_couple_from_text(card, partner_text)
+            records.append({"name": couple_name,
                             "address": _format_address(card), "merged": True})
         else:
             if card.uid: used_uids.add(card.uid)
             records.append({"name": _format_single(card),
                             "address": _format_address(card), "merged": False})
 
-    records.sort(key=lambda r: r["name"].lower())
+    def _surname_sort_key(r):
+        # Sort by surname (last word of name) then full name — handles
+        # "Mr & Mrs B Smith" correctly by sorting on "smith" not "mr"
+        words = r["name"].split()
+        surname = words[-1].lower() if words else ""
+        return (surname, r["name"].lower())
+    records.sort(key=_surname_sort_key)
     return records
 
 
 def _api_preview_labels(body: dict) -> dict:
-    """Return label records for preview without generating a file."""
+    """Return label records for preview, plus contacts with no address as warnings."""
     cards = _state["cards"]
     if not cards:
         return {"ok": False, "error": "No contacts loaded"}
     try:
+        category = body.get("category", "")
+
+        # Find contacts in category with no usable street address
+        if category:
+            pool_all = [c for c in cards if category in (c.categories or [])]
+        else:
+            pool_all = [c for c in cards if c.kind != "self"]
+
+        no_address = sorted([
+            {"fn": c.fn or c.org or "Unknown",
+             "_idx": next((i for i, x in enumerate(cards) if x is c), -1)}
+            for c in pool_all
+            if not c.addresses or not c.addresses[0].street
+        ], key=lambda x: x["fn"].lower())
+
+        indices = body.get("indices") or None  # list of global _idx values, or None
         records = _build_label_records(
             cards,
-            category        = body.get("category", ""),
+            category        = category,
             style           = body.get("style", "formal"),
             include_country = bool(body.get("include_country", True)),
+            indices         = indices,
         )
         merged = sum(1 for r in records if r["merged"])
-        return {"ok": True, "records": records, "total": len(records), "merged": merged}
+        return {
+            "ok": True,
+            "records": records,
+            "total": len(records),
+            "merged": merged,
+            "no_address": no_address,
+        }
     except Exception as exc:
         import traceback
         print(f"[preview_labels error] {traceback.format_exc()}", flush=True)
@@ -1244,7 +1955,8 @@ def _api_print_labels(body: dict) -> dict:
         name_size  = profile["name_size"]
         print_hint = profile["hint"]
 
-        records = _build_label_records(cards, category, style, include_country)
+        indices = body.get("indices") or None  # specific card indices, overrides category
+        records = _build_label_records(cards, category, style, include_country, indices=indices)
 
         if test_mode:
             records = records[:3]
@@ -1343,11 +2055,11 @@ body {{ font-family: Arial, Helvetica, sans-serif; background: white; }}
   Category: <strong>{_esc_html(cat_label)}</strong> &nbsp;|&nbsp;
   {total} label{'s' if total != 1 else ''} &nbsp;|&nbsp;
   {merged_count} couple{'s' if merged_count != 1 else ''} merged &nbsp;|&nbsp;
-  Label: <strong>{label_type}</strong> &nbsp;|&nbsp;
+  Label: <strong>{profile_id}</strong> &nbsp;|&nbsp;
   Style: <strong>{style}</strong> &nbsp;|&nbsp;
   Generated: {generated}<br><br>
   <strong>Print:</strong> Ctrl+P / ⌘P &nbsp;·&nbsp;
-  Select printer: <strong>Brother QL-820NWB</strong> &nbsp;·&nbsp;
+  Select printer: <strong>{printer_id}</strong> &nbsp;·&nbsp;
   {print_hint} &nbsp;·&nbsp;
   Margins: <strong>None / Minimum</strong>
 </div>
@@ -1421,7 +2133,25 @@ def _api_birthdays(body: dict) -> dict:
     import datetime as _dt
     this_year = _dt.date.today().year
 
+    _COUPLE_TYPES = frozenset({
+        "spouse", "partner", "husband", "wife",
+        "co-habitant", "cohabitant", "domestic partner",
+    })
+    uid_map = {c.uid: (i, c) for i, c in enumerate(cards) if c.uid}
+
+    def _fmt_couple_name(c1, c2):
+        """Minimal couple name for anniversary display: 'Alice & Bob Smith'."""
+        def _given(c): return (c.name.given if c.name and c.name.given else (c.fn or "").split()[0] if c.fn else "").strip()
+        def _family(c): return (c.name.family if c.name and c.name.family else ((c.fn or "").split()[-1] if c.fn and len(c.fn.split())>1 else "")).strip()
+        fam = _family(c1) or _family(c2)
+        g1, g2 = _given(c1), _given(c2)
+        # Put names in alphabetical order
+        names = sorted([g1, g2]) if g1 and g2 else [g1 or g2]
+        return f"{' & '.join(n for n in names if n)} {fam}".strip()
+
     events = []
+    seen_anniv_pairs: set = set()  # frozensets of idx pairs already merged
+
     for idx, card in enumerate(cards):
         # Apply category filter if specified
         if filter_cats:
@@ -1429,26 +2159,69 @@ def _api_birthdays(body: dict) -> dict:
             if not card_cats.intersection({c.lower() for c in filter_cats}):
                 continue
 
-        for date_str, event_type in [(card.bday, "birthday"), (card.anniversary, "anniversary")]:
-            if not date_str:
-                continue
-            month, day, year = _parse_date(date_str)
-            if month < 1 or month > 12:
-                continue
-            age = None
-            if year and year > 1800 and year < this_year + 1:
-                age = this_year - year
-            events.append({
-                "_idx": idx,
-                "fn": card.fn or card.org or "Unknown",
-                "categories": card.categories,
-                "event_type": event_type,
-                "date_str": date_str,
-                "month": month,
-                "day": day,
-                "year": year,
-                "age": age,
-            })
+        # ── Anniversaries: merge couples onto one line ────────────────────────
+        if card.anniversary:
+            month, day, year = _parse_date(card.anniversary)
+            if 1 <= month <= 12:
+                age = (this_year - year) if year and 1800 < year < this_year + 1 else None
+                partner_idx = None
+                partner_card = None
+                # Find a spouse/partner who shares the same anniversary date
+                for rel in (card.related or []):
+                    if (rel.rel_type or "").lower().strip() not in _COUPLE_TYPES: continue
+                    if not rel.uid: continue
+                    result = uid_map.get(rel.uid)
+                    if not result: continue
+                    pidx, pc = result
+                    if not pc.anniversary: continue
+                    pm, pd, py = _parse_date(pc.anniversary)
+                    if pm == month and pd == day:
+                        partner_idx = pidx
+                        partner_card = pc
+                        break
+                if partner_card and partner_idx is not None:
+                    pair_key = frozenset([idx, partner_idx])
+                    if pair_key not in seen_anniv_pairs:
+                        seen_anniv_pairs.add(pair_key)
+                        events.append({
+                            "_idx":       idx,
+                            "_idx2":      partner_idx,
+                            "fn":         _fmt_couple_name(card, partner_card),
+                            "categories": card.categories,
+                            "event_type": "anniversary",
+                            "date_str":   card.anniversary,
+                            "month":      month,
+                            "day":        day,
+                            "year":       year,
+                            "age":        age,
+                            "merged":     True,
+                        })
+                else:
+                    # Solo anniversary (no matched spouse)
+                    events.append({
+                        "_idx": idx, "_idx2": None,
+                        "fn": card.fn or card.org or "Unknown",
+                        "categories": card.categories,
+                        "event_type": "anniversary",
+                        "date_str": card.anniversary,
+                        "month": month, "day": day, "year": year, "age": age,
+                        "merged": False,
+                    })
+
+        # ── Birthdays: always individual ──────────────────────────────────────
+        if card.bday:
+            month, day, year = _parse_date(card.bday)
+            if 1 <= month <= 12:
+                age = (this_year - year) if year and 1800 < year < this_year + 1 else None
+                events.append({
+                    "_idx": idx, "_idx2": None,
+                    "fn": card.fn or card.org or "Unknown",
+                    "categories": card.categories,
+                    "event_type": "birthday",
+                    "date_str": card.bday,
+                    "month": month, "day": day, "year": year, "age": age,
+                    "merged": False,
+                })
 
     # Sort by month, then day
     events.sort(key=lambda e: (e["month"], e["day"] or 0))
@@ -2140,6 +2913,7 @@ class VCardHandler(BaseHTTPRequestHandler):
         elif path == "/api/print_cards":
             self._send_json(_api_print_cards(params))
         elif path == "/api/print_modules":
+            print("[DEBUG] /api/print_modules called", flush=True)
             self._send_json(_api_print_modules())
         elif path == "/api/search_orgs":
             self._send_json(_api_search_orgs(params))
@@ -2193,6 +2967,10 @@ class VCardHandler(BaseHTTPRequestHandler):
             self._send_json(_api_unlink_related(body))
         elif path == "/api/waive_field":
             self._send_json(_api_waive_field(body))
+        elif path == "/api/bulk_add_category":
+            self._send_json(_api_bulk_add_category(body))
+        elif path == "/api/label_options":
+            self._send_json(_api_label_options(body))
         elif path == "/api/unwaive_field":
             self._send_json(_api_unwaive_field(body))
         elif path == "/api/strip_proprietary":
