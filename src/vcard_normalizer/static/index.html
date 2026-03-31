@@ -249,9 +249,12 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
 <header id="header">
   <div class="wordmark"><span class="v">v</span><span class="rest">card studio</span></div>
   <div class="tagline">local · no cloud · GNU GPL v3</div>
-  <div id="hdr-version" style="font-size:10px;color:var(--dim);padding-left:8px;border-left:1px solid var(--border)">v3.3.0</div>
+  <div id="hdr-version" style="font-size:10px;color:var(--dim);padding-left:8px;border-left:1px solid var(--border)">v3.4.0</div>
   <div class="hdr-spacer"></div>
   <div class="hdr-status" id="hdr-status">idle</div>
+  <div id="hdr-checkpoint" style="font-size:10px;color:var(--dim);padding:0 8px;display:none">
+    ✓ saved <span id="hdr-checkpoint-age"></span>
+  </div>
   <div id="hdr-saved" style="font-size:10px;color:var(--dim);padding:0 8px;opacity:0;transition:opacity 1s">
     ✓ saved
   </div>
@@ -1724,6 +1727,21 @@ function applyState(d) {
   document.getElementById('hdr-status').textContent = msgs[d.status] || d.status;
   if (d.version) document.getElementById('hdr-version').textContent = 'v' + d.version;
 
+  // Show checkpoint save time in header
+  const cpEl  = document.getElementById('hdr-checkpoint');
+  const cpAge = document.getElementById('hdr-checkpoint-age');
+  if (cpEl && d.checkpoint?.saved_at && d.total_cards > 0) {
+    const saved = new Date(d.checkpoint.saved_at);
+    const mins  = Math.round((Date.now() - saved.getTime()) / 60000);
+    const ageStr = mins < 1 ? 'just now' : mins < 60 ? `${mins}m ago` :
+                   mins < 1440 ? `${Math.round(mins/60)}h ago` : saved.toLocaleDateString();
+    cpAge.textContent = ageStr;
+    cpEl.style.display = '';
+    cpEl.title = `Checkpoint saved at ${saved.toLocaleTimeString()}`;
+  } else if (cpEl) {
+    cpEl.style.display = 'none';
+  }
+
   document.getElementById('sb-total').textContent = d.total_cards||0;
   document.getElementById('sb-dupes').textContent = d.dup_count||0;
   document.getElementById('sb-src').textContent   = Object.keys(d.source_counts||{}).length;
@@ -1799,6 +1817,16 @@ function renderSrcList(files) {
     : `<div style="color:var(--dim);font-size:10px;padding:3px 0 8px;">No .vcf files in cards-in/ yet.</div>`;
 }
 async function startProcess() {
+  // Warn if a checkpoint exists — running Unify will overwrite all manual edits
+  if (S.total_cards > 0) {
+    const ok = confirm(
+      `⚠ WARNING: Re-running Unify will OVERWRITE all your current contacts and edits.\n\n` +
+      `You have ${S.total_cards} contacts loaded with unsaved work.\n\n` +
+      `Only continue if you want to re-import from scratch from cards-in/.\n\n` +
+      `To keep your work: Cancel, then use Export first to save a copy.`
+    );
+    if (!ok) return;
+  }
   document.getElementById('btn-proc').disabled=true;
   document.getElementById('btn-next').style.display='none';
   document.getElementById('u-prog').style.display='';

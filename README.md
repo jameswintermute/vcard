@@ -289,20 +289,45 @@ python3 start-webui.py
 ## 📂 Project Layout
 
 ```
-cards-in/           ← drop your exported .vcf source files here
-cards-out/          ← clean output files written here
-cards-wip/          ← autosave checkpoint (do not edit manually)
-print/              ← generated address label HTML files written here
-local/vcard.conf    ← your personal config (auto-created on first run)
+cards-in/               ← drop .vcf files here to import (processed once, then moved)
+  processed/            ← imported files moved here automatically after import
+cards-master/           ← permanent master database (primary store — never delete)
+  master.vcf            ← compiled master: all contacts in one file (fast load)
+  master.json           ← metadata: saved_at, total count, source files
+  contacts/             ← one .vcf per contact, named by UID (individual durability)
+    vcard-studio-<uuid>.vcf
+cards-out/              ← exports for sharing (Apple, category subsets, CSV)
+print/                  ← generated address label and address book HTML files
+log/
+  activity.log          ← syslog-style activity log (counts and UIDs only, no names)
+local/vcard.conf        ← your personal config (auto-created on first run)
 src/vcard_normalizer/
-  server.py         ← local HTTP server and all API endpoints
-  static/index.html ← the entire Web UI (single-file, no build step)
-  model.py          ← Card, Address, NameComponents, Related data classes
-  normalize.py      ← field parsing and cleaning
-  dedupe.py         ← similarity scoring and duplicate clustering
-  formatters.py     ← phones, categories, KIND classification
-  exporter.py       ← vCard 4.0 serialisation and individual file export
-  checkpoint.py     ← autosave and resume
+  server.py             ← local HTTP server and all API endpoints
+  static/index.html     ← the entire Web UI (single-file, no build step)
+  model.py              ← Card, Address, NameComponents, Related data classes
+  normalize.py          ← field parsing and cleaning
+  dedupe.py             ← similarity scoring and duplicate clustering
+  formatters.py         ← phones, categories, KIND classification
+  exporter.py           ← vCard 4.0 serialisation and individual file export
+  master.py             ← permanent master database (replaces checkpoint)
+  activitylog.py        ← syslog-style activity logging
+  checkpoint.py         ← legacy (kept for migration compatibility)
+```
+
+### How the database works
+
+`cards-master/` is your permanent address book. Every edit writes two places simultaneously:
+
+1. `contacts/<uid>.vcf` — the individual contact file, updated immediately
+2. `master.vcf` — the compiled view, rewritten on every save
+
+On startup, `master.vcf` is loaded directly (fast). If it's ever missing or corrupt, the server automatically reconstructs it from the individual `contacts/` files.
+
+**Import** (`cards-in/`) is **additive** — new contacts are merged into master, existing contacts are never overwritten. After import, source files are moved to `cards-in/processed/` so they can never be accidentally re-imported.
+
+**Export** (`cards-out/`) produces Apple-compatible, category-filtered, or full `.vcf` files for sharing. It never modifies master state.
+
+**Activity log** (`log/activity.log`) records what happened and when — import counts, edit UIDs, export filenames — without recording any contact names, emails, or addresses.
   config.py         ← TOML config and workspace initialisation
   proprietary.py    ← X-* field stripping rules
   print_modules/    ← pluggable printer support (see below)
