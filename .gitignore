@@ -27,3 +27,8 @@ local/vcard.conf
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+log/
+cards-master/
+print/
+cards-in/processed/
+cards-out/*.vcf

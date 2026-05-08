@@ -18,14 +18,25 @@ class Paths:
     out_dir: Path
     var_dir: Path
     local_dir: Path
-    wip_dir: Path
     conf_file: Path
+
+
+def _detect_region() -> str:
+    """Best-effort region code from system locale (e.g. en_GB → GB)."""
+    import locale
+    try:
+        loc = locale.getdefaultlocale()[0] or ""  # e.g. "en_GB"
+        if "_" in loc:
+            return loc.split("_")[1].upper()  # → "GB"
+    except Exception:
+        pass
+    return "GB"  # fallback
 
 
 @dataclass
 class Settings:
-    owner_name: str = "James"
-    default_region: str = "GB"
+    owner_name: str = ""
+    default_region: str = _detect_region()
     # Category rules: list of (category_name, [pattern, ...])
     # Patterns are plain substrings or "re:<regex>" strings.
     category_rules: list[tuple[str, list[str]]] = field(default_factory=list)
@@ -33,7 +44,7 @@ class Settings:
 
 DEFAULT_CONF = """\
 # vcard-normalizer local config (TOML)
-owner_name = "James"
+owner_name = ""   # your name — shown on address book cover page
 default_region = "GB"
 
 # Category auto-tagging rules.
@@ -60,8 +71,8 @@ def ensure_workspace(base: Path | None = None) -> tuple[Paths, Settings]:
     local = root / "local"
     conf = local / "vcard.conf"
 
-    wip = root / "cards-wip"
-    for d in (inp, out, var, local, wip):
+    # cards-master is created by master.py on first save; ensure others exist
+    for d in (inp, out, var, local):
         d.mkdir(parents=True, exist_ok=True)
 
     if not conf.exists():
@@ -89,7 +100,7 @@ def ensure_workspace(base: Path | None = None) -> tuple[Paths, Settings]:
             pass
 
     return (
-        Paths(root=root, in_dir=inp, out_dir=out, var_dir=var, local_dir=local, wip_dir=wip, conf_file=conf),
+        Paths(root=root, in_dir=inp, out_dir=out, var_dir=var, local_dir=local, conf_file=conf),
         settings,
     )
 

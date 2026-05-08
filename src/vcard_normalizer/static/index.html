@@ -240,6 +240,27 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
 .type-badge{font-size:8px;font-weight:700;letter-spacing:.06em;background:rgba(0,204,196,.1);color:var(--cyan);border:1px solid rgba(0,204,196,.2);padding:1px 5px;vertical-align:middle;margin-right:2px}
 .type-badge.work{background:rgba(232,160,0,.1);color:var(--amber);border-color:rgba(232,160,0,.2)}
 .type-badge.cell{background:rgba(0,224,64,.08);color:var(--green);border-color:rgba(0,224,64,.2)}
+
+/* ── Auto-clean panel ───────────────────────────────────────────────────── */
+.ac-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:12px 0; }
+.ac-issue {
+  display:flex; align-items:flex-start; gap:8px;
+  background:var(--surface); border:1px solid var(--border);
+  padding:9px 11px; border-radius:3px; cursor:pointer;
+  transition: border-color .15s;
+}
+.ac-issue:hover { border-color: var(--mid); }
+.ac-issue.selected { border-color: var(--cyan); background: rgba(0,204,196,.06); }
+.ac-issue.unfixable { opacity:.7; cursor:default; }
+.ac-issue-check { font-size:13px; margin-top:1px; flex-shrink:0; }
+.ac-issue-body { flex:1; min-width:0; }
+.ac-issue-label { font-size:10px; color:var(--text); line-height:1.4; }
+.ac-issue-count { font-size:18px; font-weight:700; color:var(--cyan); line-height:1; margin-bottom:2px; }
+.ac-issue-tag  { font-size:9px; padding:1px 5px; border-radius:2px; margin-top:3px; display:inline-block; }
+.ac-tag-fix   { background:rgba(0,204,196,.12); color:var(--cyan); }
+.ac-tag-review{ background:rgba(255,204,0,.12);  color:var(--amber); }
+.ac-summary { font-size:11px; color:var(--dim); margin-bottom:10px; line-height:1.8; }
+.ac-apply-bar { display:flex; gap:8px; align-items:center; margin-top:12px; flex-wrap:wrap; }
 </style>
 </head>
 <body>
@@ -333,6 +354,29 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
     <div class="stat-box"><div class="stat-val" style="color:var(--cyan)" id="cs-cats">0</div><div class="stat-lbl">CATEGORIES</div></div>
     <div class="stat-box"><div class="stat-val" style="color:var(--cyan)" id="cs-src">0</div><div class="stat-lbl">SOURCES</div></div>
   </div>
+
+  <hr class="divider">
+  <div class="sec-lbl" style="color:var(--cyan)">AUTO-CLEAN
+    <span style="color:var(--dim);font-weight:400"> — scan for fixable issues across all contacts, run any time</span>
+  </div>
+  <div class="row" style="gap:8px;align-items:center;margin-bottom:6px">
+    <button class="btn btn-g" id="btn-auto-clean" onclick="runAutoClean()">⟳ scan for issues</button>
+    <span id="ac-hint" style="font-size:10px;color:var(--dim)">Checks phones, UIDs, names, countries, categories and more</span>
+  </div>
+
+  <div id="ac-results" style="display:none">
+    <div class="ac-summary" id="ac-summary"></div>
+    <div class="ac-grid" id="ac-grid"></div>
+    <div class="ac-apply-bar">
+      <button class="btn btn-g" id="btn-ac-apply" onclick="applyAutoClean()" style="display:none">✓ apply selected fixes</button>
+      <button class="btn btn-d" style="font-size:10px" onclick="toggleAllAutoClean(true)">select all fixable</button>
+      <button class="btn btn-d" style="font-size:10px" onclick="toggleAllAutoClean(false)">deselect all</button>
+      <span id="ac-apply-hint" style="font-size:10px;color:var(--dim)"></span>
+    </div>
+    <div id="ac-apply-result" style="display:none;margin-top:8px;background:rgba(0,224,64,.06);
+         border:1px solid var(--green2);padding:8px 12px;font-size:10px;color:var(--green)"></div>
+  </div>
+
   <div class="sec-lbl">CATEGORIES DETECTED <span style="color:var(--dim);font-weight:400">— click to filter Review</span></div>
   <div class="cat-tiles" id="clean-cats">
     <div id="clean-no-data" style="display:none"></div>
@@ -5280,6 +5324,138 @@ function saveBdayCatPref() {
 }
 
 // ══ Phone reformatter ═════════════════════════════════════════════════════════
+
+// ══ Auto-Clean ═══════════════════════════════════════════════════════════════
+
+let _acScanData = null;
+
+async function runAutoClean() {
+  const btn  = document.getElementById('btn-auto-clean');
+  const hint = document.getElementById('ac-hint');
+  btn.disabled = true;
+  btn.textContent = '⟳ scanning…';
+  hint.textContent = '';
+  document.getElementById('ac-results').style.display = 'none';
+  document.getElementById('ac-apply-result').style.display = 'none';
+
+  try {
+    const d = await get('/api/auto_clean_scan');
+    if (!d.ok) { hint.textContent = d.error || 'scan failed'; return; }
+
+    _acScanData = d;
+    const groups = d.groups;
+
+    // Summary line
+    const fixable = d.fixable_issues;
+    const total   = d.total_issues;
+    const sumEl   = document.getElementById('ac-summary');
+    if (total === 0) {
+      sumEl.innerHTML = '<span style="color:var(--green)">✓ No issues found — your contacts look clean.</span>';
+      document.getElementById('ac-grid').innerHTML = '';
+      document.getElementById('btn-ac-apply').style.display = 'none';
+      document.getElementById('ac-results').style.display = '';
+      return;
+    }
+    sumEl.innerHTML =
+      `Found <strong style="color:var(--text)">${total}</strong> issue(s) across ${d.total_contacts} contacts — ` +
+      `<strong style="color:var(--cyan)">${fixable}</strong> can be auto-fixed, ` +
+      `<strong style="color:var(--amber)">${total - fixable}</strong> flagged for manual review.`;
+
+    // Build issue cards
+    const grid = document.getElementById('ac-grid');
+    grid.innerHTML = '';
+    let hasFixable = false;
+    for (const [key, g] of Object.entries(groups)) {
+      if (g.count === 0) continue;
+      const card = document.createElement('div');
+      card.className = 'ac-issue' + (g.fixable ? '' : ' unfixable');
+      card.dataset.key = key;
+      card.dataset.action = g.action || '';
+      card.dataset.fixable = g.fixable ? '1' : '0';
+      if (g.fixable) {
+        card.classList.add('selected');
+        hasFixable = true;
+        card.onclick = () => {
+        card.classList.toggle('selected');
+        updateAutoCleanApplyBtn();
+      };
+      }
+      const tag = g.fixable
+        ? '<span class="ac-issue-tag ac-tag-fix">auto-fixable</span>'
+        : '<span class="ac-issue-tag ac-tag-review">review manually</span>';
+      card.innerHTML = `
+        <div class="ac-issue-check">${g.fixable ? '☑' : '⚑'}</div>
+        <div class="ac-issue-body">
+          <div class="ac-issue-count">${g.count}</div>
+          <div class="ac-issue-label">${esc(g.label)}</div>
+          ${tag}
+        </div>`;
+      grid.appendChild(card);
+    }
+
+    document.getElementById('btn-ac-apply').style.display = hasFixable ? '' : 'none';
+    document.getElementById('ac-apply-hint').textContent = hasFixable
+      ? 'Tick/untick cards above to choose which fixes to apply'
+      : '';
+    document.getElementById('ac-results').style.display = '';
+    updateAutoCleanApplyBtn();
+
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⟳ scan for issues';
+  }
+}
+
+function updateAutoCleanApplyBtn() {
+  const selected = [...document.querySelectorAll('.ac-issue.selected')].length;
+  const btn = document.getElementById('btn-ac-apply');
+  if (btn) btn.textContent = `✓ apply ${selected} selected fix${selected !== 1 ? 'es' : ''}`;
+}
+
+function toggleAllAutoClean(on) {
+  document.querySelectorAll('.ac-issue[data-fixable="1"]').forEach(el => {
+    if (on) el.classList.add('selected');
+    else    el.classList.remove('selected');
+  });
+  updateAutoCleanApplyBtn();
+}
+
+async function applyAutoClean() {
+  const selected = [...document.querySelectorAll('.ac-issue.selected[data-fixable="1"]')];
+  if (!selected.length) { toast('No fixes selected', true); return; }
+
+  const actions = [...new Set(selected.map(el => el.dataset.action).filter(Boolean))];
+  const btn = document.getElementById('btn-ac-apply');
+  btn.disabled = true;
+  btn.textContent = '⟳ applying…';
+
+  const results = [];
+  const hint = document.getElementById('ac-apply-hint');
+
+  for (const action of actions) {
+    hint.textContent = `Applying: ${action.replace(/_/g,' ')}…`;
+    try {
+      let r;
+      if      (action === 'reformat_phones')    r = await post('/api/reformat_phones', {});
+      else if (action === 'reissue_uids')        r = await post('/api/reissue_uids', {});
+      else if (action === 'auto_gender')         r = await post('/api/auto_gender', {});
+      else if (action === 'auto_prefix')         r = await post('/api/auto_prefix', {});
+      else if (action === 'normalise_countries') { openCountryNormaliser(); continue; }
+      if (r && r.ok) results.push(`✓ ${action.replace(/_/g,' ')}: ${r.changed ?? r.count ?? 'done'}`);
+    } catch(e) {
+      results.push(`✗ ${action}: error`);
+    }
+  }
+
+  const resEl = document.getElementById('ac-apply-result');
+  resEl.innerHTML = results.join('<br>');
+  resEl.style.display = '';
+  hint.textContent = 'Done — re-scan to check for remaining issues';
+  btn.disabled = false;
+  btn.textContent = '✓ apply selected fixes';
+  await poll(); // refresh state
+}
+
 // ══ Gender progress bar (used by Clean + Insights) ═══════════════════════════
 function renderGenderBar(gc, elId, showAssignHint) {
   const el = document.getElementById(elId);
