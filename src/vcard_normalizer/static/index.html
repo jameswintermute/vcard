@@ -241,6 +241,29 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
 .type-badge.work{background:rgba(232,160,0,.1);color:var(--amber);border-color:rgba(232,160,0,.2)}
 .type-badge.cell{background:rgba(0,224,64,.08);color:var(--green);border-color:rgba(0,224,64,.2)}
 
+/* ── Loading splash ──────────────────────────────────────────────────────── */
+#splash {
+  position: fixed; inset: 0; z-index: 9999;
+  background: var(--bg);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 20px;
+  transition: opacity 0.4s ease;
+}
+#splash.hidden { opacity: 0; pointer-events: none; }
+.splash-wordmark { font-size: 28px; color: var(--green); letter-spacing: .08em; }
+.splash-wordmark .v { color: var(--cyan); }
+.splash-sub { font-size: 11px; color: var(--dim); letter-spacing: .12em; text-transform: uppercase; }
+.splash-spinner {
+  width: 36px; height: 36px;
+  border: 2px solid var(--border);
+  border-top-color: var(--cyan);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.splash-status { font-size: 11px; color: var(--mid); font-family: monospace; min-height: 16px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
 /* ── Auto-clean panel ───────────────────────────────────────────────────── */
 .ac-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:12px 0; }
 .ac-issue {
@@ -267,10 +290,18 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
 <div id="app">
 
 <!-- Header -->
+
+<div id="splash">
+  <div class="splash-wordmark"><span class="v">v</span>card studio</div>
+  <div class="splash-sub">local · no cloud · GNU GPL v3</div>
+  <div class="splash-spinner"></div>
+  <div class="splash-status" id="splash-status">connecting…</div>
+</div>
+
 <header id="header">
   <div class="wordmark"><span class="v">v</span><span class="rest">card studio</span></div>
   <div class="tagline">local · no cloud · GNU GPL v3</div>
-  <div id="hdr-version" style="font-size:10px;color:var(--dim);padding-left:8px;border-left:1px solid var(--border)">v3.4.0</div>
+  <div id="hdr-version" style="font-size:10px;color:var(--dim);padding-left:8px;border-left:1px solid var(--border)">v3.5.0</div>
   <div class="hdr-spacer"></div>
   <div class="hdr-status" id="hdr-status">idle</div>
   <div id="hdr-checkpoint" style="font-size:10px;color:var(--dim);padding:0 8px;display:none">
@@ -287,7 +318,7 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
 <nav id="sidebar">
   <div class="nav-grp">
     <div class="nav-grp-lbl">WORKFLOW</div>
-    <div class="nav-item active" data-p="unify"    onclick="show('unify')">   <span class="nav-step">1</span> Unify    <span class="nav-badge" id="nb-unify">—</span></div>
+    <div class="nav-item active" data-p="unify"    onclick="show('unify')">   <span class="nav-step">1</span> Import   <span class="nav-badge" id="nb-unify">—</span></div>
     <div class="nav-item"        data-p="clean"    onclick="show('clean')">   <span class="nav-step">2</span> Clean    <span class="nav-badge" id="nb-clean">—</span></div>
     <div class="nav-item"        data-p="split"    onclick="show('split')">   <span class="nav-step">3</span> Split    <span class="nav-badge" id="nb-split">—</span></div>
     <div class="nav-item"        data-p="review"   onclick="show('review')">  <span class="nav-step">4</span> Review   <span class="nav-badge" id="nb-review">—</span></div>
@@ -357,15 +388,14 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
 
   <hr class="divider">
   <div class="sec-lbl" style="color:var(--cyan)">AUTO-CLEAN
-    <span style="color:var(--dim);font-weight:400"> — scan for fixable issues across all contacts, run any time</span>
+    <span style="color:var(--dim);font-weight:400"> — scan all contacts for fixable issues, run any time</span>
   </div>
   <div class="row" style="gap:8px;align-items:center;margin-bottom:6px">
     <button class="btn btn-g" id="btn-auto-clean" onclick="runAutoClean()">⟳ scan for issues</button>
     <span id="ac-hint" style="font-size:10px;color:var(--dim)">Checks phones, UIDs, names, countries, categories and more</span>
   </div>
-
   <div id="ac-results" style="display:none">
-    <div class="ac-summary" id="ac-summary"></div>
+    <div id="ac-summary" class="ac-summary"></div>
     <div class="ac-grid" id="ac-grid"></div>
     <div class="ac-apply-bar">
       <button class="btn btn-g" id="btn-ac-apply" onclick="applyAutoClean()" style="display:none">✓ apply selected fixes</button>
@@ -399,7 +429,7 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
   <!-- Shown when no sources AND no contacts — truly empty -->
   <div id="clean-truly-empty" style="display:none;align-items:center;gap:10px;padding:6px 0">
     <span style="color:var(--dim);font-size:10px;">No contacts and no source files found.</span>
-    <button class="btn btn-c" style="font-size:10px;padding:3px 10px" onclick="show('unify')">→ go to Unify to add files</button>
+    <button class="btn btn-c" style="font-size:10px;padding:3px 10px" onclick="show('unify')">→ go to Import to add files</button>
   </div>
   <hr class="divider">
 
@@ -576,7 +606,7 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
     </select>
     <button class="btn btn-d" id="rev-clear-btn" onclick="clearRevFilters()" style="display:none;font-size:10px;padding:2px 8px">✕ clear</button>
   </div>
-  <div id="rev-empty" class="empty">No contacts loaded.<br><span style="color:var(--dim)">Complete step 1 (Unify) first.</span></div>
+  <div id="rev-empty" class="empty">No contacts loaded.<br><span style="color:var(--dim)">Complete step 1 (Import) first.</span></div>
   <table class="dt" id="rev-tbl" style="display:none">
     <thead><tr><th style="width:28px"><input type="checkbox" id="rev-select-all" title="Select all on page" onchange="toggleRevSelectAll(this.checked)" style="accent-color:var(--green)"></th><th>NAME</th><th>ORG</th><th>EMAIL</th><th>PHONE</th><th>CATEGORIES</th><th></th></tr></thead>
     <tbody id="rev-body"></tbody>
@@ -1765,6 +1795,7 @@ async function poll() {
 function applyState(d) {
   S = d;
   window._lastStatus = d;  // store for other components (e.g. birthday category prefs)
+  hideSplash();
   document.getElementById('dot').className = 'dot ' + d.status;
   const msgs = { idle:'idle', loaded:`${d.total_cards} contacts loaded`,
                  processing:`processing… ${d.progress}%`, error:'error' };
@@ -1853,7 +1884,7 @@ function applyState(d) {
   }
 }
 
-// ══ §1 Unify ══════════════════════════════════════════════════════════════════
+// ══ §1 Import ══════════════════════════════════════════════════════════════════
 function renderSrcList(files) {
   const el = document.getElementById('u-sources');
   el.innerHTML = files.length
@@ -1861,10 +1892,10 @@ function renderSrcList(files) {
     : `<div style="color:var(--dim);font-size:10px;padding:3px 0 8px;">No .vcf files in cards-in/ yet.</div>`;
 }
 async function startProcess() {
-  // Warn if a checkpoint exists — running Unify will overwrite all manual edits
+  // Warn if a checkpoint exists — running Import will overwrite all manual edits
   if (S.total_cards > 0) {
     const ok = confirm(
-      `⚠ WARNING: Re-running Unify will OVERWRITE all your current contacts and edits.\n\n` +
+      `⚠ WARNING: Re-running Import will OVERWRITE all your current contacts and edits.\n\n` +
       `You have ${S.total_cards} contacts loaded with unsaved work.\n\n` +
       `Only continue if you want to re-import from scratch from cards-in/.\n\n` +
       `To keep your work: Cancel, then use Export first to save a copy.`
@@ -1881,7 +1912,7 @@ async function startProcess() {
 }
 
 async function startProcessFromClean() {
-  // Navigate to Unify to show progress bar, then kick off merge
+  // Navigate to Import to show progress bar, then kick off merge
   show('unify');
   await startProcess();
 }
@@ -5325,6 +5356,16 @@ function saveBdayCatPref() {
 
 // ══ Phone reformatter ═════════════════════════════════════════════════════════
 
+// ── Splash screen ──────────────────────────────────────────────────────────
+function hideSplash() {
+  const el = document.getElementById('splash');
+  if (el) { el.classList.add('hidden'); setTimeout(() => el.remove(), 500); }
+}
+function updateSplashStatus(msg) {
+  const el = document.getElementById('splash-status');
+  if (el) el.textContent = msg;
+}
+
 // ══ Auto-Clean ═══════════════════════════════════════════════════════════════
 
 let _acScanData = null;
@@ -5334,88 +5375,124 @@ async function runAutoClean() {
   const hint = document.getElementById('ac-hint');
   btn.disabled = true;
   btn.textContent = '⟳ scanning…';
-  hint.textContent = '';
+  hint.textContent = 'Checking all contacts…';
   document.getElementById('ac-results').style.display = 'none';
   document.getElementById('ac-apply-result').style.display = 'none';
-
   try {
     const d = await get('/api/auto_clean_scan');
     if (!d.ok) { hint.textContent = d.error || 'scan failed'; return; }
-
     _acScanData = d;
-    const groups = d.groups;
-
-    // Summary line
-    const fixable = d.fixable_issues;
-    const total   = d.total_issues;
-    const sumEl   = document.getElementById('ac-summary');
-    if (total === 0) {
-      sumEl.innerHTML = '<span style="color:var(--green)">✓ No issues found — your contacts look clean.</span>';
-      document.getElementById('ac-grid').innerHTML = '';
-      document.getElementById('btn-ac-apply').style.display = 'none';
-      document.getElementById('ac-results').style.display = '';
-      return;
-    }
-    sumEl.innerHTML =
-      `Found <strong style="color:var(--text)">${total}</strong> issue(s) across ${d.total_contacts} contacts — ` +
-      `<strong style="color:var(--cyan)">${fixable}</strong> can be auto-fixed, ` +
-      `<strong style="color:var(--amber)">${total - fixable}</strong> flagged for manual review.`;
-
-    // Build issue cards
-    const grid = document.getElementById('ac-grid');
-    grid.innerHTML = '';
-    let hasFixable = false;
-    for (const [key, g] of Object.entries(groups)) {
-      if (g.count === 0) continue;
-      const card = document.createElement('div');
-      card.className = 'ac-issue' + (g.fixable ? '' : ' unfixable');
-      card.dataset.key = key;
-      card.dataset.action = g.action || '';
-      card.dataset.fixable = g.fixable ? '1' : '0';
-      if (g.fixable) {
-        card.classList.add('selected');
-        hasFixable = true;
-        card.onclick = () => {
-        card.classList.toggle('selected');
-        updateAutoCleanApplyBtn();
-      };
-      }
-      const tag = g.fixable
-        ? '<span class="ac-issue-tag ac-tag-fix">auto-fixable</span>'
-        : '<span class="ac-issue-tag ac-tag-review">review manually</span>';
-      card.innerHTML = `
-        <div class="ac-issue-check">${g.fixable ? '☑' : '⚑'}</div>
-        <div class="ac-issue-body">
-          <div class="ac-issue-count">${g.count}</div>
-          <div class="ac-issue-label">${esc(g.label)}</div>
-          ${tag}
-        </div>`;
-      grid.appendChild(card);
-    }
-
-    document.getElementById('btn-ac-apply').style.display = hasFixable ? '' : 'none';
-    document.getElementById('ac-apply-hint').textContent = hasFixable
-      ? 'Tick/untick cards above to choose which fixes to apply'
-      : '';
-    document.getElementById('ac-results').style.display = '';
-    updateAutoCleanApplyBtn();
-
+    hint.textContent = '';
+    _renderAutoCleanResults(d);
   } finally {
     btn.disabled = false;
     btn.textContent = '⟳ scan for issues';
   }
 }
 
+function _renderAutoCleanResults(d) {
+  const groups   = d.groups;
+  const total    = d.total_issues;
+  const fixable  = d.fixable_issues;
+  const contacts = d.total_contacts;
+  const sumEl    = document.getElementById('ac-summary');
+  const grid     = document.getElementById('ac-grid');
+  const applyBtn = document.getElementById('btn-ac-apply');
+
+  const pct        = total === 0 ? 100 : Math.round(Math.max(0, (contacts - fixable) / contacts * 100));
+  const scoreColor = pct >= 90 ? 'var(--green)' : pct >= 60 ? 'var(--amber)' : '#e55';
+
+  if (total === 0) {
+    sumEl.innerHTML = `
+      <div style="display:flex;align-items:center;gap:12px;padding:10px 0">
+        <div style="font-size:32px;color:var(--green);line-height:1">✓</div>
+        <div>
+          <div style="color:var(--green);font-size:13px;font-weight:700">All ${contacts} contacts look clean</div>
+          <div style="color:var(--dim);font-size:10px;margin-top:2px">No issues found — nothing to fix right now</div>
+        </div>
+      </div>`;
+    grid.innerHTML = '';
+    applyBtn.style.display = 'none';
+    document.getElementById('ac-results').style.display = '';
+    return;
+  }
+
+  sumEl.innerHTML = `
+    <div style="display:flex;align-items:center;gap:16px;padding:8px 0 4px">
+      <div style="text-align:center;min-width:52px">
+        <div style="font-size:28px;font-weight:700;color:${scoreColor};line-height:1">${pct}%</div>
+        <div style="font-size:9px;color:var(--dim);margin-top:1px">CLEAN</div>
+      </div>
+      <div style="flex:1">
+        <div style="height:5px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:6px">
+          <div style="height:100%;width:${pct}%;background:${scoreColor};border-radius:3px;transition:width .4s"></div>
+        </div>
+        <div style="font-size:10px;color:var(--text);line-height:1.8">
+          <span style="color:var(--cyan)">${fixable}</span> can be <strong>auto-fixed</strong> &nbsp;·&nbsp;
+          <span style="color:var(--amber)">${total - fixable}</span> flagged for <strong>manual review</strong>
+        </div>
+        <div style="font-size:10px;color:var(--dim)">Tick/untick cards below, then click Apply</div>
+      </div>
+    </div>`;
+
+  grid.innerHTML = '';
+  let hasFixable = false;
+  const sorted = Object.entries(groups)
+    .filter(([,g]) => g.count > 0)
+    .sort((a,b) => (b[1].fixable - a[1].fixable) || (b[1].count - a[1].count));
+
+  for (const [key, g] of sorted) {
+    const card = document.createElement('div');
+    card.className = 'ac-issue' + (g.fixable ? ' selected' : ' unfixable');
+    card.dataset.key     = key;
+    card.dataset.action  = g.action || '';
+    card.dataset.fixable = g.fixable ? '1' : '0';
+    if (g.fixable) {
+      hasFixable = true;
+      card.onclick = () => { card.classList.toggle('selected'); updateAutoCleanApplyBtn(); };
+    }
+    const pctAff = Math.round(g.count / contacts * 100);
+    const tag    = g.fixable
+      ? '<span class="ac-issue-tag ac-tag-fix">auto-fixable</span>'
+      : '<span class="ac-issue-tag ac-tag-review">manual review</span>';
+    card.innerHTML = `
+      <div class="ac-issue-check">${g.fixable ? '☑' : '⚑'}</div>
+      <div class="ac-issue-body">
+        <div class="ac-issue-count">${g.count} <span style="font-size:10px;font-weight:400;color:var(--dim)">(${pctAff}%)</span></div>
+        <div class="ac-issue-label">${esc(g.label)}</div>
+        ${tag}
+      </div>`;
+    grid.appendChild(card);
+  }
+
+  // Green "all good" chips for issue types with 0 problems
+  const clean = Object.entries(groups).filter(([,g]) => g.count === 0);
+  if (clean.length) {
+    const row = document.createElement('div');
+    row.style.cssText = 'grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px;margin-top:4px';
+    clean.forEach(([,g]) => {
+      const chip = document.createElement('span');
+      chip.style.cssText = 'font-size:9px;background:rgba(0,224,64,.08);border:1px solid var(--green2);color:var(--green);padding:2px 8px;border-radius:2px';
+      chip.textContent = '✓ ' + g.label.replace(/^[A-Z]/, c => c.toLowerCase());
+      row.appendChild(chip);
+    });
+    grid.appendChild(row);
+  }
+
+  applyBtn.style.display = hasFixable ? '' : 'none';
+  document.getElementById('ac-results').style.display = '';
+  updateAutoCleanApplyBtn();
+}
+
 function updateAutoCleanApplyBtn() {
-  const selected = [...document.querySelectorAll('.ac-issue.selected')].length;
+  const n   = [...document.querySelectorAll('.ac-issue.selected')].length;
   const btn = document.getElementById('btn-ac-apply');
-  if (btn) btn.textContent = `✓ apply ${selected} selected fix${selected !== 1 ? 'es' : ''}`;
+  if (btn) btn.textContent = `✓ apply ${n} selected fix${n !== 1 ? 'es' : ''}`;
 }
 
 function toggleAllAutoClean(on) {
   document.querySelectorAll('.ac-issue[data-fixable="1"]').forEach(el => {
-    if (on) el.classList.add('selected');
-    else    el.classList.remove('selected');
+    if (on) el.classList.add('selected'); else el.classList.remove('selected');
   });
   updateAutoCleanApplyBtn();
 }
@@ -5423,17 +5500,14 @@ function toggleAllAutoClean(on) {
 async function applyAutoClean() {
   const selected = [...document.querySelectorAll('.ac-issue.selected[data-fixable="1"]')];
   if (!selected.length) { toast('No fixes selected', true); return; }
-
-  const actions = [...new Set(selected.map(el => el.dataset.action).filter(Boolean))];
-  const btn = document.getElementById('btn-ac-apply');
-  btn.disabled = true;
-  btn.textContent = '⟳ applying…';
-
-  const results = [];
-  const hint = document.getElementById('ac-apply-hint');
+  const actions  = [...new Set(selected.map(el => el.dataset.action).filter(Boolean))];
+  const btn      = document.getElementById('btn-ac-apply');
+  const hint     = document.getElementById('ac-apply-hint');
+  btn.disabled   = true;
+  const lines    = [];
 
   for (const action of actions) {
-    hint.textContent = `Applying: ${action.replace(/_/g,' ')}…`;
+    btn.textContent = `⟳ ${action.replace(/_/g,' ')}…`;
     try {
       let r;
       if      (action === 'reformat_phones')    r = await post('/api/reformat_phones', {});
@@ -5441,19 +5515,24 @@ async function applyAutoClean() {
       else if (action === 'auto_gender')         r = await post('/api/auto_gender', {});
       else if (action === 'auto_prefix')         r = await post('/api/auto_prefix', {});
       else if (action === 'normalise_countries') { openCountryNormaliser(); continue; }
-      if (r && r.ok) results.push(`✓ ${action.replace(/_/g,' ')}: ${r.changed ?? r.count ?? 'done'}`);
-    } catch(e) {
-      results.push(`✗ ${action}: error`);
-    }
+      const n = r?.changed ?? r?.count ?? 0;
+      lines.push(r?.ok
+        ? `✓ ${action.replace(/_/g,' ')}: ${n} contact${n!==1?'s':''} updated`
+        : `✗ ${action.replace(/_/g,' ')}: ${r?.error||'failed'}`);
+    } catch(e) { lines.push(`✗ ${action.replace(/_/g,' ')}: error`); }
   }
 
   const resEl = document.getElementById('ac-apply-result');
-  resEl.innerHTML = results.join('<br>');
+  resEl.innerHTML = lines.join('<br>') +
+    '<br><span style="color:var(--dim);font-size:9px">Results updated below — re-scan for remaining issues</span>';
   resEl.style.display = '';
-  hint.textContent = 'Done — re-scan to check for remaining issues';
+  hint.textContent = '';
   btn.disabled = false;
   btn.textContent = '✓ apply selected fixes';
-  await poll(); // refresh state
+  await poll();
+  // Silently re-run scan to refresh results
+  const d2 = await get('/api/auto_clean_scan');
+  if (d2?.ok) _renderAutoCleanResults(d2);
 }
 
 // ══ Gender progress bar (used by Clean + Insights) ═══════════════════════════
