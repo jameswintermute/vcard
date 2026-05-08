@@ -1,19 +1,21 @@
-import types
 from pathlib import Path
+from vcard_normalizer.config import ensure_workspace
 
-from vcard_normalizer.config import first_run_setup
+
+def test_ensure_workspace_creates_dirs(tmp_path: Path):
+    """ensure_workspace creates the required folder structure."""
+    paths, settings = ensure_workspace(tmp_path)
+
+    assert paths.in_dir.exists(),    "cards-in/ should exist"
+    assert paths.out_dir.exists(),   "cards-out/ should exist"
+    assert paths.local_dir.exists(), "local/ should exist"
+    assert paths.conf_file.exists(), "vcard.conf should be created"
+    assert not (tmp_path / "cards-wip").exists(), "cards-wip/ should NOT be created"
+    assert not (tmp_path / "cards-master").exists(), "cards-master/ created by master.py, not here"
 
 
-def test_first_run_creates_conf(tmp_path: Path):
-    conf = tmp_path / "local" / "vcard.conf"
-    settings = types.SimpleNamespace(first_run=True)
-
-    first_run_setup(settings, conf)
-
-    assert conf.exists()
-    txt = conf.read_text()
-    assert "first_run = false" in txt
-    assert "cards_raw_dir = cards-raw" in txt
-    assert "cards_clean_dir = cards-clean" in txt
-    # In-memory flag flipped
-    assert settings.first_run is False
+def test_settings_defaults(tmp_path: Path):
+    """Settings have sensible defaults."""
+    _, settings = ensure_workspace(tmp_path)
+    assert settings.owner_name == ""          # not hardcoded to "James"
+    assert len(settings.default_region) == 2  # auto-detected, should be a 2-char code

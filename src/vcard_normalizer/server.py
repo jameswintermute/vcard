@@ -1773,6 +1773,127 @@ def _api_normalise_countries(body: dict) -> dict:
     return {"ok": True, "countries": suggestions}
 
 
+
+def _api_auto_clean_scan(params: dict) -> dict:
+    """Scan all contacts for fixable issues and return grouped summary.
+
+    Returns issue groups:
+      - phones_unformatted  : phones not in E.164/GOV.UK format
+      - uids_nonstandard    : UIDs not prefixed with vcard-studio-
+      - gender_unset        : individual contacts with no gender
+      - prefix_unset        : individual contacts with gender but no prefix
+      - no_name_components  : individuals with FN but no given+family split
+      - no_contact_info     : contacts with no email, phone, or address
+      - uncategorised       : contacts with no categories assigned
+      - country_variants    : addresses with known non-standard country names
+    """
+    import re as _re
+    cards = _state.get("cards", [])
+    if not cards:
+        return {"ok": False, "error": "No contacts loaded"}
+
+    # Known non-standard country variants (subset of normaliser)
+    _COUNTRY_VARIANTS = {
+        "uk": "United Kingdom", "england": "United Kingdom",
+        "britain": "United Kingdom", "great britain": "United Kingdom",
+        "scotland": "United Kingdom", "wales": "United Kingdom",
+        "northern ireland": "United Kingdom", "u.k.": "United Kingdom",
+        "u.s.": "United States", "u.s.a.": "United States",
+        "usa": "United States", "america": "United States",
+        "the netherlands": "Netherlands", "holland": "Netherlands",
+    }
+
+    issues = {
+        "phones_unformatted":  {"count": 0, "indices": [], "label": "Phone numbers not in standard format",     "fixable": True,  "action": "reformat_phones"},
+        "uids_nonstandard":    {"count": 0, "indices": [], "label": "Non-standard UIDs (vendor-issued)",          "fixable": True,  "action": "reissue_uids"},
+        "gender_unset":        {"count": 0, "indices": [], "label": "Individuals with no gender set",             "fixable": True,  "action": "auto_gender"},
+        "prefix_unset":        {"count": 0, "indices": [], "label": "Individuals with gender but no prefix",      "fixable": True,  "action": "auto_prefix"},
+        "no_name_components":  {"count": 0, "indices": [], "label": "Individuals with no first/last name split",  "fixable": False, "action": None},
+        "no_contact_info":     {"count": 0, "indices": [], "label": "Contacts with no email, phone, or address",  "fixable": False, "action": None},
+        "uncategorised":       {"count": 0, "indices": [], "label": "Contacts with no category assigned",         "fixable": False, "action": None},
+        "country_variants":    {"count": 0, "indices": [], "label": "Non-standard country names",                 "fixable": True,  "action": "normalise_countries"},
+    }
+
+    # Simple heuristic: a well-formatted phone starts with + and has spaces/digits only
+    _phone_ok_re = _re.compile(r'^\+[\d\s\-.()]+$')
+
+    for idx, card in enumerate(cards):
+        kind = (card.kind or "individual").lower()
+        is_ind = kind in ("individual", "self", "")
+
+        # Phones unformatted
+        for tel in (card.tels or []):
+            if tel and not _phone_ok_re.match(tel.strip()):
+                issues["phones_unformatted"]["count"] += 1
+                if idx not in issues["phones_unformatted"]["indices"]:
+                    issues["phones_unformatted"]["indices"].append(idx)
+                break
+
+        # Non-standard UIDs
+        uid = card.uid or ""
+        if uid and not uid.startswith("vcard-studio-") and not _re.match(
+            r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', uid.lower()
+        ):
+            issues["uids_nonstandard"]["count"] += 1
+            issues["uids_nonstandard"]["indices"].append(idx)
+
+        # Gender / prefix (individuals only)
+        if is_ind:
+            gender = (card.gender or "").strip().upper()
+            prefix = (card.name.prefix if card.name else "").strip()
+            if not gender:
+                issues["gender_unset"]["count"] += 1
+                issues["gender_unset"]["indices"].append(idx)
+            elif gender in ("M", "F") and not prefix:
+                issues["prefix_unset"]["count"] += 1
+                issues["prefix_unset"]["indices"].append(idx)
+
+        # No name components (individuals)
+        if is_ind and (card.fn or "").strip():
+            given  = (card.name.given  if card.name else "").strip()
+            family = (card.name.family if card.name else "").strip()
+            if not given and not family:
+                issues["no_name_components"]["count"] += 1
+                issues["no_name_components"]["indices"].append(idx)
+
+        # No contact info at all
+        has_info = bool(card.emails) or bool(card.tels) or bool(card.addresses)
+        if not has_info and (card.fn or card.org):
+            issues["no_contact_info"]["count"] += 1
+            issues["no_contact_info"]["indices"].append(idx)
+
+        # Uncategorised
+        if not card.categories:
+            issues["uncategorised"]["count"] += 1
+            issues["uncategorised"]["indices"].append(idx)
+
+        # Non-standard country names
+        for addr in (card.addresses or []):
+            country = (addr.country or "").strip().lower()
+            if country and country in _COUNTRY_VARIANTS:
+                issues["country_variants"]["count"] += 1
+                if idx not in issues["country_variants"]["indices"]:
+                    issues["country_variants"]["indices"].append(idx)
+                break
+
+    total_issues = sum(g["count"] for g in issues.values())
+    fixable_count = sum(g["count"] for g in issues.values() if g["fixable"])
+
+    # Strip index lists from response (not needed by client, keep payload small)
+    summary = {k: {"count": v["count"], "label": v["label"],
+                   "fixable": v["fixable"], "action": v["action"]}
+               for k, v in issues.items()}
+
+    return {
+        "ok": True,
+        "total_contacts": len(cards),
+        "total_issues": total_issues,
+        "fixable_issues": fixable_count,
+        "groups": summary,
+    }
+
+
+
 def _api_reissue_uids(body: dict) -> dict:
     """Replace all vendor-issued UIDs with clean vcard-studio-<uuid> ones.
 
@@ -1926,6 +2047,8 @@ class VCardHandler(BaseHTTPRequestHandler):
             self._send_json(_api_export_individual(body))
         elif path == "/api/reissue_uids":
             self._send_json(_api_reissue_uids(body))
+        elif path == "/api/auto_clean_scan":
+            self._send_json(_api_auto_clean_scan(params))
         elif path == "/api/normalise_countries":
             self._send_json(_api_normalise_countries(body))
         elif path == "/api/export_csv":
