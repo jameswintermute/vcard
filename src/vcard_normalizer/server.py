@@ -1162,6 +1162,56 @@ def _api_strip_proprietary(body: dict) -> dict:
         return {"ok": False, "error": str(exc)}
 
 
+
+def _api_print_modules() -> dict:
+    """Return all discovered print modules and label profiles."""
+    from .printing import print_modules
+    result = print_modules()
+    if result.get("ok"):
+        modules = result.get("modules", [])
+        print(f"[print_modules] {len(modules)} module(s): {[m.get('printer_id') for m in modules]}", flush=True)
+    else:
+        print(f"[print_modules error] {result.get('error', 'unknown error')}", flush=True)
+    return result
+
+
+def _api_preview_labels(body: dict) -> dict:
+    from .printing import preview_labels
+    try:
+        return preview_labels(_state["cards"], body)
+    except Exception as exc:
+        import traceback
+        print(f"[preview_labels error] {traceback.format_exc()}", flush=True)
+        return {"ok": False, "error": str(exc)}
+
+
+def _api_print_labels(body: dict) -> dict:
+    from .printing import generate_labels
+    try:
+        return generate_labels(_state["cards"], _ROOT / "print", body)
+    except Exception as exc:
+        import traceback
+        print(f"[print_labels error] {traceback.format_exc()}", flush=True)
+        return {"ok": False, "error": str(exc)}
+
+
+def _api_label_options(body: dict) -> dict:
+    from .printing import label_options
+    try:
+        return label_options(_state["cards"], body)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def _api_print_cards(params: dict) -> dict:
+    from .printing import generate_address_book
+    try:
+        return generate_address_book(_state["cards"], _ROOT / "print", params, fmt_tel=_fmt_tel)
+    except Exception as exc:
+        import traceback
+        print(f"[print_cards error] {traceback.format_exc()}", flush=True)
+        return {"ok": False, "error": str(exc)}
+
 def _api_birthdays(body: dict) -> dict:
     """Return all contacts with a birthday or anniversary, sorted month-first.
     Couple anniversaries on the same date are merged into one entry.
@@ -2106,6 +2156,8 @@ class VCardHandler(BaseHTTPRequestHandler):
             self._send_json(_api_apple_name_unset(params))
         elif path == "/api/print_cards":
             self._send_json(_api_print_cards(params))
+        elif path == "/api/print_modules":
+            self._send_json(_api_print_modules())
         elif path == "/api/search_orgs":
             self._send_json(_api_search_orgs(params))
         elif path == "/api/birthdays":
@@ -2116,6 +2168,13 @@ class VCardHandler(BaseHTTPRequestHandler):
             self._send_json(_api_quit())
         elif path.startswith("/static/"):
             self._send_file(_STATIC / path[8:])
+        elif path.startswith("/print/"):
+            # Generated print files are flat HTML files. Refuse path traversal.
+            filename = path[7:]
+            if not filename or filename != Path(filename).name or "/" in filename or "\\" in filename:
+                self._send_json({"error": "Invalid print filename"}, 400)
+            else:
+                self._send_file(_ROOT / "print" / filename)
         else:
             self.send_response(404)
             self.end_headers()
@@ -2166,6 +2225,12 @@ class VCardHandler(BaseHTTPRequestHandler):
             self._send_json(_api_strip_proprietary(body))
         elif path == "/api/birthdays":
             self._send_json(_api_birthdays(body))
+        elif path == "/api/label_options":
+            self._send_json(_api_label_options(body))
+        elif path == "/api/print_labels":
+            self._send_json(_api_print_labels(body))
+        elif path == "/api/preview_labels":
+            self._send_json(_api_preview_labels(body))
         elif path == "/api/merge_cards":
             self._send_json(_api_merge_cards(body))
         elif path == "/api/reformat_phones":
