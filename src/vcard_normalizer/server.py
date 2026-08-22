@@ -113,8 +113,20 @@ def _card_to_dict(card) -> dict:
         "tels": card.tels,
         "tels_fmt": [_fmt_tel(t) for t in card.tels],  # formatted for display only
         # TYPE-labelled parallel lists: [{value, type}] — type is HOME|WORK|CELL|""
-        "typed_emails": [{"value": tv.value, "type": tv.type} for tv in (getattr(card, "typed_emails", None) or [])],
-        "typed_tels":   [{"value": tv.value, "type": tv.type} for tv in (getattr(card, "typed_tels",   None) or [])],
+        "typed_emails": [
+            {"value": tv.value, "type": tv.type, "label": getattr(tv, "label", ""), "pref": bool(getattr(tv, "pref", False))}
+            for tv in (getattr(card, "typed_emails", None) or [])
+        ],
+        "typed_tels": [
+            {"value": tv.value, "type": tv.type, "label": getattr(tv, "label", ""), "pref": bool(getattr(tv, "pref", False))}
+            for tv in (getattr(card, "typed_tels", None) or [])
+        ],
+        "urls": [
+            {"value": tv.value, "type": tv.type, "label": getattr(tv, "label", ""), "pref": bool(getattr(tv, "pref", False))}
+            for tv in (getattr(card, "urls", None) or [])
+        ],
+        "nicknames": list(getattr(card, "nicknames", None) or []),
+        "external_uids": list(getattr(card, "external_uids", None) or []),
         "categories": card.categories,
         "kind": card.kind or ("org" if (card.org and not card.fn) else "individual"),
         "gender": card.gender or "",
@@ -132,11 +144,17 @@ def _card_to_dict(card) -> dict:
         "name_suffix":     name.suffix,
         "addresses": [
             {
+                "po_box":      a.po_box or "",
+                "extended":    a.extended or "",
                 "street":      a.street or "",
                 "locality":    a.locality or "",
                 "region":      a.region or "",
                 "postal_code": a.postal_code or "",
                 "country":     a.country or "",
+                "type":        getattr(a, "type", ""),
+                "label":       getattr(a, "label", ""),
+                "pref":        bool(getattr(a, "pref", False)),
+                "apple_country_code": getattr(a, "apple_country_code", ""),
             }
             for a in card.addresses
         ],
@@ -893,34 +911,52 @@ def _api_full_update_card(body: dict) -> dict:
         suffix=body.get("name_suffix","").strip(),
     )
 
-    # Emails — support typed format [{value, type}] or plain list/string
+    # Emails — support typed format [{value, type, label, pref}] and retain
+    # imported Apple/custom metadata when the UI does not expose those fields.
     from .model import TypedValue
-    raw_emails_typed = body.get("typed_emails", [])  # [{value, type}]
+    old_email_meta = {tv.value.casefold(): tv for tv in (card.typed_emails or [])}
+    raw_emails_typed = body.get("typed_emails", [])
     if raw_emails_typed:
         typed_emails = []
         for item in raw_emails_typed:
             if isinstance(item, dict):
                 val = item.get("value", "").strip().lower()
                 if val:
-                    typed_emails.append(TypedValue(value=val, type=item.get("type","").upper()))
+                    old = old_email_meta.get(val.casefold())
+                    typed_emails.append(TypedValue(
+                        value=val,
+                        type=item.get("type", "").upper(),
+                        label=item.get("label", "") or (getattr(old, "label", "") if old else ""),
+                        pref=bool(item.get("pref", getattr(old, "pref", False) if old else False)),
+                    ))
         card.emails = [tv.value for tv in typed_emails]
         card.typed_emails = typed_emails
     else:
-        raw_emails = re.split(r"[,\n]+", body.get("emails",""))
+        raw_emails = re.split(r"[,\n]+", body.get("emails", ""))
         card.emails = [e.strip().lower() for e in raw_emails if e.strip()]
-        card.typed_emails = [TypedValue(value=e, type="") for e in card.emails]
+        card.typed_emails = [
+            TypedValue(
+                value=e,
+                type=getattr(old_email_meta.get(e.casefold()), "type", ""),
+                label=getattr(old_email_meta.get(e.casefold()), "label", ""),
+                pref=bool(getattr(old_email_meta.get(e.casefold()), "pref", False)),
+            )
+            for e in card.emails
+        ]
 
-    # Phones — support typed format [{value, type}] or plain list/string
-    raw_tels_typed = body.get("typed_tels", [])  # [{value, type}]
-    normalised = []  # always defined; populated by whichever branch runs
+    # Phones — same preservation rule as emails.
+    old_tel_meta = {tv.value: tv for tv in (card.typed_tels or [])}
+    raw_tels_typed = body.get("typed_tels", [])
+    normalised = []
     if raw_tels_typed:
         typed_tels = []
         for item in raw_tels_typed:
             if isinstance(item, dict):
-                raw = item.get("value", "").strip()
-                if not raw:
+                original = item.get("value", "").strip()
+                if not original:
                     continue
-                ttype = item.get("type","").upper()
+                raw = original
+                ttype = item.get("type", "").upper()
                 try:
                     import phonenumbers
                     p2 = _get_pipeline()
@@ -930,12 +966,18 @@ def _api_full_update_card(body: dict) -> dict:
                         raw = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.INTERNATIONAL)
                 except Exception:
                     pass
-                typed_tels.append(TypedValue(value=raw, type=ttype))
+                old = old_tel_meta.get(original) or old_tel_meta.get(raw)
+                typed_tels.append(TypedValue(
+                    value=raw,
+                    type=ttype,
+                    label=item.get("label", "") or (getattr(old, "label", "") if old else ""),
+                    pref=bool(item.get("pref", getattr(old, "pref", False) if old else False)),
+                ))
         card.tels = [tv.value for tv in typed_tels]
         card.typed_tels = typed_tels
-        normalised = card.tels  # return the formatted values
+        normalised = card.tels
     else:
-        raw_tels = re.split(r"[,\n]+", body.get("tels",""))
+        raw_tels = re.split(r"[,\n]+", body.get("tels", ""))
         normalised = []
         for raw in raw_tels:
             raw = raw.strip()
@@ -954,19 +996,36 @@ def _api_full_update_card(body: dict) -> dict:
             except Exception:
                 normalised.append(raw)
         card.tels = normalised
-        card.typed_tels = [TypedValue(value=t, type="") for t in normalised]
+        card.typed_tels = [
+            TypedValue(
+                value=t,
+                type=getattr(old_tel_meta.get(t), "type", ""),
+                label=getattr(old_tel_meta.get(t), "label", ""),
+                pref=bool(getattr(old_tel_meta.get(t), "pref", False)),
+            )
+            for t in normalised
+        ]
     card.categories = [c.strip() for c in body.get("categories","").split(",") if c.strip()]
 
-    # Address
-    if any(body.get(k,"").strip() for k in ("street","city","region","postal","country")):
+    # Address — the edit modal currently edits the first address only. Preserve
+    # all additional addresses and provider label metadata instead of truncating
+    # the imported address list on every save.
+    if any(body.get(k, "").strip() for k in ("street", "city", "region", "postal", "country")):
+        existing_first = card.addresses[0] if card.addresses else None
         adr = Address(
-            street=body.get("street","").strip() or None,
-            locality=body.get("city","").strip() or None,
-            region=body.get("region","").strip() or None,
-            postal_code=body.get("postal","").strip() or None,
-            country=body.get("country","").strip() or None,
+            po_box=getattr(existing_first, "po_box", None),
+            extended=getattr(existing_first, "extended", None),
+            street=body.get("street", "").strip() or None,
+            locality=body.get("city", "").strip() or None,
+            region=body.get("region", "").strip() or None,
+            postal_code=body.get("postal", "").strip() or None,
+            country=body.get("country", "").strip() or None,
+            type=getattr(existing_first, "type", ""),
+            label=getattr(existing_first, "label", ""),
+            pref=bool(getattr(existing_first, "pref", False)),
+            apple_country_code=getattr(existing_first, "apple_country_code", ""),
         )
-        card.addresses = [adr]
+        card.addresses = [adr] + list(card.addresses[1:])
 
     # Related people — server state is authoritative; only link_related() mutates this.
     # The edit modal sends _editRelated as a convenience display, but we never let it
@@ -1963,7 +2022,6 @@ class VCardHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
         self.send_header("Pragma", "no-cache")
         self.end_headers()
@@ -1985,14 +2043,47 @@ class VCardHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
+    def _local_request_allowed(self) -> bool:
+        """Reject DNS-rebinding and cross-origin browser requests to loopback."""
+        host_header = (self.headers.get("Host") or "").strip().lower()
+        if host_header.startswith("[") and "]" in host_header:
+            host = host_header[1:host_header.index("]")]
+        elif host_header.count(":") == 1:
+            host = host_header.rsplit(":", 1)[0]
+        else:
+            host = host_header
+        if host and host not in {"localhost", "127.0.0.1", "::1"}:
+            return False
+        origin = (self.headers.get("Origin") or "").rstrip("/")
+        if origin:
+            allowed = {
+                f"http://localhost:{PORT}",
+                f"http://127.0.0.1:{PORT}",
+                f"http://[::1]:{PORT}",
+            }
+            if origin not in allowed:
+                return False
+        return True
+
+    def _reject_nonlocal(self) -> bool:
+        if self._local_request_allowed():
+            return False
+        self.send_response(403)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(b"Local same-origin requests only")
+        return True
+
     def do_OPTIONS(self):
-        self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        # The application UI is same-origin and never needs CORS. Cross-origin
+        # preflight is intentionally denied.
+        self.send_response(405)
+        self.send_header("Allow", "GET, POST")
         self.end_headers()
 
     def do_GET(self):
+        if self._reject_nonlocal():
+            return
         parsed = urlparse(self.path)
         path = parsed.path
         params = parse_qs(parsed.query)
@@ -2030,6 +2121,8 @@ class VCardHandler(BaseHTTPRequestHandler):
             self.end_headers()
 
     def do_POST(self):
+        if self._reject_nonlocal():
+            return
         length = int(self.headers.get("Content-Length", 0))
         body_raw = self.rfile.read(length)
         try:

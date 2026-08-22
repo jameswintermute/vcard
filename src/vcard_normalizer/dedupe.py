@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .interactive import pick_merge
 from .model import Card
+from .merge import merge_cards_preserving_base
 from ._similarity import similarity, _tel_key
 
 
@@ -54,53 +55,27 @@ def _merge_categories(cluster: list[Card]) -> tuple[list[str], bool]:
 
 
 def merge_cluster_auto(cluster: list[Card]) -> Card:
-    """Non-interactive merge: take the richest card, union all fields.
+    """Non-interactive lossless merge, preserving the first card as authority.
 
-    Categories are unioned from all sources. If only one source had
-    categories those are taken as-is. Conflicts (different non-empty sets)
-    are noted in the change log but the union is still used — the
-    post-processing review prompt can surface these to the user.
+    ``find_duplicate_clusters`` preserves input order, so during additive import
+    an existing master card appears before newly imported cards.  All useful
+    multi-value data is unioned and populated scalar values on the base are not
+    overwritten.
     """
-    best = max(cluster, key=lambda c: (len(c.emails) + len(c.tels), len(c.fn or "")))
-    best.emails = sorted({e for c in cluster for e in c.emails})
-    best.tels   = sorted({t for c in cluster for t in c.tels})
+    if not cluster:
+        raise ValueError("merge_cluster_auto requires at least one card")
 
-    # Org / title / bday — take from whichever card has it if best doesn't
-    if not best.org:
-        for c in cluster:
-            if c.org:
-                best.org = c.org
-                break
-    if not best.title:
-        for c in cluster:
-            if c.title:
-                best.title = c.title
-                break
+    base = cluster[0]
+    aliases = [c.fn for c in cluster[1:] if c.fn and c.fn != base.fn]
+    for incoming in cluster[1:]:
+        merge_cards_preserving_base(base, incoming)
 
-    # Categories: union across sources, log any conflicts
-    merged_cats, conflict = _merge_categories(cluster)
-    if merged_cats:
-        before = set(best.categories)
-        best.categories = sorted(set(best.categories) | set(merged_cats))
-        gained = set(best.categories) - before
-        if gained:
-            if conflict:
-                best.log_change(
-                    f"Categories merged (conflict resolved by union): {', '.join(sorted(best.categories))}"
-                )
-            else:
-                best.log_change(
-                    f"Categories carried over from source: {', '.join(sorted(gained))}"
-                )
-
-    merged_names = [c.fn for c in cluster if c.fn and c.fn != best.fn]
     if len(cluster) > 1:
-        best.log_change(
-            f"Auto-merged {len(cluster)} duplicate(s)"
-            + (f" (also seen as: {', '.join(merged_names)})" if merged_names else "")
+        base.log_change(
+            f"Auto-merged {len(cluster)} duplicate(s) losslessly"
+            + (f" (also seen as: {', '.join(aliases)})" if aliases else "")
         )
-
-    return best
+    return base
 
 
 def merge_cluster_interactive(cluster: list[Card], idx: int = 0, total: int = 0) -> Card:

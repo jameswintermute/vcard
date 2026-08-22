@@ -33,6 +33,8 @@ from .exporter import export_vcards, card_to_vcf_text
 from .io import read_vcards_from_files
 from .model import Card
 from .normalize import normalize_cards
+from .merge import merge_cards_preserving_base, card_richness
+from ._similarity import _tel_key
 
 MASTER_DIR      = "cards-master"
 MASTER_VCF      = "master.vcf"
@@ -190,68 +192,71 @@ def merge_import_into_master(
     new_cards: list[Card],
     existing_cards: list[Card],
 ) -> tuple[list[Card], int, int]:
-    """Merge newly imported cards into the existing master.
+    """Merge imported contacts additively into the permanent master.
 
-    Returns (merged_list, added_count, updated_count).
-
-    Strategy:
-    - Match by UID first (exact)
-    - Match by normalised FN + primary email as fallback
-    - New cards with no match are appended
-    - Existing cards with a match are updated only if the new card is richer
-      (more fields populated) — never silently overwrite user edits
+    Matching order is canonical/provider UID, then a *unique* exact email, then
+    a *unique* normalised phone number.  A match never replaces the master
+    object wholesale: only missing scalar values are filled and multi-valued
+    fields are unioned.  Populated scalar conflicts retain the master value.
     """
-    existing_by_uid:   dict[str, int] = {}
-    existing_by_email: dict[str, int] = {}
-
-    for i, c in enumerate(existing_cards):
-        if c.uid:
-            existing_by_uid[c.uid] = i
-        for e in (c.emails or []):
-            existing_by_email[e.lower()] = i
-
     result = list(existing_cards)
     added = updated = 0
 
-    for nc in new_cards:
-        idx = None
-        # 1. Match by UID
-        if nc.uid and nc.uid in existing_by_uid:
-            idx = existing_by_uid[nc.uid]
-        # 2. Match by primary email
-        elif nc.emails:
-            idx = existing_by_email.get(nc.emails[0].lower())
+    def rebuild_indexes():
+        uid_map: dict[str, set[int]] = {}
+        email_map: dict[str, set[int]] = {}
+        tel_map: dict[str, set[int]] = {}
+        for i, card in enumerate(result):
+            for uid in [card.uid, *(card.external_uids or [])]:
+                if uid:
+                    uid_map.setdefault(uid, set()).add(i)
+            for email in card.emails or []:
+                if email:
+                    email_map.setdefault(email.strip().casefold(), set()).add(i)
+            for tel in card.tels or []:
+                key = _tel_key(tel)
+                if key:
+                    tel_map.setdefault(key, set()).add(i)
+        return uid_map, email_map, tel_map
+
+    def unique_match(mapping: dict[str, set[int]], keys: list[str]) -> int | None:
+        matches: set[int] = set()
+        for key in keys:
+            matches |= mapping.get(key, set())
+        return next(iter(matches)) if len(matches) == 1 else None
+
+    uid_map, email_map, tel_map = rebuild_indexes()
+
+    for incoming in new_cards:
+        uid_keys = [u for u in [incoming.uid, *(incoming.external_uids or [])] if u]
+        idx = unique_match(uid_map, uid_keys) if uid_keys else None
+
+        if idx is None:
+            email_keys = [e.strip().casefold() for e in incoming.emails or [] if e]
+            idx = unique_match(email_map, email_keys) if email_keys else None
+
+        if idx is None:
+            tel_keys = [_tel_key(t) for t in incoming.tels or [] if _tel_key(t)]
+            idx = unique_match(tel_map, tel_keys) if tel_keys else None
 
         if idx is not None:
-            # Only update if new card has more information
-            ec = result[idx]
-            if _card_richness(nc) > _card_richness(ec):
-                result[idx] = nc
+            _, changed = merge_cards_preserving_base(result[idx], incoming)
+            if changed:
                 updated += 1
         else:
-            result.append(nc)
-            if nc.uid:
-                existing_by_uid[nc.uid] = len(result) - 1
-            for e in (nc.emails or []):
-                existing_by_email[e.lower()] = len(result) - 1
+            result.append(incoming)
             added += 1
+
+        # Rebuild after every merge because new aliases/emails/phones can improve
+        # matching of later contacts in the same import batch.
+        uid_map, email_map, tel_map = rebuild_indexes()
 
     return result, added, updated
 
 
 def _card_richness(c: Card) -> int:
-    """Simple score — more populated fields = richer card."""
-    score = 0
-    if c.fn:           score += 2
-    if c.emails:       score += len(c.emails)
-    if c.tels:         score += len(c.tels)
-    if c.addresses:    score += 2
-    if c.org:          score += 1
-    if c.bday:         score += 1
-    if c.categories:   score += len(c.categories)
-    if c.related:      score += len(c.related)
-    if c.note:         score += 1
-    return score
+    """Backward-compatible alias for the broader diagnostic richness score."""
+    return card_richness(c)
 
 
 # ── Info ───────────────────────────────────────────────────────────────────────
