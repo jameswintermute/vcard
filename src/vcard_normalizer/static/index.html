@@ -341,7 +341,7 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
   </div>
   <hr class="divider" style="margin-top:18px">
   <div class="sec-lbl">WHAT THIS STEP DOES</div>
-  <div style="color:var(--dim);font-size:10px;line-height:2.2">· Parses vCard 2.1, 3.0, 4.0 from any source<br>· Strips proprietary Apple/Google fields and embedded photos<br>· Normalises phone numbers to E.164 international format<br>· Detects duplicates via email, phone, and fuzzy name matching<br>· Auto-merges duplicate clusters, choosing the richest card as base</div>
+  <div style="color:var(--dim);font-size:10px;line-height:2.2">· Parses vCard 2.1, 3.0, 4.0 from any source<br>· Strips proprietary Apple/Google fields and embedded photos<br>· Normalises phone numbers to E.164 international format<br>· Detects duplicates via email, phone, and fuzzy name matching<br>· Auto-merges duplicate clusters losslessly — lists unioned, existing master values kept</div>
 </div>
 
 <!-- §2 CLEAN -->
@@ -956,7 +956,7 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
         <span class="exp-opt-title">Combined file · Apple / iOS compatibility mode</span>
         <span class="exp-opt-badge" style="background:rgba(0,204,196,.12);color:var(--cyan)">iCloud · iPhone</span>
       </div>
-      <div class="exp-opt-desc">All contacts in a single <code>.vcf</code> file using vCard 3.0 — the format iCloud and iOS actually accept reliably. Fields that are 4.0-only (linked relationships, gender, kind, anniversary) are not lost — they are preserved in each contact's Notes field as a compact <code>---vCard Studio---</code> block, ready for re-import later. Phone numbers are written as plain <code>+44...</code> values rather than URI format, which resolves silent import failures on iPhone.</div>
+      <div class="exp-opt-desc">All contacts in a single <code>.vcf</code> file using vCard 3.0 — the format iCloud and iOS actually accept reliably. Fields that are 4.0-only (linked relationships, gender, kind, anniversary) are not lost — they are preserved in each contact's Notes field as a compact <code>[vCS: …]</code> block, ready for re-import later. Phone numbers are written as plain <code>+44...</code> values rather than URI format, which resolves silent import failures on iPhone.</div>
       <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
         <button class="btn btn-b" style="border-color:var(--cyan);color:var(--cyan)" onclick="doExport(true)" id="btn-exp-apple">⤒ export for Apple / iOS</button>
         <span id="exp-apple-hint" style="font-size:10px;color:var(--dim);align-self:center"></span>
@@ -1390,6 +1390,22 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
 </div>
 
 <!-- BULK TAG MODAL -->
+<!-- MERGE REVIEW — zero-loss reviewed merge -->
+<div class="modal-backdrop" id="merge-modal" style="display:none" onclick="if(event.target===this)closeMergeModal()">
+  <div class="modal" style="width:760px;min-height:unset">
+    <div class="modal-header">
+      <div class="modal-title">⊕ Review merge</div>
+      <button class="modal-close" onclick="closeMergeModal()">✕</button>
+    </div>
+    <div id="merge-body" style="padding:14px 20px;overflow-y:auto;flex:1;font-size:11px"></div>
+    <div style="padding:10px 20px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center">
+      <span id="merge-summary" style="font-size:10px;color:var(--dim);flex:1"></span>
+      <button class="btn btn-d" onclick="closeMergeModal()">cancel</button>
+      <button class="btn btn-g" id="merge-commit-btn" onclick="commitMerge()">⊕ merge</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="bulk-tag-modal" style="display:none" onclick="if(event.target===this)closeBulkTagModal()">
   <div class="modal" style="max-width:420px;min-height:unset">
     <div class="modal-header">
@@ -2343,36 +2359,196 @@ function updateRevMergeBar() {
     bar.style.display = 'flex';
     count.textContent = `${n} selected`;
     if (mergeBtn) mergeBtn.style.display = n >= 2 ? '' : 'none';
-    if (hint) hint.textContent = n >= 2 ? 'merge: fields unioned — richest card wins' : '';
+    if (hint) hint.textContent = n >= 2 ? 'merge: review every field before anything changes' : '';
   } else {
     bar.style.display = 'none';
   }
 }
 
+// ══ Reviewed zero-loss merge ═════════════════════════════════════════════════
+// Pass 1 union + Pass 2 semantic dedupe happen server-side (/api/merge_preview,
+// which writes nothing). Pass 3 is this modal. Pass 4 is /api/merge_commit,
+// which archives the complete original cards to cards-master/merged/ first.
+let _mergeUids = [];
+let _mergePlan = null;
+
+const _MERGE_LIST_LABELS = {
+  emails: 'emails', tels: 'phones', urls: 'websites', addresses: 'addresses',
+  nicknames: 'nicknames', categories: 'categories', related: 'linked people', member: 'members',
+};
+const _MERGE_TYPES = {
+  emails: ['', 'HOME', 'WORK'],
+  tels:   ['', 'CELL', 'HOME', 'WORK', 'VOICE', 'FAX', 'PAGER'],
+  urls:   ['', 'HOME', 'WORK'],
+  addresses: ['', 'HOME', 'WORK'],
+};
+
 async function doMergeSelected() {
   if (_revSelected.size < 2) { toast('Select at least 2 cards to merge', true); return; }
-  const piList  = [..._revSelected].sort((a,b)=>a-b);
-  const indices = piList.map(pi => _currentPageCards[pi]?._idx).filter(i => i !== undefined);
-  if (indices.length < 2) { toast('Could not resolve card indices', true); return; }
+  const piList = [..._revSelected].sort((a,b)=>a-b);
+  _mergeUids = piList.map(pi => _currentPageCards[pi]?.uid).filter(Boolean);
+  if (_mergeUids.length !== piList.length) { toast('Some selected cards have no UID — run Clean → reissue UIDs first', true); return; }
+  await loadMergePreview(null);
+}
 
-  const names = piList.map(pi => _currentPageCards[pi]?.fn || _currentPageCards[pi]?.org || '?').join(' + ');
-  if (!confirm(`Merge into one card?\n\n${names}\n\nFields will be unioned — richest card wins.`)) return;
+async function loadMergePreview(primaryUid) {
+  const d = await post('/api/merge_preview', { uids: _mergeUids, primary_uid: primaryUid });
+  if (!d.ok) { toast(d.error || 'Merge preview failed', true); return; }
+  _mergePlan = d.plan;
+  renderMergeModal();
+  document.getElementById('merge-modal').style.display = 'flex';
+}
 
+function closeMergeModal() {
+  document.getElementById('merge-modal').style.display = 'none';
+  _mergePlan = null;
+}
+
+function _mergeSrcTag(sources) {
+  const plan = _mergePlan;
+  const n = sources.length, total = plan.cards.length;
+  if (n === total) return `<span style="color:var(--dim)">all</span>`;
+  const names = sources.map(u => (plan.cards.find(c => c.uid === u) || {}).fn || '?');
+  const letters = sources.map(u => String.fromCharCode(65 + plan.cards.findIndex(c => c.uid === u)));
+  return `<span style="color:var(--dim)" title="${esc(names.join(', '))}">${letters.join('')}</span>`;
+}
+
+function renderMergeModal() {
+  const plan = _mergePlan;
+  const body = document.getElementById('merge-body');
+  const sec = t => `<div class="sec-lbl" style="margin:14px 0 6px">${t}</div>`;
+  let h = '';
+
+  // Primary card
+  h += `<div style="color:var(--dim);font-size:10px;margin-bottom:8px">
+    Nothing is discarded: the complete original cards are archived to
+    <code>cards-master/merged/</code> before the merge is applied.</div>`;
+  h += sec('PRIMARY CARD <span style="color:var(--dim);font-weight:400">— keeps its UID; others become aliases and links are repointed</span>');
+  plan.cards.forEach((c, i) => {
+    const L = String.fromCharCode(65 + i);
+    h += `<label style="display:flex;gap:8px;align-items:center;padding:3px 0;cursor:pointer">
+      <input type="radio" name="merge-primary" value="${esc(c.uid)}" ${c.uid === plan.primary ? 'checked' : ''}
+             onchange="loadMergePreview(this.value)" style="accent-color:var(--green)">
+      <span style="color:var(--cyan);width:14px">${L}</span>
+      <span style="color:var(--text)">${esc(c.fn)}</span>
+      <span style="color:var(--dim)">richness ${c.richness} · ${esc((c.sources||[]).join(', '))}</span>
+    </label>`;
+  });
+
+  // Scalars
+  const conflicts = plan.scalars.filter(s => s.conflict);
+  const agreed    = plan.scalars.filter(s => !s.conflict);
+  if (conflicts.length) {
+    h += sec(`CONFLICTS <span style="color:var(--amber);font-weight:400">— ${conflicts.length} field${conflicts.length!==1?'s':''} differ; pick one (the others stay in the archive)</span>`);
+    conflicts.forEach(s => {
+      h += `<div style="display:flex;gap:10px;padding:4px 0;border-bottom:1px solid var(--border)">
+        <span style="width:110px;color:var(--dim)">${esc(s.label)}</span><div style="flex:1">`;
+      s.candidates.forEach((c, j) => {
+        h += `<label style="display:flex;gap:6px;align-items:center;cursor:pointer">
+          <input type="radio" name="ms-${esc(s.field)}" data-field="${esc(s.field)}" value="${esc(c.value)}"
+                 ${c.value === s.default ? 'checked' : ''} style="accent-color:var(--amber)">
+          <span style="color:var(--text)">${esc(c.value)}</span> ${_mergeSrcTag(c.sources)}</label>`;
+      });
+      h += `<label style="display:flex;gap:6px;align-items:center;cursor:pointer">
+          <input type="radio" name="ms-${esc(s.field)}" data-field="${esc(s.field)}" value="" style="accent-color:var(--amber)">
+          <span style="color:var(--dim)">(leave empty)</span></label></div></div>`;
+    });
+  }
+  if (agreed.length) {
+    h += sec('AGREED');
+    h += agreed.map(s => `<div style="display:flex;gap:10px;padding:2px 0">
+      <span style="width:110px;color:var(--dim)">${esc(s.label)}</span>
+      <span style="color:var(--text)">${esc(s.default)}</span> ${_mergeSrcTag(s.candidates[0].sources)}</div>`).join('');
+  }
+
+  // Lists
+  for (const [field, label] of Object.entries(_MERGE_LIST_LABELS)) {
+    const items = plan.lists[field] || [];
+    if (!items.length) continue;
+    h += sec(`${label.toUpperCase()} <span style="color:var(--dim);font-weight:400">— ${items.length} after dedupe · untick to leave out</span>`);
+    items.forEach(it => {
+      const typeOpts = _MERGE_TYPES[field];
+      let typeSel = '';
+      if (typeOpts) {
+        const opts = [...new Set([...(it.types||[]), ...typeOpts])];
+        const def = (it.types||[])[0] || '';
+        typeSel = `<select class="flt-sel" data-list="${field}" data-key="${esc(it.key)}" style="font-size:10px;padding:1px 4px"
+                    title="${it.types.length > 1 ? 'Sources disagree: ' + esc(it.types.join(' / ')) : ''}">
+          ${opts.map(o => `<option value="${o}" ${o===def?'selected':''}>${o || '—'}</option>`).join('')}</select>`;
+        if (it.types.length > 1) typeSel += ` <span style="color:var(--amber)" title="Sources disagree">⚠ ${esc(it.types.join('/'))}</span>`;
+      }
+      const dup = it.merged_from > 1 ? ` <span style="color:var(--dim)">×${it.merged_from} merged</span>` : '';
+      h += `<label style="display:flex;gap:8px;align-items:center;padding:2px 0;cursor:pointer">
+        <input type="checkbox" checked data-inc="${field}" value="${esc(it.key)}" style="accent-color:var(--green)">
+        <span style="color:var(--text);flex:1">${esc(it.display)}${dup}</span> ${typeSel} ${_mergeSrcTag(it.sources)}</label>`;
+    });
+  }
+
+  // Notes
+  if (plan.notes.length) {
+    h += sec(`NOTES <span style="color:var(--dim);font-weight:400">— ${plan.notes.length > 1 ? 'all notes joined; edit freely' : 'kept'}</span>`);
+    h += `<textarea id="merge-note" class="form-in" style="width:100%;min-height:90px;font-size:11px">${esc(plan.default_note)}</textarea>`;
+  }
+
+  body.innerHTML = h;
+  document.getElementById('merge-summary').textContent =
+    `${plan.cards.length} cards → 1 · ${conflicts.length} conflict${conflicts.length!==1?'s':''} to confirm`;
+}
+
+async function commitMerge() {
+  const plan = _mergePlan;
+  if (!plan) return;
+  const body = document.getElementById('merge-body');
+  const choices = { scalars: {}, include: {}, types: {}, note: null };
+  body.querySelectorAll('input[type=radio][data-field]:checked').forEach(r => { choices.scalars[r.dataset.field] = r.value; });
+  for (const field of Object.keys(_MERGE_LIST_LABELS)) {
+    const boxes = body.querySelectorAll(`input[data-inc="${field}"]`);
+    if (boxes.length) choices.include[field] = [...boxes].filter(b => b.checked).map(b => b.value);
+  }
+  body.querySelectorAll('select[data-list]').forEach(sel => {
+    (choices.types[sel.dataset.list] ||= {})[sel.dataset.key] = sel.value;
+  });
+  const note = document.getElementById('merge-note');
+  if (note) choices.note = note.value;
+
+  const btn = document.getElementById('merge-commit-btn');
+  btn.disabled = true;
   try {
-    const d = await post('/api/merge_cards', { indices });
-    if (d.ok) {
-      toast(`⊕ Merged ${d.merged} cards → "${d.fn}"`);
-      flashSaved();
-      _lastKnownCardCount = -1;  // force table rebuild on next poll
-      clearRevPin();             // _idx values are now stale after merge
-      clearRevSelection();
-      loadRevCards(revPage);
-      poll();
-    } else {
-      toast(d.error || 'Merge failed', true);
-    }
-  } catch(e) {
+    const d = await post('/api/merge_commit', { uids: _mergeUids, primary_uid: plan.primary, choices });
+    if (!d.ok) { toast(d.error || 'Merge failed', true); return; }
+    toast(`⊕ Merged ${d.merged} cards → "${d.fn}"` + (d.relinked ? ` · ${d.relinked} link(s) repointed` : ''));
+    closeMergeModal();
+    flashSaved();
+    _lastKnownCardCount = -1;
+    clearRevPin();
+    clearRevSelection();
+    loadRevCards(revPage);
+    poll();
+  } catch (e) {
     toast('Merge failed', true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function get(url) { return (await fetch(url)).json(); }
+
+async function doStripProprietary(resetWaived) {
+  const msg = resetWaived
+    ? 'Strip all vendor X- fields and PRODID from every card, AND reset every "not required" marker?'
+    : 'Strip all vendor X- fields and PRODID from every card?';
+  if (!confirm(msg + '\n\nvCard Studio\'s own X-VCARD-STUDIO-* fields are kept.')) return;
+  const res = document.getElementById('strip-proprietary-result');
+  try {
+    const d = await post('/api/strip_proprietary', { reset_waived: !!resetWaived });
+    if (!d.ok) { toast(d.error || 'Strip failed', true); return; }
+    res.textContent = `✓ ${d.stripped_fields} field(s) removed from ${d.stripped_cards} card(s)`
+                    + (d.waived_reset ? ' · not-required markers reset' : '');
+    res.style.display = '';
+    flashSaved();
+    poll();
+  } catch (e) {
+    toast('Strip failed', true);
   }
 }
 

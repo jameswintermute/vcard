@@ -1410,50 +1410,157 @@ def _api_link_related(body: dict) -> dict:
         return {"ok": False, "error": str(exc)}
 
 
-def _api_merge_cards(body: dict) -> dict:
-    """Manually merge 2+ cards by index into a single card.
+def _merge_region() -> str:
+    try:
+        _, settings = _get_pipeline()["ensure_workspace"](_ROOT)
+        return settings.default_region or "GB"
+    except Exception:
+        return "GB"
 
-    body: { indices: [i, j, ...], keep_idx: i (optional — which card is the base) }
-    Uses merge_cluster_auto from dedupe: richest card wins, fields unioned.
-    Removes all but the merged card from the list.
+
+def _merge_cards_by_uid(uids: list) -> tuple[list, str | None]:
+    cards = _state["cards"]
+    by_uid = {c.uid: c for c in cards if c.uid}
+    uids = [str(u) for u in (uids or []) if u]
+    if len(uids) < 2:
+        return [], "Select at least 2 cards to merge"
+    if len(set(uids)) != len(uids):
+        return [], "Duplicate card in selection"
+    missing = [u for u in uids if u not in by_uid]
+    if missing:
+        return [], "Card(s) no longer exist — reload and reselect"
+    return [by_uid[u] for u in uids], None
+
+
+def _api_merge_preview(body: dict) -> dict:
+    """Passes 1–3: union + semantic dedupe, returned for user review. Writes nothing.
+
+    body: {uids: [...], primary_uid?: str}
     """
-    from .dedupe import merge_cluster_auto
+    from .merge import MergePlan
+    cluster, err = _merge_cards_by_uid(body.get("uids"))
+    if err:
+        return {"ok": False, "error": err}
+    try:
+        plan = MergePlan(cluster, region=_merge_region(), primary_uid=body.get("primary_uid"))
+        return {"ok": True, "plan": plan.to_json()}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def _api_merge_commit(body: dict) -> dict:
+    """Pass 4: apply the reviewed choices.
+
+    body: {uids, primary_uid, choices: {scalars, include, types, note}}
+
+    Zero-loss guarantee: before anything is changed, the complete original
+    vCard of every selected card (plus the choices made) is written to
+    cards-master/merged/.  That folder is never re-imported.
+    """
+    from .merge import MergePlan, repoint_links
+    from .master import _safe_filename, MASTER_DIR, CONTACTS_DIR
+    from .exporter import card_to_vcf_text
+    from datetime import UTC as _UTC, datetime as _dt
+
+    cluster, err = _merge_cards_by_uid(body.get("uids"))
+    if err:
+        return {"ok": False, "error": err}
+    try:
+        plan = MergePlan(cluster, region=_merge_region(), primary_uid=body.get("primary_uid"))
+        survivor_uid = plan.primary.uid
+
+        # 1. Archive originals FIRST — the primary is mutated by apply().
+        originals = []
+        for c in cluster:
+            text = card_to_vcf_text(c, target_version="4.0")
+            if not text:
+                return {"ok": False, "error": f"Could not archive {c.fn or c.uid} — merge aborted, nothing changed"}
+            originals.append(text)
+        arch_dir = _ROOT / MASTER_DIR / "merged"
+        arch_dir.mkdir(parents=True, exist_ok=True)
+        stamp = _dt.now(_UTC).strftime("%Y%m%dT%H%M%SZ")
+        base = arch_dir / f"{stamp}-{_safe_filename(survivor_uid)[:-4]}"
+        base.with_suffix(".vcf").write_text("".join(originals), encoding="utf-8")
+        base.with_suffix(".json").write_text(json.dumps({
+            "merged_at": stamp,
+            "survivor_uid": survivor_uid,
+            "uids": [c.uid for c in cluster],
+            "choices": body.get("choices") or {},
+        }, indent=2), encoding="utf-8")
+
+        # 2. Apply and repoint links across the whole address book.
+        survivor, absorbed_uids = plan.apply(body.get("choices") or {})
+        old_uids = set(survivor.external_uids or [])
+        cards = _state["cards"]
+        absorbed_ids = {id(c) for c in cluster if c is not survivor}
+        _state["cards"] = [c for c in cards if id(c) not in absorbed_ids]
+        relinked = repoint_links(_state["cards"], survivor, old_uids)
+
+        # 3. Remove absorbed per-contact files so a rebuild can't resurrect them.
+        cdir = _ROOT / MASTER_DIR / CONTACTS_DIR
+        for u in absorbed_uids:
+            try:
+                (cdir / _safe_filename(u)).unlink(missing_ok=True)
+            except Exception as e:
+                print(f"  [merge] could not remove contact file for {u}: {e}", flush=True)
+
+        _autosave_checkpoint()   # full rewrite: repointed cards changed too
+        log_merge(len(cluster), survivor_uid)
+        new_idx = next((i for i, c in enumerate(_state["cards"]) if c is survivor), None)
+        return {
+            "ok": True,
+            "merged": len(cluster),
+            "fn": survivor.fn or survivor.org or "Merged contact",
+            "uid": survivor_uid,
+            "new_idx": new_idx,
+            "relinked": relinked,
+            "archive": str(base.with_suffix(".vcf").relative_to(_ROOT)),
+        }
+    except Exception as exc:
+        import traceback
+        print(f"[merge error] {traceback.format_exc()}", flush=True)
+        return {"ok": False, "error": str(exc)}
+
+
+def _api_merge_cards(body: dict) -> dict:
+    """Legacy index-based merge — now routed through the zero-loss engine with
+    default choices (primary = richest card, all values kept, notes joined)."""
     cards = _state["cards"]
     try:
         indices = [int(x) for x in body.get("indices", [])]
-        if len(indices) < 2:
-            return {"ok": False, "error": "Need at least 2 cards to merge"}
         if any(i < 0 or i >= len(cards) for i in indices):
             return {"ok": False, "error": "Invalid card index"}
-        if len(set(indices)) != len(indices):
-            return {"ok": False, "error": "Duplicate indices"}
-
-        cluster = [cards[i] for i in indices]
-        merged  = merge_cluster_auto(cluster)
-
-        # Determine where to put the merged card — lowest index wins
-        keep_pos = min(indices)
-        merged.log_change(f"Manually merged {len(indices)} cards via web UI")
-
-        # Remove all cluster members (highest index first to preserve positions)
-        for i in sorted(indices, reverse=True):
-            cards.pop(i)
-
-        # Re-insert merged card at the lowest original position
-        # (positions shift after pops, so recalculate)
-        insert_at = keep_pos - sum(1 for i in indices if i < keep_pos)
-        insert_at = max(0, min(insert_at, len(cards)))
-        cards.insert(insert_at, merged)
-
-        _autosave_checkpoint()
-        return {
-            "ok":      True,
-            "merged":  len(indices),
-            "fn":      merged.fn or merged.org or "Merged contact",
-            "new_idx": insert_at,
-        }
+        return _api_merge_commit({"uids": [cards[i].uid for i in indices], "choices": {}})
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
+
+
+def _api_bulk_add_category(body: dict) -> dict:
+    """Add one category to several cards (Cards → select → add category).
+
+    body: {category: str, indices: [int]}
+    """
+    cards = _state["cards"]
+    cat = str(body.get("category") or "").strip()
+    if not cat:
+        return {"ok": False, "error": "No category given"}
+    try:
+        indices = sorted({int(i) for i in body.get("indices", [])})
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "Invalid indices"}
+    if not indices or any(i < 0 or i >= len(cards) for i in indices):
+        return {"ok": False, "error": "Invalid card index"}
+    changed = []
+    for i in indices:
+        c = cards[i]
+        if cat.casefold() not in {x.casefold() for x in (c.categories or [])}:
+            c.categories = sorted([*(c.categories or []), cat], key=str.casefold)
+            c.log_change(f"Category added (bulk): {cat}")
+            changed.append(i)
+    if changed:
+        _autosave_checkpoint(changed_indices=changed)
+        log_bulk_category(cat, len(changed))
+    return {"ok": True, "category": cat, "changed": len(changed)}
 
 
 def _api_delete_card(body: dict) -> dict:
@@ -1594,7 +1701,7 @@ def _api_auto_prefix(body: dict) -> dict:
     return {"ok": True, "changed": changed, "log": log}
 
 
-
+def _api_auto_gender(body: dict) -> dict:
     """Infer gender from name prefix for all loaded individual contacts.
 
     Rules:
@@ -2154,6 +2261,8 @@ class VCardHandler(BaseHTTPRequestHandler):
             self._send_json(_api_gender_unset(params))
         elif path == "/api/apple_name_unset":
             self._send_json(_api_apple_name_unset(params))
+        elif path == "/api/auto_clean_scan":
+            self._send_json(_api_auto_clean_scan(params))
         elif path == "/api/print_cards":
             self._send_json(_api_print_cards(params))
         elif path == "/api/print_modules":
@@ -2189,7 +2298,9 @@ class VCardHandler(BaseHTTPRequestHandler):
         except Exception:
             body = {}
 
-        path = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        path = parsed.path
+        params = parse_qs(parsed.query)   # a few scan endpoints are reachable by POST too
 
         if path == "/api/process":
             self._send_json(_api_process(body))
@@ -2233,6 +2344,12 @@ class VCardHandler(BaseHTTPRequestHandler):
             self._send_json(_api_preview_labels(body))
         elif path == "/api/merge_cards":
             self._send_json(_api_merge_cards(body))
+        elif path == "/api/bulk_add_category":
+            self._send_json(_api_bulk_add_category(body))
+        elif path == "/api/merge_preview":
+            self._send_json(_api_merge_preview(body))
+        elif path == "/api/merge_commit":
+            self._send_json(_api_merge_commit(body))
         elif path == "/api/reformat_phones":
             self._send_json(_api_reformat_phones(body))
         elif path == "/api/auto_gender":

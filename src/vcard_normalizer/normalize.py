@@ -393,44 +393,52 @@ def normalize_cards(
         _vcs_related: list[Related] = []
         _vcs_member: list[str] = []
 
+        # Two on-disk formats exist:
+        #   current : "[vCS: KEY: val | KEY: val]" (single line)
+        #   legacy  : "\n\n---vCard Studio---\nKEY: val\nKEY: val" (written by
+        #             older Apple exports, e.g. cards-out/apple-2026-05-10-*)
+        _vcs_pairs: list[str] = []
         if note and "[vCS:" in note:
             # Pattern allows inner [...] pairs (e.g. RELATED[spouse])
             _vcs_match = re.search(r"\[vCS:\s*((?:[^\[\]]|\[[^\[\]]*\])*)\]", note)
             if _vcs_match:
-                _vcs_block = _vcs_match.group(1)
-                for _pair in _vcs_block.split("|"):
-                    _pair = _pair.strip()
-                    if ":" not in _pair:
-                        continue
-                    _key, _, _val = _pair.partition(":")
-                    _key = _key.strip().upper()
-                    _val = _val.strip()
-                    if _key == "GENDER":
-                        _vcs_gender = _val.upper() or None
-                    elif _key == "KIND":
-                        _vcs_kind = _val.lower() or None
-                    elif _key == "CATEGORIES":
-                        _vcs_categories = [c.strip() for c in _val.split(",") if c.strip()]
-                    elif _key == "ANNIVERSARY":
-                        _vcs_anniversary = _val or None
-                    elif _key.startswith("RELATED"):
-                        # RELATED[spouse]: uid-or-text
-                        _rtype_match = re.match(r"RELATED\[([^\]]+)\]", _key)
-                        _rtype = _rtype_match.group(1).lower() if _rtype_match else "contact"
-                        if _val.startswith("urn:uuid:"):
-                            _vcs_related.append(Related(rel_type=_rtype, uid=_val[9:]))
-                        elif _val.startswith("vcard-studio-") or (
-                            len(_val) == 36 and _val.count("-") == 4
-                        ):
-                            _vcs_related.append(Related(rel_type=_rtype, uid=_val))
-                        elif _val:
-                            _vcs_related.append(Related(rel_type=_rtype, text=_val))
-                    elif _key == "MEMBER":
-                        _member = _val[9:] if _val.startswith("urn:uuid:") else _val
-                        if _member:
-                            _vcs_member.append(_member)
-                # Strip the [vCS: ...] block from the visible note
+                _vcs_pairs.extend(_vcs_match.group(1).split("|"))
                 note = re.sub(r"\s*\[vCS:(?:[^\[\]]|\[[^\[\]]*\])*\]", "", note).strip() or None
+        if note and "---vCard Studio---" in note:
+            _visible, _, _legacy = note.partition("---vCard Studio---")
+            _vcs_pairs.extend(line for line in _legacy.splitlines() if line.strip())
+            note = _visible.strip() or None
+        for _pair in _vcs_pairs:
+            _pair = _pair.strip()
+            if ":" not in _pair:
+                continue
+            _key, _, _val = _pair.partition(":")
+            _key = _key.strip().upper()
+            _val = _val.strip()
+            if _key == "GENDER":
+                _vcs_gender = _val.upper() or None
+            elif _key == "KIND":
+                _vcs_kind = _val.lower() or None
+            elif _key == "CATEGORIES":
+                _vcs_categories = [c.strip() for c in _val.split(",") if c.strip()]
+            elif _key == "ANNIVERSARY":
+                _vcs_anniversary = _val or None
+            elif _key.startswith("RELATED"):
+                # RELATED[spouse]: uid-or-text
+                _rtype_match = re.match(r"RELATED\[([^\]]+)\]", _key)
+                _rtype = _rtype_match.group(1).lower() if _rtype_match else "contact"
+                if _val.startswith("urn:uuid:"):
+                    _vcs_related.append(Related(rel_type=_rtype, uid=_val[9:]))
+                elif _val.startswith("vcard-studio-") or (
+                    len(_val) == 36 and _val.count("-") == 4
+                ):
+                    _vcs_related.append(Related(rel_type=_rtype, uid=_val))
+                elif _val:
+                    _vcs_related.append(Related(rel_type=_rtype, text=_val))
+            elif _key == "MEMBER":
+                _member = _val[9:] if _val.startswith("urn:uuid:") else _val
+                if _member:
+                    _vcs_member.append(_member)
 
         # Parse X-VCARD-STUDIO-WAIVED — "not required" field markers
         # vobject stores X- properties with hyphens converted to underscores
