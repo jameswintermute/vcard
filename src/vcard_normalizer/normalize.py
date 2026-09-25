@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import re
 import uuid as _uuid_mod
 
@@ -64,6 +65,67 @@ def _get_text(v, default=None):
         return default
 
 
+def _param_values(prop, name: str) -> list[str]:
+    """Return a parameter as a flat string list, case-insensitively."""
+    try:
+        params = getattr(prop, "params", {}) or {}
+        raw = next((v for k, v in params.items() if str(k).upper() == name.upper()), None)
+        if raw is None:
+            return []
+        if isinstance(raw, (list, tuple)):
+            return [str(v) for v in raw]
+        return [str(raw)]
+    except Exception:
+        return []
+
+
+def _decode_b64_param(prop, name: str) -> str:
+    values = _param_values(prop, name)
+    if not values:
+        return ""
+    encoded = values[0].strip()
+    try:
+        encoded += "=" * (-len(encoded) % 4)
+        return base64.urlsafe_b64decode(encoded.encode("ascii")).decode("utf-8").strip()
+    except Exception:
+        return ""
+
+
+def _clean_apple_label(label: str) -> str:
+    """Turn Apple system-label syntax (_$!<Home>!$_) into display text."""
+    label = (label or "").strip()
+    match = re.fullmatch(r"_\$!<(.+)>!\$_", label)
+    return match.group(1).strip() if match else label
+
+
+def _is_pref(prop) -> bool:
+    values = [v.upper() for v in _param_values(prop, "TYPE")]
+    if "PREF" in values:
+        return True
+    pref = _param_values(prop, "PREF")
+    return bool(pref and pref[0] not in {"", "0", "false", "False"})
+
+
+def _apple_label(prop) -> str:
+    label = _decode_b64_param(prop, "X-VCS-APPLE-LABEL-B64")
+    if not label:
+        stored = _param_values(prop, "X-VCARD-STUDIO-LABEL")
+        label = stored[0].strip() if stored else ""
+    return _clean_apple_label(label)
+
+
+def _type_from_apple_label(label: str) -> str:
+    """Map common Apple display labels to canonical TYPE values."""
+    value = (label or "").strip().casefold()
+    if value == "home":
+        return "HOME"
+    if value == "work":
+        return "WORK"
+    if value in {"iphone", "mobile", "cell"}:
+        return "CELL"
+    return ""
+
+
 def _parse_addresses(vc: vobject.base.Component) -> list[Address]:
     addresses: list[Address] = []
     for adr in getattr(vc, "adr_list", []):
@@ -78,11 +140,25 @@ def _parse_addresses(vc: vobject.base.Component) -> list[Address]:
                     region=val.region or None,
                     postal_code=val.code or None,
                     country=val.country or None,
+                    type=_get_type_param(adr) or _type_from_apple_label(_apple_label(adr)),
+                    label=_apple_label(adr),
+                    pref=_is_pref(adr),
+                    apple_country_code=(
+                        _decode_b64_param(adr, "X-VCS-APPLE-ADR-B64")
+                        or ((_param_values(adr, "X-VCARD-STUDIO-APPLE-ADR") or [""])[0].strip())
+                    ),
                 )
             )
         except Exception:
             pass
     return addresses
+
+
+def _children_named(vc: vobject.base.Component, name: str):
+    wanted = name.upper()
+    for child in vc.getChildren():
+        if getattr(child, "name", "").upper() == wanted:
+            yield child
 
 
 def strip_photos(vc: vobject.base.Component) -> int:
@@ -158,9 +234,11 @@ def normalize_cards(
             if val:
                 val = val.lower()
                 emails.append(val)
-                # Extract TYPE parameter (HOME, WORK, etc.)
-                etype = _get_type_param(e)
-                typed_emails.append(TypedValue(value=val, type=etype))
+                label = _apple_label(e)
+                etype = _get_type_param(e) or _type_from_apple_label(label)
+                typed_emails.append(
+                    TypedValue(value=val, type=etype, label=label, pref=_is_pref(e))
+                )
 
         tels: list[str] = []
         typed_tels: list[TypedValue] = []
@@ -169,7 +247,38 @@ def normalize_cards(
             if val:
                 tels.append(val)
                 ttype = _get_type_param(t)
-                typed_tels.append(TypedValue(value=val, type=ttype))
+                label = _apple_label(t)
+                # Apple often expresses iPhone/Mobile only through X-ABLabel.
+                if not ttype:
+                    ttype = _type_from_apple_label(label)
+                typed_tels.append(
+                    TypedValue(value=val, type=ttype, label=label, pref=_is_pref(t))
+                )
+
+        urls: list[TypedValue] = []
+        for u in getattr(vc, "url_list", []):
+            val = _get_text(u)
+            if val:
+                urls.append(
+                    TypedValue(
+                        value=val,
+                        type=_get_type_param(u) or _type_from_apple_label(_apple_label(u)),
+                        label=_apple_label(u),
+                        pref=_is_pref(u),
+                    )
+                )
+
+        nicknames: list[str] = []
+        for nick in getattr(vc, "nickname_list", []):
+            try:
+                value = nick.value
+                if isinstance(value, (list, tuple)):
+                    nicknames.extend(str(v).strip() for v in value if str(v).strip())
+                else:
+                    nicknames.extend(v.strip() for v in str(value).split(",") if v.strip())
+            except Exception:
+                pass
+        nicknames = list(dict.fromkeys(nicknames))
 
         org = None
         if getattr(vc, "org", None):
@@ -181,13 +290,30 @@ def normalize_cards(
         title = _get_text(getattr(vc, "title", None))
         bday = _get_text(getattr(vc, "bday", None))
         anniversary = _get_text(getattr(vc, "anniversary", None))
+        if not anniversary:
+            for date_prop in _children_named(vc, "X-ABDATE"):
+                label = _apple_label(date_prop).casefold()
+                value = _get_text(date_prop)
+                if value and (not label or label == "anniversary"):
+                    anniversary = value
+                    break
+
         uid = _get_text(getattr(vc, "uid", None))
-        # Replace vendor-issued UIDs (proton-web-xxx, apple ABxxx, etc.)
+        old_uid: str | None = None
+        external_uids: list[str] = []
+        for prop in list(_children_named(vc, "X-VCARD-STUDIO-EXTERNAL-UID")) + list(_children_named(vc, "X-ABUID")):
+            value = _get_text(prop)
+            if value and value not in external_uids:
+                external_uids.append(value)
+
+        # vCard Studio owns the canonical UID.  Vendor UIDs are retained as
+        # aliases so a future iCloud/provider export can still match safely.
         if _is_vendor_uid(uid or ""):
             old_uid = uid
+            if old_uid and old_uid not in external_uids:
+                external_uids.append(old_uid)
             uid = new_vs_uid()
-            if old_uid:
-                pass  # logged below after card is created
+
         rev = _get_text(getattr(vc, "rev", None))
         addresses = _parse_addresses(vc)
 
@@ -212,6 +338,28 @@ def normalize_cards(
                     related.append(Related(rel_type=rel_type, uid=val[9:]))
                 elif val:
                     related.append(Related(rel_type=rel_type, text=val))
+            except Exception:
+                pass
+
+        # Apple vCard 3.0 related-name properties (spouse/parent/etc.).
+        for rel_prop in _children_named(vc, "X-ABRELATEDNAMES"):
+            value = _get_text(rel_prop)
+            if not value:
+                continue
+            rel_type = (_apple_label(rel_prop) or "contact").strip().lower()
+            if not any(r.text == value and r.rel_type == rel_type for r in related):
+                related.append(Related(rel_type=rel_type, text=value))
+
+        # Parse MEMBER (RFC 6350, valid for KIND=group) plus the vCard Studio
+        # preservation property used for legacy organisation membership.
+        member: list[str] = []
+        for member_prop in list(getattr(vc, "member_list", [])) + list(_children_named(vc, "X-VCARD-STUDIO-MEMBER")):
+            try:
+                value = str(member_prop.value).strip()
+                if value.startswith("urn:uuid:"):
+                    value = value[9:]
+                if value and value not in member:
+                    member.append(value)
             except Exception:
                 pass
 
@@ -243,6 +391,7 @@ def normalize_cards(
         _vcs_categories: list[str] = []
         _vcs_anniversary: str | None = None
         _vcs_related: list[Related] = []
+        _vcs_member: list[str] = []
 
         if note and "[vCS:" in note:
             # Pattern allows inner [...] pairs (e.g. RELATED[spouse])
@@ -268,12 +417,18 @@ def normalize_cards(
                         # RELATED[spouse]: uid-or-text
                         _rtype_match = re.match(r"RELATED\[([^\]]+)\]", _key)
                         _rtype = _rtype_match.group(1).lower() if _rtype_match else "contact"
-                        if _val.startswith("vcard-studio-") or (
+                        if _val.startswith("urn:uuid:"):
+                            _vcs_related.append(Related(rel_type=_rtype, uid=_val[9:]))
+                        elif _val.startswith("vcard-studio-") or (
                             len(_val) == 36 and _val.count("-") == 4
                         ):
                             _vcs_related.append(Related(rel_type=_rtype, uid=_val))
                         elif _val:
                             _vcs_related.append(Related(rel_type=_rtype, text=_val))
+                    elif _key == "MEMBER":
+                        _member = _val[9:] if _val.startswith("urn:uuid:") else _val
+                        if _member:
+                            _vcs_member.append(_member)
                 # Strip the [vCS: ...] block from the visible note
                 note = re.sub(r"\s*\[vCS:(?:[^\[\]]|\[[^\[\]]*\])*\]", "", note).strip() or None
 
@@ -289,6 +444,18 @@ def normalize_cards(
         kind_raw = _get_text(getattr(vc, "kind", None))
         if kind_raw:
             kind = kind_raw.strip().lower()
+        studio_kind = _get_text(getattr(vc, "x_vcard_studio_kind", None))
+        if studio_kind:
+            kind = studio_kind.strip().lower()
+
+        # Apple vCard 3.0 uses X-ABShowAs for company/profile semantics.
+        apple_show_as = _get_text(getattr(vc, "x_abshowas", None))
+        if apple_show_as and not kind:
+            show = apple_show_as.strip().upper()
+            if show == "COMPANY":
+                kind = "org"
+            elif show == "PROFILE":
+                kind = "self"
 
         # Parse GENDER (vCard 4.0) — M|F|O|N|U
         gender: str | None = None
@@ -317,8 +484,14 @@ def normalize_cards(
             for r in _vcs_related:
                 if r.uid and r.uid not in existing_uids:
                     related.append(r)
-                elif not r.uid:
+                    existing_uids.add(r.uid)
+                elif not r.uid and not any(
+                    x.text == r.text and x.rel_type == r.rel_type for x in related
+                ):
                     related.append(r)
+        for _member in _vcs_member:
+            if _member not in member:
+                member.append(_member)
 
         card = Card(
             raw=vc,
@@ -328,36 +501,33 @@ def normalize_cards(
             tels=tels,
             typed_emails=typed_emails,
             typed_tels=typed_tels,
+            urls=urls,
+            nicknames=nicknames,
             org=org,
             title=title,
             bday=bday,
             anniversary=anniversary,
             uid=uid,
+            external_uids=external_uids,
             rev=rev,
             addresses=addresses,
             categories=categories,
             related=related,
+            member=member,
             note=note,
             kind=kind,
             gender=gender,
+            x_ios_given=x_ios_given,
+            x_ios_family=x_ios_family,
             _source_files=[source_label],
         )
         # Restore "not required" field markers (persisted as X-VCARD-STUDIO-WAIVED)
         if waived:
             card._waived = waived
-        # Restore iOS display-name override fields
-        if x_ios_given:
-            card.x_ios_given = x_ios_given
-        if x_ios_family:
-            card.x_ios_family = x_ios_family
         if photo_count:
             card.log_change(f"Stripped {photo_count} photo/logo/sound property(ies)")
-        # Log UID replacement (old_uid set above if vendor UID was found)
-        try:
-            if old_uid:
-                card.log_change(f"UID replaced: {old_uid} → {uid}")
-        except NameError:
-            pass
+        if old_uid:
+            card.log_change(f"Vendor UID retained as alias: {old_uid} → canonical {uid}")
 
         out.append(card)
     return out

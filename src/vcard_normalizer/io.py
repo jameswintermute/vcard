@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import logging
 import re
 from pathlib import Path
@@ -10,53 +11,131 @@ logger = logging.getLogger(__name__)
 
 # ── Pre-parse sanitisation ─────────────────────────────────────────────────────
 #
-# Real-world vCard exports — especially from Apple iCloud — contain lines that
-# vobject's strict parser cannot handle. We fix them in plain text first.
+# Apple/iCloud commonly uses grouped properties:
 #
-# Known patterns (all from iCloud exports observed in the wild):
+#   item1.TEL;TYPE=CELL:...
+#   item1.X-ABLabel:iPhone
+#   item2.ADR;TYPE=HOME:...
+#   item2.X-ABADR:gb
 #
-#   item1..ADR   double-dot group prefix  → strip prefix, keep property
-#   item1.ADR    single-dot group prefix  → strip prefix, keep property
-#   item1.X-*    Apple extension on group → drop line entirely
-#   .ADR         bare leading dot         → strip the dot, keep property
-#   .X-*         bare leading dot + X-    → drop line entirely
+# Older/problematic exports also contain ``item1..ADR``.  vobject is happier if
+# the group prefix is removed, but blindly deleting the matching X-ABLabel loses
+# useful semantics.  We therefore encode Apple group metadata into temporary,
+# parser-safe X-VCS parameters on the standard property.  normalize.py consumes
+# those parameters into the canonical model before proprietary stripping runs.
 
-_ITEM_DOUBLE_DOT = re.compile(r"^item\d+\.\.", re.IGNORECASE)
-_ITEM_SINGLE_STD = re.compile(r"^item\d+\.((?!X-)[A-Z])", re.IGNORECASE)
-_ITEM_X_PROP     = re.compile(r"^item\d+\.X-", re.IGNORECASE)
-_BARE_DOT_X      = re.compile(r"^\.(X-)", re.IGNORECASE)
-_BARE_DOT_STD    = re.compile(r"^\.((?!X-)[A-Z])", re.IGNORECASE)
+_GROUP_LINE = re.compile(
+    r"^(?P<group>item\d+)\.(?P<extra_dot>\.?)(?P<prop>[A-Z][A-Z0-9-]*)(?P<rest>[;:].*)$",
+    re.IGNORECASE,
+)
+_BARE_DOT_X = re.compile(r"^\.X-", re.IGNORECASE)
+_BARE_DOT_STD = re.compile(r"^\.((?!X-)[A-Z])", re.IGNORECASE)
+
+
+def _b64_param(value: str) -> str:
+    return base64.urlsafe_b64encode(value.encode("utf-8")).decode("ascii").rstrip("=")
+
+
+def _inject_param(line: str, name: str, value: str) -> str:
+    """Add ``;NAME=value`` immediately before the first vCard value colon."""
+    newline = ""
+    if line.endswith("\r\n"):
+        line, newline = line[:-2], "\r\n"
+    elif line.endswith("\n"):
+        line, newline = line[:-1], "\n"
+    pos = line.find(":")
+    if pos < 0:
+        return line + newline
+    return f"{line[:pos]};{name}={value}{line[pos:]}{newline}"
 
 
 def _sanitise_vcf(data: str, source_label: str) -> str:
-    """Clean up known malformed line patterns before vobject sees them."""
+    """Repair malformed Apple group syntax while preserving useful metadata."""
     lines = data.splitlines(keepends=True)
+    group_meta: dict[str, dict[str, str]] = {}
+
+    # Pass 1: collect Apple's label/country metadata by group id.
+    for line in lines:
+        body = line.rstrip("\r\n")
+        match = _GROUP_LINE.match(body)
+        if not match:
+            continue
+        prop = match.group("prop").upper()
+        if prop not in {"X-ABLABEL", "X-ABADR"}:
+            continue
+        rest = match.group("rest")
+        colon = rest.find(":")
+        if colon < 0:
+            continue
+        value = rest[colon + 1 :].rstrip("\r\n").strip()
+        if value:
+            key = "label" if prop == "X-ABLABEL" else "adr"
+            group_meta.setdefault(match.group("group").lower(), {})[key] = value
+
     out: list[str] = []
-    skipped = fixed = 0
+    skipped = fixed = preserved = 0
 
     for line in lines:
-        # Drop itemN.X-* and bare .X-* lines — Apple extension noise
-        if _ITEM_X_PROP.match(line) or _BARE_DOT_X.match(line):
-            skipped += 1
+        newline = "\r\n" if line.endswith("\r\n") else ("\n" if line.endswith("\n") else "")
+        body = line[:-len(newline)] if newline else line
+        match = _GROUP_LINE.match(body)
+        if match:
+            group = match.group("group").lower()
+            prop = match.group("prop").upper()
+
+            # Preserve the small subset of Apple X-properties that carry actual
+            # contact data. Attach the group's X-ABLabel as temporary metadata
+            # so normalize.py can interpret Anniversary/Spouse/etc.
+            if prop in {"X-ABDATE", "X-ABRELATEDNAMES"}:
+                line = f"{prop}{match.group('rest')}{newline}"
+                fixed += 1
+                meta = group_meta.get(group, {})
+                if meta.get("label"):
+                    line = _inject_param(line, "X-VCS-APPLE-LABEL-B64", _b64_param(meta["label"]))
+                    preserved += 1
+                out.append(line)
+                continue
+
+            # Metadata lines have already been associated with their standard
+            # property. Other grouped X-* extensions remain non-canonical noise.
+            if prop.startswith("X-"):
+                skipped += 1
+                continue
+
+            # Strip itemN. (and the observed erroneous second dot) but retain
+            # the standard property and its parameters/value.
+            line = f"{prop}{match.group('rest')}{newline}"
+            fixed += 1
+
+            meta = group_meta.get(group, {})
+            if prop in {"TEL", "EMAIL", "ADR", "URL"} and meta.get("label"):
+                line = _inject_param(line, "X-VCS-APPLE-LABEL-B64", _b64_param(meta["label"]))
+                preserved += 1
+            if prop == "ADR" and meta.get("adr"):
+                line = _inject_param(line, "X-VCS-APPLE-ADR-B64", _b64_param(meta["adr"]))
+                preserved += 1
+
+            out.append(line)
             continue
 
-        # Fix itemN..PROP (double dot) → PROP
-        if _ITEM_DOUBLE_DOT.match(line):
-            line = _ITEM_DOUBLE_DOT.sub("", line)
-            fixed += 1
-        # Fix itemN.PROP (single dot, standard) → PROP
-        elif _ITEM_SINGLE_STD.match(line):
-            line = _ITEM_SINGLE_STD.sub(r"\1", line)
-            fixed += 1
-        # Fix .PROP (bare leading dot, standard) → PROP
-        elif _BARE_DOT_STD.match(line):
+        # Bare malformed .X-* lines cannot be associated safely; drop them.
+        if _BARE_DOT_X.match(line):
+            skipped += 1
+            continue
+        if _BARE_DOT_STD.match(line):
             line = _BARE_DOT_STD.sub(r"\1", line)
             fixed += 1
 
         out.append(line)
 
-    if skipped or fixed:
-        logger.debug("%s: %d line(s) fixed, %d dropped", source_label, fixed, skipped)
+    if skipped or fixed or preserved:
+        logger.debug(
+            "%s: %d line(s) fixed, %d Apple metadata value(s) preserved, %d dropped",
+            source_label,
+            fixed,
+            preserved,
+            skipped,
+        )
 
     return "".join(out)
 

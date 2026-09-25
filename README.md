@@ -267,22 +267,24 @@ python3 start-webui.py
 ## ⚙ Features
 
 - **vCard 3.0 & 4.0** parsing and standards-compliant 4.0 export
-- **Proprietary field stripping** — removes all `X-*` vendor fields, `PRODID`, and traces from Apple, Google, Proton, or vCard Studio itself. One-click from the Clean panel.
-- **Cross-source duplicate detection** via email, phone, and fuzzy name matching
+- **Provider-aware cleaning** — normalises Apple grouped metadata such as `X-ABLabel`, preserves useful provider semantics, and strips unsupported proprietary noise without treating every `X-*` field as disposable
+- **Non-destructive additive import** — the permanent master record is authoritative; imports fill gaps and union multi-value fields rather than replacing a richer master contact
+- **Cross-source duplicate detection** via email, phone, and fuzzy name matching, followed by the same lossless field-aware merge used by normal import
 - **Phone number normalisation** to E.164 international format, with GOV.UK style display spacing (e.g. `+44 1932 269627`). Optional `phonenumbers` package for global number validation.
-- **Typed email and phone fields** — tag each email or phone as HOME, WORK, MOBILE, or OTHER; label is exported as the vCard TYPE parameter and shown in the print view.
+- **Typed and labelled contact data** — email, phone, URL and address metadata can retain HOME/WORK/MOBILE types, preferred status and Apple custom labels
+- **Nicknames and URLs** — first-class central fields preserved through normal and Apple-compatible exports
 - **Category tagging** — rule-based auto-tagging via `local/vcard.conf`, with interactive review
-- **KIND classification** — individual, organisation, self
+- **KIND classification** — individual, organisation, group and self/profile semantics
 - **Self / profile card** — tag your own card as KIND=self; skipped in duplicate checks and quality reports
 - **RELATED linking** — link spouses, partners, siblings, parents, children with bidirectional vCard 4.0 RELATED properties
-- **MEMBER linking** — assign individuals as members of an organisation card (vCard 4.0 MEMBER)
-- **UID, REV, PRODID** — every card carries a stable unique identifier, a last-modified timestamp (UTC ISO 8601), and a PRODID identifying this tool
-- **Address normalisation** — single-line address detection and structured field parsing
+- **Membership linking** — standards-compliant vCard 4.0 `MEMBER` for `KIND=group`; organisation membership is preserved with a vCard Studio extension rather than emitting invalid RFC 6350 combinations
+- **Stable central identity** — every card carries a vCard Studio UID while provider-issued UIDs are retained as external aliases for safer re-import matching
+- **Address normalisation** — single-line address detection, structured field parsing, address type/custom-label preservation and Apple country hints
 - **Quality review** — scan contacts for missing emails, phones, addresses, categories; mark any field as "not required" to permanently exclude it from future scans
 - **Birthdays & Anniversaries tab** — month-by-month view of birthdays and anniversaries with age calculation; configurable category filter; printable birthday calendar
 - **Raw vCard viewer** — inspect the full vCard source of any contact with syntax highlighting
-- **Export options** — combined `.vcf`, per-category `.vcf`, individual file per contact (named `vcard-<ISO8601>-<LastName>-<FirstName>.vcf`), and `.csv`
-- **Checkpoint autosave** — every edit is immediately persisted; resume exactly where you left off after a restart
+- **Export options** — combined `.vcf`, Apple/iCloud-compatible `.vcf`, per-category `.vcf`, individual file per contact, and `.csv`
+- **Permanent master autosave** — every edit is immediately persisted to the central master and individual-contact files
 
 ---
 
@@ -294,7 +296,7 @@ cards-in/               ← drop .vcf files here to import (processed once, then
 cards-master/           ← permanent master database (primary store — never delete)
   master.vcf            ← compiled master: all contacts in one file (fast load)
   master.json           ← metadata: saved_at, total count, source files
-  contacts/             ← one .vcf per contact, named by UID (individual durability)
+  contacts/             ← one .vcf per contact, named by canonical UID
     vcard-studio-<uuid>.vcf
 cards-out/              ← exports for sharing (Apple, category subsets, CSV)
 print/                  ← generated address label and address book HTML files
@@ -304,39 +306,55 @@ local/vcard.conf        ← your personal config (auto-created on first run)
 src/vcard_normalizer/
   server.py             ← local HTTP server and all API endpoints
   static/index.html     ← the entire Web UI (single-file, no build step)
-  model.py              ← Card, Address, NameComponents, Related data classes
-  normalize.py          ← field parsing and cleaning
+  model.py              ← canonical Card/Address/TypedValue data model
+  normalize.py          ← provider-aware field parsing and cleaning
+  merge.py              ← non-destructive, field-aware merge engine
   dedupe.py             ← similarity scoring and duplicate clustering
   formatters.py         ← phones, categories, KIND classification
-  exporter.py           ← vCard 4.0 serialisation and individual file export
-  master.py             ← permanent master database (replaces checkpoint)
+  exporter.py           ← canonical vCard 4.0 and Apple-compatible serialisation
+  master.py             ← permanent master database and additive import matching
   activitylog.py        ← syslog-style activity logging
   checkpoint.py         ← legacy (kept for migration compatibility)
+  config.py             ← TOML config and workspace initialisation
+  proprietary.py        ← unsupported X-* stripping rules
+  print_modules/        ← pluggable printer support (see below)
+    __init__.py         ← auto-discovers modules at startup
+    brother_ql820nwb.py ← Brother QL-820NWB label printer
+    generic_a4.py       ← generic A4 / US Letter office printer
+    README.md           ← contributor guide for adding new printers
+start-webui.py          ← launch script
 ```
 
 ### How the database works
 
-`cards-master/` is your permanent address book. Every edit writes two places simultaneously:
+`cards-master/` is your permanent address book and the **authoritative system of record**. Every edit writes two places simultaneously:
 
 1. `contacts/<uid>.vcf` — the individual contact file, updated immediately
 2. `master.vcf` — the compiled view, rewritten on every save
 
-On startup, `master.vcf` is loaded directly (fast). If it's ever missing or corrupt, the server automatically reconstructs it from the individual `contacts/` files.
+On startup, `master.vcf` is loaded directly (fast). If it is ever missing or corrupt, the server automatically reconstructs it from the individual `contacts/` files.
 
-**Import** (`cards-in/`) is **additive** — new contacts are merged into master, existing contacts are never overwritten. After import, source files are moved to `cards-in/processed/` so they can never be accidentally re-imported.
+**Import** (`cards-in/`) is deliberately **additive and non-destructive**. Matching contacts are enriched field-by-field: missing scalar values are filled, multi-value data such as email/phone/address/category/relationship data is unioned, and an incoming conflicting scalar does not silently replace a populated master value. Provider-issued UIDs are retained as aliases so later provider exports can continue to match the same central contact.
 
-**Export** (`cards-out/`) produces Apple-compatible, category-filtered, or full `.vcf` files for sharing. It never modifies master state.
+**Duplicate resolution** uses the same field-aware merge rules as import. This avoids the previous failure mode where an import preserved a central field but a subsequent automatic duplicate merge selected another whole card and discarded it.
+
+**Export** (`cards-out/`) never modifies master state. Full exports use vCard 4.0; the Apple/iCloud target uses vCard 3.0 plus Apple-compatible metadata and a private round-trip safety capsule for central fields Apple vCard 3.0 cannot express directly.
 
 **Activity log** (`log/activity.log`) records what happened and when — import counts, edit UIDs, export filenames — without recording any contact names, emails, or addresses.
-  config.py         ← TOML config and workspace initialisation
-  proprietary.py    ← X-* field stripping rules
-  print_modules/    ← pluggable printer support (see below)
-    __init__.py     ← auto-discovers modules at startup
-    brother_ql820nwb.py  ← Brother QL-820NWB label printer
-    generic_a4.py   ← generic A4 / US Letter office printer
-    README.md       ← contributor guide for adding new printers
-start-webui.py      ← launch script
+
+### Apple / iCloud round-trip
+
+The recommended workflow is:
+
+```text
+vCard Studio master → Apple export → iCloud / Contacts → iCloud export → cards-in/ → master
 ```
+
+The central master remains authoritative throughout that cycle. An iCloud re-import may add a new phone, email, URL, address or other missing information, but it cannot replace an already populated central scalar merely because the Apple card contains more fields overall.
+
+The Apple adapter understands grouped Apple metadata such as `itemN.X-ABLabel` and `itemN.X-ABADR`, preserving useful phone/email/URL/address labels instead of deleting every `itemN.X-*` line. Apple-native company/profile hints, special-date metadata and related-name metadata are emitted where useful. vCard Studio also retains central-only values in a compact `[vCS: ...]` NOTE capsule so fields such as relationships, membership, gender and anniversary information can be reconstructed if Apple does not preserve a native equivalent.
+
+Apple/iCloud **Lists are not the same thing as vCard `CATEGORIES`** and are not reconstructed by a normal `.vcf` round-trip. vCard Studio categories remain central contact metadata; use Apple's own archive facilities if Apple List membership itself must be backed up.
 
 ---
 

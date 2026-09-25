@@ -11,7 +11,7 @@ requires-python = ">=3.11"
 license = {text = "GPL-3.0-or-later"}
 authors = [{name = "James", email = "jameswinter@protonmail.ch"}]
 dependencies = [
-  "vobject>=0.9.7",
+  "vobject>=0.9.9",
   "rapidfuzz>=3.9",
   "phonenumbers>=8.13",
 ]

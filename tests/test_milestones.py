@@ -251,8 +251,6 @@ def test_model_log_change():
     card = _card(fn="Test")
     card.log_change("something happened")
     assert "something happened" in card._changes
-<<<<<<< HEAD
-=======
 
 
 # ── Real-world parsing: iCloud malformed lines ────────────────────────────────
@@ -289,8 +287,8 @@ def test_icloud_single_dot_adr(tmp_path: Path):
     assert cards[0].addresses[0].locality == "London"
 
 
-def test_icloud_x_extension_dropped(tmp_path: Path):
-    """item1.X-ABADR proprietary lines are silently dropped."""
+def test_icloud_x_extension_does_not_break_parse(tmp_path: Path):
+    """An Apple grouped X-ABADR line is consumed safely during parsing."""
     vcf = tmp_path / "icloud.vcf"
     vcf.write_text(
         "BEGIN:VCARD\n"
@@ -324,4 +322,3 @@ def test_mixed_good_and_bad_lines(tmp_path: Path):
     assert len(pairs) == 2
     names = {p[1] for p in pairs}  # just checking labels exist
     assert "mixed" in names
->>>>>>> 729d9e9 (changes)
