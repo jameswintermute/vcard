@@ -1060,6 +1060,8 @@ def _api_full_update_card(body: dict) -> dict:
     card.rev = _dt.now(_UTC).strftime("%Y%m%dT%H%M%SZ")
 
     card.log_change("Edited via web UI")
+    from .merge import dedupe_card_fields
+    dedupe_card_fields(card, region=_merge_region())
     _autosave_checkpoint()
     return {"ok": True, "normalised_tels": normalised}
 

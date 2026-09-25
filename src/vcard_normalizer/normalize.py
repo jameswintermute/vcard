@@ -537,6 +537,11 @@ def normalize_cards(
         if old_uid:
             card.log_change(f"Vendor UID retained as alias: {old_uid} → canonical {uid}")
 
+        # Round trips via other address books leave duplicates that differ only
+        # invisibly (bidi marks, NBSP, formatting) — collapse them on every load.
+        from .merge import dedupe_card_fields
+        dedupe_card_fields(card)
+
         out.append(card)
     return out
 

@@ -581,3 +581,150 @@ def repoint_links(all_cards: list[Card], survivor: Card, old_uids: set[str]) -> 
                 new_mem.append(m)
         c.member = new_mem
     return changed
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Per-card internal dedupe
+#
+# Round trips through other address books (vCard Studio → iCloud → vCard Studio)
+# can leave one card holding the same value twice in forms that differ only
+# invisibly: iOS wraps phone numbers in Unicode bidi marks (U+202A…U+202C),
+# uses non-breaking spaces, or re-formats "+12037193895" as "+1 203 719 3895".
+# Raw-string comparison keeps both; the edit form then shows each number twice.
+# ══════════════════════════════════════════════════════════════════════════════
+
+_INVISIBLE = _re.compile("[\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]")
+
+
+def clean_invisible(value: str | None) -> str:
+    """Strip zero-width and bidi control characters; NBSP → space."""
+    return _INVISIBLE.sub("", (value or "")).replace("\u00a0", " ").strip()
+
+
+def _dedupe_typed(values: list[str], typed: list[TypedValue], keyfn) -> tuple[list[str], list[TypedValue], int]:
+    # Walk the typed entries themselves (each carries its own TYPE/label/PREF,
+    # even when two share an identical value), then any bare values that have
+    # no typed entry at all.
+    typed_clean = {clean_invisible(tv.value) for tv in typed or []}
+    entries: list[tuple[str, TypedValue | None]] = [(tv.value, tv) for tv in typed or []]
+    entries += [(v, None) for v in values or [] if clean_invisible(v) not in typed_clean]
+
+    kept_vals: list[str] = []
+    kept_typed: dict[str, TypedValue] = {}
+    removed = 0
+    for raw, src in entries:
+        v = clean_invisible(raw)
+        if not v:
+            continue
+        k = keyfn(v)
+        if k in kept_typed:
+            removed += 1
+            tgt = kept_typed[k]
+            if src is not None:
+                if not tgt.type and src.type:
+                    tgt.type = src.type
+                if not tgt.label and src.label:
+                    tgt.label = src.label
+                tgt.pref = tgt.pref or src.pref
+            continue
+        kept_vals.append(v)
+        kept_typed[k] = TypedValue(value=v, type=src.type if src else "",
+                                   label=src.label if src else "", pref=bool(src and src.pref))
+    # Also count duplicates present only in the bare value list.
+    bare = len([v for v in values or [] if clean_invisible(v)])
+    return kept_vals, list(kept_typed.values()), max(removed, bare - len(kept_vals))
+
+
+def dedupe_card_fields(card: Card, region: str = "GB") -> int:
+    """Remove duplicate values *within* one card, comparing by meaning.
+
+    Keeps the first occurrence; a later duplicate only contributes a TYPE /
+    label / PREF the kept value lacks.  Returns the number of values removed
+    and logs a change if any were.
+    """
+    removed = 0
+
+    card.emails, card.typed_emails, n = _dedupe_typed(card.emails, card.typed_emails, _norm)
+    removed += n
+    card.tels, card.typed_tels, n = _dedupe_typed(card.tels, card.typed_tels,
+                                                  lambda v: _tel_key(v, region))
+    removed += n
+
+    urls: dict[str, TypedValue] = {}
+    for tv in card.urls or []:
+        v = clean_invisible(tv.value)
+        if not v:
+            continue
+        k = _url_key(v)
+        if k in urls:
+            removed += 1
+            if not urls[k].type and tv.type:
+                urls[k].type = tv.type
+            continue
+        tv.value = v
+        urls[k] = tv
+    card.urls = list(urls.values())
+
+    addrs: dict[str, Address] = {}
+    for a in card.addresses or []:
+        k = _addr_key(a)
+        if k.replace("|", "") == "":
+            continue
+        if k in addrs:
+            removed += 1
+            kept = addrs[k]
+            for attr in ("type", "label", "apple_country_code"):
+                if not getattr(kept, attr) and getattr(a, attr):
+                    setattr(kept, attr, getattr(a, attr))
+            kept.pref = kept.pref or a.pref
+            continue
+        addrs[k] = a
+    card.addresses = list(addrs.values())
+
+    for attr in ("nicknames", "categories"):
+        seen, out = set(), []
+        for v in getattr(card, attr) or []:
+            v2 = clean_invisible(v)
+            if not v2:
+                continue
+            if _norm(v2) in seen:
+                removed += 1
+                continue
+            seen.add(_norm(v2))
+            out.append(v2)
+        setattr(card, attr, out)
+
+    self_ids = {card.uid, *(card.external_uids or [])} - {None, ""}
+    rel_seen, rel_out = set(), []
+    for r in card.related or []:
+        if r.uid and r.uid in self_ids:
+            removed += 1
+            continue
+        k = (_norm(r.rel_type), r.uid or "", "" if r.uid else _norm(r.text))
+        if k in rel_seen:
+            removed += 1
+            continue
+        rel_seen.add(k)
+        rel_out.append(r)
+    card.related = rel_out
+
+    mem_out: list[str] = []
+    mem_seen: set[str] = set()
+    for m in card.member or []:
+        bare = m[9:] if m.startswith("urn:uuid:") else m
+        if bare in mem_seen:
+            removed += 1
+            continue
+        mem_seen.add(bare)
+        mem_out.append(m)
+    card.member = mem_out
+
+    ext = []
+    for u in card.external_uids or []:
+        if u and u != card.uid and u not in ext:
+            ext.append(u)
+    card.external_uids = ext
+
+    if removed:
+        card.log_change(f"Removed {removed} duplicate value(s) within card")
+    return removed

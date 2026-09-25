@@ -96,6 +96,10 @@ def normalize_phones_in_cards(
             card.typed_tels = updated_typed
         if reformatted:
             card.log_change(f"Phone(s) reformatted: {'; '.join(reformatted)}")
+        # Formatting can make two stored numbers identical — collapse them,
+        # keeping tels and typed_tels in step.
+        from .merge import dedupe_card_fields
+        dedupe_card_fields(card, region=region)
 
 
 # ── Address helpers ────────────────────────────────────────────────────────────
