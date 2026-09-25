@@ -4797,8 +4797,12 @@ function renderCnTable(highlight) {
     return;
   }
 
-  // Sort: needs_fix first, then highlighted, then alphabetical
-  const sorted = [..._cnData].sort((a, b) => {
+  // Sort: needs_fix first, then highlighted, then alphabetical.
+  // Sort _cnData IN PLACE: the row index i used for element ids (cn-input-i)
+  // must be the same index the apply handlers use to read _cnData[i].  Sorting
+  // a copy here previously misaligned them, so "apply" read the wrong row and
+  // "apply all" could map one country's addresses onto another's name.
+  const sorted = _cnData.sort((a, b) => {
     if (a.needs_fix !== b.needs_fix) return b.needs_fix - a.needs_fix;
     if (highlight) {
       if (a.raw === highlight) return -1;
@@ -4871,12 +4875,9 @@ async function applySingleCountry(i) {
   if (target === row.raw) { toast('No change — target same as current', true); return; }
   const d = await post('/api/normalise_countries', {apply: true, replacements: {[row.raw]: target}});
   if (!d.ok) { toast(d.error || 'Failed', true); return; }
-  toast(`✓ "${row.raw}" → "${target}" applied to ${d.changed} contact${d.changed!==1?'s':''}`);
-  row.raw = target;
-  row.suggested = target;
-  row.needs_fix = false;
-  renderCnTable();
+  toast(`✓ "${row.raw}" → "${target}" applied to ${d.changed} address${d.changed!==1?'es':''}`);
   poll();
+  await openCountryNormaliser(target);   // reload so counts merge (e.g. England 1 + UK 315 → UK 316)
 }
 
 async function applyCountryNorm() {
