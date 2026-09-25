@@ -137,7 +137,7 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
 .modal-footer{padding:10px 16px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end}
 .section-divider{font-size:9px;color:var(--dim);letter-spacing:.1em;margin:14px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--border)}
 
-/* Review action buttons per row */
+/* Cards action buttons per row */
 .row-actions{display:none;gap:4px}
 .dt tr:hover .row-actions{display:flex}
 .rev-row-sel{background:rgba(255,170,0,.07)!important}
@@ -290,7 +290,7 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
     <div class="nav-item active" data-p="unify"    onclick="show('unify')">   <span class="nav-step">1</span> Unify    <span class="nav-badge" id="nb-unify">—</span></div>
     <div class="nav-item"        data-p="clean"    onclick="show('clean')">   <span class="nav-step">2</span> Clean    <span class="nav-badge" id="nb-clean">—</span></div>
     <div class="nav-item"        data-p="split"    onclick="show('split')">   <span class="nav-step">3</span> Split    <span class="nav-badge" id="nb-split">—</span></div>
-    <div class="nav-item"        data-p="review"   onclick="show('review')">  <span class="nav-step">4</span> Review   <span class="nav-badge" id="nb-review">—</span></div>
+    <div class="nav-item"        data-p="cards"    onclick="show('cards')">   <span class="nav-step">4</span> Cards    <span class="nav-badge" id="nb-cards">—</span></div>
     <div class="nav-item"        data-p="add"      onclick="show('add')">     <span class="nav-step">+</span> Add Contact</div>
     <div class="nav-item"        data-p="insights" onclick="show('insights')"><span class="nav-step">5</span> Insights</div>
     <div class="nav-item"        data-p="export"   onclick="show('export')">  <span class="nav-step">6</span> Export</div>
@@ -377,7 +377,7 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
          border:1px solid var(--green2);padding:8px 12px;font-size:10px;color:var(--green)"></div>
   </div>
 
-  <div class="sec-lbl">CATEGORIES DETECTED <span style="color:var(--dim);font-weight:400">— click to filter Review</span></div>
+  <div class="sec-lbl">CATEGORIES DETECTED <span style="color:var(--dim);font-weight:400">— click to filter Cards</span></div>
   <div class="cat-tiles" id="clean-cats">
     <div id="clean-no-data" style="display:none"></div>
   </div>
@@ -552,11 +552,11 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
   <div id="split-files"></div>
 </div>
 
-<!-- §4 REVIEW -->
-<div id="panel-review" class="panel">
+<!-- §4 CARDS — master address book (single source of truth) -->
+<div id="panel-cards" class="panel">
   <div class="ph">
-    <div class="ph-title" style="color:var(--red)"><span style="color:var(--red);margin-right:5px">$</span>review_contacts</div>
-    <div class="ph-sub" id="rev-sub">browse · edit · delete</div>
+    <div class="ph-title" style="color:var(--red)"><span style="color:var(--red);margin-right:5px">$</span>cards</div>
+    <div class="ph-sub" id="rev-sub">master address book · browse · edit · link</div>
     <div style="margin-left:auto">
       <button class="btn btn-g" style="font-size:10px;padding:3px 10px" onclick="show('add')">+ add contact</button>
     </div>
@@ -1195,7 +1195,7 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
       <div id="self-warn-msg" style="font-size:10px;color:var(--text);line-height:1.7"></div>
     </div>
     <div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0">
-      <button class="btn btn-a" style="font-size:10px;padding:2px 8px" onclick="show('review');document.getElementById('rev-kind').value='self';onRevFilter()">view self cards →</button>
+      <button class="btn btn-a" style="font-size:10px;padding:2px 8px" onclick="show('cards');document.getElementById('rev-kind').value='self';onRevFilter()">view self cards →</button>
       <button class="btn btn-d" style="font-size:10px;padding:2px 8px" onclick="ignoreSelfWarn()">ignore</button>
     </div>
   </div>
@@ -1703,7 +1703,7 @@ let S = { status:'idle', total_cards:0, dup_count:0, source_counts:{},
           category_counts:{}, sources_present:[], output_files:[], message:'', progress:0 };
 let revPage=1, revSearch='', revCat='', revKind='', revQuality='';
 let _lastKnownCardCount = -1;  // track to avoid spurious table rebuilds
-let _isFirstPoll = true;       // used to auto-navigate to Review on resume
+let _isFirstPoll = true;       // used to auto-navigate to Cards on resume
 let splitSel = new Set();
 // For modal prev/next navigation
 let _currentPageCards = [];  // [{card, _idx, position_in_page}]
@@ -1793,7 +1793,7 @@ function applyState(d) {
   document.getElementById('nb-unify').textContent  = d.sources_present?.length ? d.sources_present.length+' src' : '—';
   document.getElementById('nb-clean').textContent  = d.total_cards || '—';
   document.getElementById('nb-split').textContent  = Object.keys(d.category_counts||{}).length || '—';
-  document.getElementById('nb-review').textContent = d.total_cards || '—';
+  document.getElementById('nb-cards').textContent = d.total_cards || '—';
 
   renderSrcList(d.sources_present||[]);
   renderClean(d); renderSplit(d); renderInsights(d); renderExport(d);
@@ -1836,9 +1836,9 @@ function applyState(d) {
       if (_revSelected.size === 0) {
         loadRevCards();
       }
-      // On first load from checkpoint (page just opened), auto-navigate to Review
+      // On first load from master (page just opened), auto-navigate to Cards
       if (_isFirstPoll && d.total_cards > 0) {
-        setTimeout(() => show('review'), 200);
+        setTimeout(() => show('cards'), 200);
       }
     }
     _isFirstPoll = false;
@@ -1909,7 +1909,7 @@ function renderClean(d) {
   if (srcHint && hasSources) srcHint.textContent = (d.sources_present||[]).length + ' file(s) ready';
   const cats = Object.entries(d.category_counts||{}).sort((a,b)=>b[1]-a[1]);
   document.getElementById('clean-cats').innerHTML = cats.length
-    ? cats.map(([c,n])=>`<div class="ct" onclick="jumpCat('${esc(c)}')" title="Filter Review by this category"><span class="ctd"></span>${esc(c)}<span style="color:var(--dim);font-size:9px;margin-left:4px">${n}</span></div>`).join('')
+    ? cats.map(([c,n])=>`<div class="ct" onclick="jumpCat('${esc(c)}')" title="Filter Cards by this category"><span class="ctd"></span>${esc(c)}<span style="color:var(--dim);font-size:9px;margin-left:4px">${n}</span></div>`).join('')
     : `<div style="color:var(--dim);font-size:10px;">Run step 1 first.</div>`;
 }
 
@@ -1941,7 +1941,7 @@ async function doSplit() {
   finally{document.getElementById('btn-split').disabled=false;}
 }
 
-// ══ §4 Review ═════════════════════════════════════════════════════════════════
+// ══ §4 Cards ══════════════════════════════════════════════════════════════════
 async function loadRevCards(page) {
   page = page||revPage;
   revPage = page;
@@ -1984,13 +1984,13 @@ async function loadRevCards(page) {
     updateClearBtn();
   } catch(e){
     console.error('loadRevCards error:', e);
-    toast('Review load error: ' + e.message, true);
+    toast('Cards load error: ' + e.message, true);
   }
 }
 
-// ══ Review — row selection & manual merge ═════════════════════════════════════
+// ══ Cards — row selection & manual merge ══════════════════════════════════════
 const _revSelected = new Set(); // Set of page indices (pi)
-let _revPinnedIds   = null;     // Set of _idx — when set, Review shows only these
+let _revPinnedIds   = null;     // Set of _idx — when set, Cards shows only these
 let _revPinnedLabel = '';       // amber subtitle shown when pinned
 
 function renderRevTable(d) {
@@ -2424,7 +2424,7 @@ function jumpQuality(issueKey) {
     if (qSel) qSel.value = revQuality;
     _revPinnedIds   = null;
     _revPinnedLabel = '';
-    show('review');
+    show('cards');
     loadRevCards(1);
     return;
   }
@@ -2444,7 +2444,7 @@ function jumpQuality(issueKey) {
   const cards = _issueData[keyNorm[issueKey] || issueKey] || [];
 
   if (!cards.length) {
-    show('review'); loadRevCards(1); return;
+    show('cards'); loadRevCards(1); return;
   }
 
   _revPinnedIds   = new Set(cards.map(c => c._idx));
@@ -2454,7 +2454,7 @@ function jumpQuality(issueKey) {
     'org_as_name': `Showing ${_revPinnedIds.size} contacts possibly filed as wrong kind`,
   }[issueKey] || `Showing ${_revPinnedIds.size} flagged contacts`;
 
-  show('review');
+  show('cards');
   loadRevCards(1).then(() => {
     // For name_swap: auto-tick all rows so they're ready to review & merge in pairs
     if (issueKey === 'name_swap') {
@@ -2469,8 +2469,8 @@ function jumpQuality(issueKey) {
   });
 }
 
-function jumpList(cat){revCat=cat;document.getElementById('rev-cat').value=cat;show('review');loadRevCards(1);}
-function jumpCat(cat){revCat=cat;show('review');loadRevCards(1);}
+function jumpList(cat){revCat=cat;document.getElementById('rev-cat').value=cat;show('cards');loadRevCards(1);}
+function jumpCat(cat){revCat=cat;show('cards');loadRevCards(1);}
 
 // ══ Edit Modal ════════════════════════════════════════════════════════════════
 function openEdit(pageIdx) {
@@ -2937,7 +2937,7 @@ async function doExportCSV(){
 }
 
 function populateCatDrops(catCounts) {
-  // Populate the Review filter dropdown (kept as a select)
+  // Populate the Cards filter dropdown (kept as a select)
   const revSel = document.getElementById('rev-cat');
   if (revSel) {
     const cur = revSel.value;
@@ -2997,7 +2997,7 @@ function show(id) {
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   document.getElementById('panel-'+id).classList.add('active');
   document.querySelector(`[data-p="${id}"]`).classList.add('active');
-  if (id==='review') loadRevCards(revPage||1);
+  if (id==='cards') loadRevCards(revPage||1);
   if (id==='prefs') { checkSelfCards(); loadPrefCountry(); loadBdayCatPrefs(); }
   if (id==='viewer') renderViewerPage(1);
   if (id==='print') populateCatDrops(S.category_counts || {});
@@ -3650,7 +3650,7 @@ function renderReviewResults(issues, total) {
 
   const totalIssues = groups.reduce((sum, g) => sum + (issues[g.key]||[]).length, 0);
 
-  // Helper: build a clickable stat box that jumps to Review with a quality filter
+  // Helper: build a clickable stat box that jumps to Cards with a quality filter
   const statBtn = (val, label, color, onclick, title='') =>
     `<div class="stat-box${onclick?' stat-box-action':''}" title="${title}"
           style="${onclick?'cursor:pointer':''}"
@@ -3660,7 +3660,7 @@ function renderReviewResults(issues, total) {
     </div>`;
 
   statsEl.innerHTML =
-    statBtn(total, 'SCANNED', 'var(--cyan)', `show('review');loadRevCards(1)`, 'View all contacts in Review') +
+    statBtn(total, 'SCANNED', 'var(--cyan)', `show('cards');loadRevCards(1)`, 'View all contacts in Cards') +
     statBtn(totalIssues, 'ISSUES FOUND', totalIssues?'var(--amber)':'var(--green)', '', '') +
     ((issues.dupEmail||[]).length  ? statBtn((issues.dupEmail||[]).length,  'DUP EMAILS',    'var(--red)',   `jumpQuality('dup_email')`,  'Review contacts with duplicate emails') : '') +
     ((issues.nameSwap||[]).length  ? statBtn((issues.nameSwap||[]).length/2|0,'NAME SWAPS',  'var(--red)',   `jumpQuality('name_swap')`,  'Review probable name-swap duplicates') : '') +
@@ -3943,14 +3943,14 @@ function issueDetail(key, c) {
   if (key==='noPhone')    return 'no phone number recorded';
   if (key==='noCategory') return 'no category tags';
   if (key==='orgAsName')  return `KIND=individual, name "${esc(c.fn||'')}" looks like an org`;
-  if (key==='nameSwap' && c._swap_with) return `Same name as: "${esc(c._swap_with)}". Tick both and use ⊕ merge in Review to combine.`;
+  if (key==='nameSwap' && c._swap_with) return `Same name as: "${esc(c._swap_with)}". Tick both and use ⊕ merge in Cards to combine.`;
   return '';
 }
 
 async function openEditFromIssue(idx) {
   // Find which page this card is on, load it, then open the edit modal
   // We need to search all cards, not just the current page
-  show('review');
+  show('cards');
   // First check current page
   const pageCard = _currentPageCards.find(c => c._idx === idx);
   if (pageCard) {
@@ -4317,8 +4317,8 @@ function ignoreSelfWarn() {
 
 function editSelfCard() {
   if (_selfCards.length < 1) { toast('No self card found', true); return; }
-  // Navigate to Review and open edit for the self card
-  show('review');
+  // Navigate to Cards and open edit for the self card
+  show('cards');
   setTimeout(async () => {
     // Re-fetch to get the page position
     try {
@@ -4991,8 +4991,8 @@ function syntaxHighlightVcf(text) {
 }
 
 function viewerOpenEdit(globalIdx) {
-  // Switch to Review tab, then open the edit modal for the card at globalIdx
-  show('review');
+  // Switch to Cards tab, then open the edit modal for the card at globalIdx
+  show('cards');
   setTimeout(async () => {
     try {
       const d = await (await fetch('/api/cards?per_page=1000')).json();
@@ -5740,7 +5740,7 @@ async function doReformatPhones() {
   }
 }
 
-// ══ Quality filter for Review panel ══════════════════════════════════════════
+// ══ Quality filter for Cards panel ═══════════════════════════════════════════
 function onRevQualityFilter() {
   const sel = document.getElementById('rev-quality');
   revQuality = sel ? sel.value : '';
@@ -5986,7 +5986,7 @@ async function loadBirthdays() {
 function jumpRevByName(name) {
   revSearch = name;
   revCat = ''; revKind = ''; revQuality = ''; revPage = 1;
-  show('review');
+  show('cards');
   const qEl = document.getElementById('rev-q');
   if (qEl) qEl.value = name;
   loadRevCards(1);
