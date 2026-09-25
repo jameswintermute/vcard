@@ -49,13 +49,19 @@ def _inject_param(line: str, name: str, value: str) -> str:
     return f"{line[:pos]};{name}={value}{line[pos:]}{newline}"
 
 
+def _is_continuation(line: str) -> bool:
+    """True for a folded continuation line (starts with a single space or tab)."""
+    return line[:1] in (" ", "\t")
+
+
 def _sanitise_vcf(data: str, source_label: str) -> str:
     """Repair malformed Apple group syntax while preserving useful metadata."""
     lines = data.splitlines(keepends=True)
     group_meta: dict[str, dict[str, str]] = {}
 
     # Pass 1: collect Apple's label/country metadata by group id.
-    for line in lines:
+    # Values may be folded (RFC 6350 §3.2), so gather continuation lines too.
+    for i, line in enumerate(lines):
         body = line.rstrip("\r\n")
         match = _GROUP_LINE.match(body)
         if not match:
@@ -64,18 +70,35 @@ def _sanitise_vcf(data: str, source_label: str) -> str:
         if prop not in {"X-ABLABEL", "X-ABADR"}:
             continue
         rest = match.group("rest")
+        j = i + 1
+        while j < len(lines) and _is_continuation(lines[j]):
+            rest += lines[j].rstrip("\r\n")[1:]
+            j += 1
         colon = rest.find(":")
         if colon < 0:
             continue
-        value = rest[colon + 1 :].rstrip("\r\n").strip()
+        value = rest[colon + 1 :].strip()
         if value:
             key = "label" if prop == "X-ABLABEL" else "adr"
             group_meta.setdefault(match.group("group").lower(), {})[key] = value
 
     out: list[str] = []
     skipped = fixed = preserved = 0
+    # When a property line is dropped, its folded continuation lines must be
+    # dropped with it.  Otherwise the parser unfolds them onto whichever kept
+    # property precedes them (observed: Apple item1.X-ADDRESSING-GRAMMAR base64
+    # appended to FN).
+    dropping = False
 
     for line in lines:
+        if _is_continuation(line):
+            if dropping:
+                skipped += 1
+                continue
+            out.append(line)
+            continue
+        dropping = False
+
         newline = "\r\n" if line.endswith("\r\n") else ("\n" if line.endswith("\n") else "")
         body = line[:-len(newline)] if newline else line
         match = _GROUP_LINE.match(body)
@@ -100,6 +123,7 @@ def _sanitise_vcf(data: str, source_label: str) -> str:
             # property. Other grouped X-* extensions remain non-canonical noise.
             if prop.startswith("X-"):
                 skipped += 1
+                dropping = True
                 continue
 
             # Strip itemN. (and the observed erroneous second dot) but retain
@@ -121,6 +145,7 @@ def _sanitise_vcf(data: str, source_label: str) -> str:
         # Bare malformed .X-* lines cannot be associated safely; drop them.
         if _BARE_DOT_X.match(line):
             skipped += 1
+            dropping = True
             continue
         if _BARE_DOT_STD.match(line):
             line = _BARE_DOT_STD.sub(r"\1", line)

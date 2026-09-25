@@ -3555,7 +3555,7 @@ function analyseCards(cards) {
     noCategory: [],
     orgAsName:  [],
     numPrefix:  [],
-    nameSwap:   [],  // likely same person with first/last swapped (e.g. "Ruth Bartosik" + "Bartosik Ruth")
+    nameSwap:   [],  // likely same person with first/last swapped (e.g. "Jane Smith" + "Smith Jane")
   };
 
   const emailSeen = {};
@@ -3565,7 +3565,7 @@ function analyseCards(cards) {
 
   // Build token-sorted name set for name-swap detection
   // key = words sorted alphabetically, value = first card seen with that key
-  const nameSortedSeen = {};  // "bartosik ruth" → {_idx, fn}
+  const nameSortedSeen = {};  // "smith jane" → {_idx, fn}
   const nameSwapPairs  = new Set(); // _idx of cards already flagged as a pair
 
   cards.forEach(c => {
