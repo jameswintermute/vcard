@@ -177,3 +177,40 @@ def test_test_mode_picks_hardest_labels():
     ]
     picked = [r["name"] for r in _pick_test_records(recs)]
     assert picked == ["Mr C Dee", "Ms E Eff", "Lt Col & Mrs A Featherstonehaugh-Whittingham"]
+
+
+# ── Stale-country regressions: edited address must win ──────────────────────
+
+def _us(country, **kw):
+    return Address(street="46 Example Blvd", locality="Springfield", region="Illinois",
+                   postal_code="IL 62701", country=country, **kw)
+
+
+def test_edited_first_address_beats_stale_pref_duplicate_of_same_place():
+    card = _card("Tom Smith", "Tom", "Smith", "t", prefix="Mr", gender="M", address=_us("United States"))
+    card.addresses.append(_us("Australia", type="HOME", pref=True))   # hidden stale copy
+    rec = build_label_records([card], style="individual")[0]
+    assert rec["address"][-1] == "United States"
+    assert "Australia" not in rec["address"]
+
+
+def test_genuinely_different_preferred_address_still_wins_and_is_flagged():
+    card = _card("Tom Smith", "Tom", "Smith", "t", address=Address(street="1 Work Rd", postal_code="W1 1AA"))
+    card.addresses.append(Address(street="9 Home Lane", postal_code="H1 1AA", pref=True))
+    rec = build_label_records([card], style="individual")[0]
+    assert rec["address"][0] == "9 Home Lane"
+    assert any("address #2" in w for w in rec["warnings"])
+
+
+def test_couple_uses_most_recently_edited_card_and_warns_on_mismatch():
+    tom = _card("Tom Smith", "Tom", "Smith", "t", prefix="Mr", gender="M", address=_us("Australia"))
+    ann = _card("Ann Smith", "Ann", "Smith", "a", prefix="Mrs", gender="F", address=_us("United States"))
+    tom.rev, ann.rev = "20250101T000000Z", "20261124T142716Z"      # Ann's card was just corrected
+    tom.related = [Related(rel_type="spouse", uid="a")]
+    ann.related = [Related(rel_type="spouse", uid="t")]
+    for order in ([tom, ann], [ann, tom]):
+        rec = build_label_records(order, style="british_formal")[0]
+        assert rec["merged"] is True
+        assert rec["address"][-1] == "United States"
+        assert any("mismatch" in w and "Australia" in w for w in rec["warnings"])
+    assert preview_labels([tom, ann], {})["address_warnings"]
