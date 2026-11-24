@@ -100,23 +100,65 @@ def _format_single(card) -> str:
     return f"{p} {fn}".strip() if p and not fn.lower().startswith(p.lower()) else fn
 
 
-def _preferred_address(card):
-    """Choose the best usable postal address without assuming addresses[0]."""
-    addresses = list(getattr(card, "addresses", None) or [])
-    usable = [a for a in addresses if any(
+def _usable_addresses(card) -> list:
+    return [a for a in (getattr(card, "addresses", None) or []) if any(
         (getattr(a, field, None) or "").strip()
         for field in ("street", "extended", "locality", "region", "postal_code")
     )]
+
+
+def _place_key(a):
+    """Street + postcode, normalised: two ADRs with the same key are versions of
+    the same physical address (e.g. one with a historically corrupted country)."""
+    street = re.sub(r"\s+", " ", (getattr(a, "street", None) or "").strip().lower())
+    postcode = re.sub(r"\s+", "", (getattr(a, "postal_code", None) or "").strip().lower())
+    return (street, postcode) if street or postcode else None
+
+
+def _preferred_address(card):
+    """Choose the best usable postal address without assuming addresses[0].
+
+    Order: PREF, then HOME, then the first usable address. Exception: the edit
+    modal edits addresses[0]; if the chosen address is another *version of the
+    same place* (same street + postcode), the edited addresses[0] wins, so a
+    correction made in the UI is never overridden by a stale hidden duplicate.
+    """
+    addresses = list(getattr(card, "addresses", None) or [])
+    usable = _usable_addresses(card)
     if not usable:
         return None
+    chosen = None
     for addr in usable:
         if bool(getattr(addr, "pref", False)):
-            return addr
-    # HOME is a useful default for address labels if no address is explicitly preferred.
-    for addr in usable:
-        if (getattr(addr, "type", None) or "").upper() == "HOME":
-            return addr
-    return usable[0]
+            chosen = addr
+            break
+    if chosen is None:
+        # HOME is a useful default for address labels if no address is explicitly preferred.
+        for addr in usable:
+            if (getattr(addr, "type", None) or "").upper() == "HOME":
+                chosen = addr
+                break
+    if chosen is None:
+        chosen = usable[0]
+    first = addresses[0] if addresses else None
+    if (first is not None and chosen is not first and first in usable
+            and _place_key(first) and _place_key(first) == _place_key(chosen)):
+        return first
+    return chosen
+
+
+def _address_note(card) -> str | None:
+    """Explain when the label address is not the one shown in the edit modal."""
+    addresses = list(getattr(card, "addresses", None) or [])
+    chosen = _preferred_address(card)
+    if not addresses or chosen is None or chosen is addresses[0]:
+        return None
+    n = addresses.index(chosen) + 1
+    kind = (getattr(chosen, "type", "") or "").upper() or "untyped"
+    why = "marked preferred" if getattr(chosen, "pref", False) else f"{kind} address"
+    return (f"{getattr(card, 'fn', '') or 'contact'}: label uses address #{n} of "
+            f"{len(addresses)} ({why}: {(getattr(chosen, 'street', '') or '').splitlines()[0] if getattr(chosen, 'street', '') else '—'}), "
+            f"not the one in the edit form")
 
 
 def _addr_key(card):
@@ -327,41 +369,50 @@ def build_label_records(cards, category: str = "", style: str = "british_formal"
                     if partner_text:
                         break
 
-        a = _preferred_address(card)
+        source = card
+        warnings: list[str] = []
+        if partner is not None:
+            mine = _format_address(card, True)
+            theirs = _format_address(partner, True)
+            if mine != theirs:
+                # Same street + postcode but other lines differ (country, town…):
+                # trust the card edited most recently and say so.
+                newer = partner if (getattr(partner, "rev", None) or "") > (getattr(card, "rev", None) or "") else card
+                older = card if newer is partner else partner
+                source = newer
+                diff = [x for x in _format_address(older, True) if x not in _format_address(newer, True)]
+                warnings.append(
+                    f"couple address mismatch — using {getattr(newer, 'fn', '')}'s card (edited most recently); "
+                    f"{getattr(older, 'fn', '')}'s card differs"
+                    + (f" ({', '.join(diff)})" if diff else "")
+                    + " — correct it so both cards agree"
+                )
+        note = _address_note(source)
+        if note:
+            warnings.append(note)
+        a = _preferred_address(source)
         missing_postcode = not (getattr(a, "postal_code", None) or "").strip()
-        uk = _is_uk_address(card)
+        uk = _is_uk_address(source)
+        common = {
+            "address": _format_address(source, include_country),
+            "missing_postcode": missing_postcode,
+            "uk": uk,
+            "warnings": warnings,
+        }
         if partner is not None:
             if uid:
                 used.add(uid)
             if getattr(partner, "uid", None):
                 used.add(partner.uid)
-            records.append({
-                "name": _format_couple(card, partner, style),
-                "address": _format_address(card, include_country),
-                "merged": True,
-                "missing_postcode": missing_postcode,
-                "uk": uk,
-            })
+            records.append({"name": _format_couple(card, partner, style), "merged": True, **common})
         elif partner_text:
             if uid:
                 used.add(uid)
-            records.append({
-                "name": _format_couple_from_text(card, partner_text, style),
-                "address": _format_address(card, include_country),
-                "merged": True,
-                "missing_postcode": missing_postcode,
-                "uk": uk,
-            })
+            records.append({"name": _format_couple_from_text(card, partner_text, style), "merged": True, **common})
         else:
             if uid:
                 used.add(uid)
-            records.append({
-                "name": _format_single(card),
-                "address": _format_address(card, include_country),
-                "merged": False,
-                "missing_postcode": missing_postcode,
-                "uk": uk,
-            })
+            records.append({"name": _format_single(card), "merged": False, **common})
 
     records.sort(key=lambda r: ((r["name"].split()[-1] if r["name"].split() else "").lower(), r["name"].lower()))
     return records
@@ -399,6 +450,8 @@ def preview_labels(cards, body: dict) -> dict:
         "total": len(records),
         "merged": sum(1 for r in records if r["merged"]),
         "no_address": no_address,
+        "address_warnings": [{"name": r["name"], "warnings": r["warnings"]}
+                             for r in records if r.get("warnings")],
     }
 
 
@@ -579,7 +632,7 @@ body {{ font-family: Arial, Helvetica, "Liberation Sans", sans-serif; color: #00
                  font: bold 11pt sans-serif; padding: 6px; margin: -14px -14px 12px; }}
   .screen-header {{ display: block; font: 11px/1.6 monospace; color: #333; background: #fff;
                    border: 1px solid #bbb; padding: 10px 14px; margin: 0 auto 14px; max-width: 760px; }}
-  .screen-header ol {{ margin: 6px 0 0 20px; }}
+  .screen-header ol, .screen-header ul {{ margin: 6px 0 0 20px; }}
   .warn {{ color: #a60; }}
   #fit-report {{ display: block; margin-top: 8px; padding: 6px 8px; font-weight: bold; }}
   .fit-ok {{ background: #e5f6e5; color: #060; }}
@@ -617,7 +670,7 @@ body {{ font-family: Arial, Helvetica, sans-serif; background: white; color: #00
 .test-banner {{ background: #ff0; text-align: center; font: 10pt sans-serif; padding: 4px; }}
 .screen-header {{ font: 11px monospace; color: #555; margin: 10px auto 16px; padding: 8px;
                  max-width: 750px; border: 1px solid #ddd; }}
-.screen-header ol {{ margin: 6px 0 0 20px; }} .warn {{ color: #a60; }} #fit-report {{ display: none; }}
+.screen-header ol, .screen-header ul {{ margin: 6px 0 0 20px; }} .warn {{ color: #a60; }} #fit-report {{ display: none; }}
 @media screen {{ body {{ background: #eee; padding: 10px; }} .label {{ background: #fff; }} .screen-header {{ background: #fff; }} }}
 @media print {{ .screen-header, .test-banner, .mmark {{ display: none; }} }}
 """
@@ -680,6 +733,14 @@ def generate_labels(cards, print_dir: Path, body: dict) -> dict:
         f"{esc_html(' · '.join(no_postcode))}</span><br>"
         if no_postcode else ""
     )
+    addr_warn = [(r["name"], w) for r in all_records for w in r.get("warnings", [])]
+    if addr_warn:
+        warn_line += (
+            f"<span class='warn'>⚠ {len(addr_warn)} address warning(s) across all "
+            f"{len(all_records)} labels — check before printing:</span><ul class='warn'>"
+            + "".join(f"<li><strong>{esc_html(n)}</strong>: {esc_html(w)}</li>" for n, w in addr_warn)
+            + "</ul>"
+        )
     steps_html = "<ol>" + "".join(f"<li>{s}</li>" for s in steps) + "</ol>" if steps else ""
     header_html = (
         "<div class='screen-header'><strong>vCard Studio — Address Labels</strong><br>"
@@ -704,6 +765,7 @@ def generate_labels(cards, print_dir: Path, body: dict) -> dict:
         "ok": True, "file": str(out), "filename": out.name,
         "total": total, "merged": merged, "test_mode": test_mode,
         "missing_postcode": no_postcode,
+        "address_warnings": len(addr_warn),
     }
 
 
