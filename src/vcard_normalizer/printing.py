@@ -128,19 +128,59 @@ def _addr_key(card):
     return (street, postcode) if street or postcode else None
 
 
+def _split_lines(value: str | None) -> list[str]:
+    """Split a vCard address component on embedded newlines (Apple/iCloud put
+    multi-line streets in one STREET component) and collapse inner whitespace."""
+    out = []
+    for part in re.split(r"\r\n|\r|\n|\\n", value or ""):
+        part = re.sub(r"\s+", " ", part).strip(" ,")
+        if part:
+            out.append(part)
+    return out
+
+
 def _format_address(card, include_country: bool) -> list[str]:
+    """Postal lines in Royal Mail order.
+
+    Sub-building (vCard "extended", e.g. "Flat 12") goes *above* the street,
+    multi-line streets are kept as separate lines, PO Box follows the street,
+    then post town, county/region, postcode on its own line and — for non-UK
+    addresses only — the country last.
+    """
     a = _preferred_address(card)
     if not a:
         return []
     lines: list[str] = []
-    for field in ("street", "extended", "locality", "region", "postal_code"):
-        value = (getattr(a, field, None) or "").strip()
-        if value:
-            lines.append(value)
+
+    def add(value):
+        for line in _split_lines(value):
+            if line.casefold() not in {x.casefold() for x in lines}:
+                lines.append(line)
+
+    street_lines = _split_lines(getattr(a, "street", None))
+    street_blob = " ".join(street_lines).casefold()
+    for ext in _split_lines(getattr(a, "extended", None)):
+        # Skip "Flat 12" if the street text already contains it.
+        if ext.casefold() not in street_blob:
+            add(ext)
+    for line in street_lines:
+        add(line)
+    po_box = (getattr(a, "po_box", None) or "").strip()
+    if po_box:
+        add(po_box if re.match(r"(?i)^(p\.?\s*o\.?\s*)?box\b", po_box) else f"PO Box {po_box}")
+    add(getattr(a, "locality", None))
+    add(getattr(a, "region", None))
+    add(getattr(a, "postal_code", None))
     country = (getattr(a, "country", None) or "").strip()
     if include_country and country and country.lower() not in _UK_COUNTRIES:
-        lines.append(country)
+        add(country)
     return lines
+
+
+def _is_uk_address(card) -> bool:
+    a = _preferred_address(card)
+    country = (getattr(a, "country", None) or "").strip().lower() if a else ""
+    return not country or country in _UK_COUNTRIES
 
 
 def _format_couple(c1, c2, style: str) -> str:
@@ -287,6 +327,9 @@ def build_label_records(cards, category: str = "", style: str = "british_formal"
                     if partner_text:
                         break
 
+        a = _preferred_address(card)
+        missing_postcode = not (getattr(a, "postal_code", None) or "").strip()
+        uk = _is_uk_address(card)
         if partner is not None:
             if uid:
                 used.add(uid)
@@ -296,6 +339,8 @@ def build_label_records(cards, category: str = "", style: str = "british_formal"
                 "name": _format_couple(card, partner, style),
                 "address": _format_address(card, include_country),
                 "merged": True,
+                "missing_postcode": missing_postcode,
+                "uk": uk,
             })
         elif partner_text:
             if uid:
@@ -304,6 +349,8 @@ def build_label_records(cards, category: str = "", style: str = "british_formal"
                 "name": _format_couple_from_text(card, partner_text, style),
                 "address": _format_address(card, include_country),
                 "merged": True,
+                "missing_postcode": missing_postcode,
+                "uk": uk,
             })
         else:
             if uid:
@@ -312,6 +359,8 @@ def build_label_records(cards, category: str = "", style: str = "british_formal"
                 "name": _format_single(card),
                 "address": _format_address(card, include_country),
                 "merged": False,
+                "missing_postcode": missing_postcode,
+                "uk": uk,
             })
 
     records.sort(key=lambda r: ((r["name"].split()[-1] if r["name"].split() else "").lower(), r["name"].lower()))
@@ -398,6 +447,186 @@ def print_modules() -> dict:
         return {"ok": False, "modules": [], "error": str(exc)}
 
 
+def _pick_test_records(records: list[dict], n: int = 3) -> list[dict]:
+    """Pick the labels most likely to fail, so a 3-label test proves the worst
+    case rather than the first three alphabetically: most lines, longest single
+    line (name or address) and longest name."""
+    if len(records) <= n:
+        return list(records)
+
+    def lines(r):
+        return [r["name"], *r["address"]]
+
+    rankers = [
+        lambda r: (len(r["address"]), max(map(len, lines(r)))),
+        lambda r: max(map(len, lines(r))),
+        lambda r: len(r["name"]),
+    ]
+    chosen: list[int] = []
+    for rank in rankers:
+        for i in sorted(range(len(records)), key=lambda i: rank(records[i]), reverse=True):
+            if i not in chosen:
+                chosen.append(i)
+                break
+    return [records[i] for i in chosen[:n]]
+
+
+# Auto-fit script embedded in roll-label output. For each label it shrinks the
+# text (down to MIN of the profile size) until every line fits on one line and
+# the block fits the label height; if that fails it allows wrapping and tries
+# again; if *that* fails the label is flagged red. Runs on load and again on
+# beforeprint, so the printed geometry is the one that was checked.
+_FIT_JS = r"""
+(function () {
+  var MIN = 0.72, STEP = 0.96;
+  function over(lbl) {
+    var inner = lbl.firstElementChild;
+    if (inner.getBoundingClientRect().height > lbl.clientHeight + 0.5) return true;
+    var rows = lbl.querySelectorAll('.name, .aline');
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].scrollWidth > rows[i].clientWidth + 0.5) return true;
+    }
+    return false;
+  }
+  function shrink(lbl) {
+    var k = 1;
+    lbl.style.setProperty('--k', k);
+    while (over(lbl) && k > MIN) {
+      k = Math.max(MIN, k * STEP);
+      lbl.style.setProperty('--k', k.toFixed(3));
+    }
+    return k;
+  }
+  function fit(lbl) {
+    lbl.classList.remove('wrap', 'overflow', 'shrunk');
+    var k = shrink(lbl);
+    if (over(lbl)) { lbl.classList.add('wrap'); k = shrink(lbl); }
+    if (over(lbl)) lbl.classList.add('overflow');
+    else if (k < 0.999 || lbl.classList.contains('wrap')) lbl.classList.add('shrunk');
+  }
+  function names(list) {
+    return Array.prototype.map.call(list, function (l) {
+      return l.getAttribute('data-name');
+    }).join(' · ');
+  }
+  function run() {
+    var labels = document.querySelectorAll('.label');
+    Array.prototype.forEach.call(labels, fit);
+    var bad = document.querySelectorAll('.label.overflow');
+    var adj = document.querySelectorAll('.label.shrunk');
+    var el = document.getElementById('fit-report');
+    if (!el) return;
+    if (bad.length) {
+      el.className = 'fit-bad';
+      el.textContent = '✖ ' + bad.length + ' label(s) still do not fit and WILL be clipped — shorten the name/address in vCard Studio and regenerate: ' + names(bad);
+    } else {
+      el.className = 'fit-ok';
+      el.textContent = '✔ All ' + labels.length + ' label(s) fit the printable area.' +
+        (adj.length ? ' ' + adj.length + ' were auto-shrunk or wrapped (amber): ' + names(adj) : '');
+    }
+  }
+  var ready = (document.fonts && document.fonts.ready) ? document.fonts.ready : Promise.resolve();
+  ready.then(run);
+  window.addEventListener('beforeprint', run);
+})();
+"""
+
+
+def _render_roll_labels(records, profile, header_html, test_banner, title) -> str:
+    """One label per page, page size = physical label, identical geometry on
+    screen and in print (so the on-screen check is the printed result)."""
+    t, r, b, l = profile["pad_mm"]
+    w, h = profile["page_w_mm"], profile["page_h_mm"]
+    lh = profile.get("line_height", 1.3)
+    labels = []
+    for rec in records:
+        rows = "".join(f"<div class='aline'>{esc_html(line)}</div>" for line in rec["address"])
+        mark = " <span class='mmark' title='couple merged'>⚭</span>" if rec["merged"] else ""
+        labels.append(
+            f"<div class='sheet'><div class='label' data-name='{esc_html(rec['name'])}'>"
+            f"<div class='inner'><div class='name'>{esc_html(rec['name'])}{mark}</div>"
+            f"<div class='addr'>{rows}</div></div></div></div>"
+        )
+
+    css = f"""
+@page {{ size: {w}mm {h}mm; margin: 0; }}
+* {{ box-sizing: border-box; margin: 0; padding: 0; }}
+html, body {{ background: #fff; }}
+body {{ font-family: Arial, Helvetica, "Liberation Sans", sans-serif; color: #000;
+       -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
+/* 0.2 mm under the page height guards against a rounding overflow that would
+   otherwise push a blank page (= a wasted, separately cut label). */
+.sheet {{ width: {w}mm; height: {h - 0.2:.2f}mm; padding: {t}mm {r}mm {b}mm {l}mm;
+         overflow: hidden; break-after: page; page-break-after: always; position: relative; }}
+.sheet:last-of-type {{ break-after: auto; page-break-after: auto; }}
+.label {{ --k: 1; width: 100%; height: 100%; overflow: hidden;
+         display: flex; flex-direction: column; justify-content: center;
+         font-size: calc({profile['font_pt']}pt * var(--k)); line-height: {lh}; }}
+.inner {{ width: 100%; }}
+.name {{ font-size: calc({profile['name_pt']}pt * var(--k)); font-weight: 700;
+        margin-bottom: calc(1mm * var(--k)); }}
+.name, .aline {{ white-space: nowrap; overflow: hidden; }}
+.label.wrap .name, .label.wrap .aline {{ white-space: normal; overflow-wrap: anywhere; }}
+/* thermal head: solid black only — greys are dithered and print fuzzy */
+.name, .addr, .aline {{ color: #000; }}
+/* ⚭ marker sits outside the text flow so screen layout == print layout */
+.mmark {{ position: absolute; top: 0.3mm; right: 0.6mm; font: 400 7pt sans-serif; color: #08a; }}
+.test-banner, .screen-header {{ display: none; }}
+@media screen {{
+  html, body {{ background: #d9d9d9; }}
+  body {{ padding: 14px; }}
+  .test-banner {{ display: block; background: #ffd400; color: #000; text-align: center;
+                 font: bold 11pt sans-serif; padding: 6px; margin: -14px -14px 12px; }}
+  .screen-header {{ display: block; font: 11px/1.6 monospace; color: #333; background: #fff;
+                   border: 1px solid #bbb; padding: 10px 14px; margin: 0 auto 14px; max-width: 760px; }}
+  .screen-header ol {{ margin: 6px 0 0 20px; }}
+  .warn {{ color: #a60; }}
+  #fit-report {{ display: block; margin-top: 8px; padding: 6px 8px; font-weight: bold; }}
+  .fit-ok {{ background: #e5f6e5; color: #060; }}
+  .fit-bad {{ background: #fde2e2; color: #b00; }}
+  .sheet {{ background: #fff; margin: 10px auto; box-shadow: 0 1px 4px rgba(0,0,0,.25); }}
+  .label {{ outline: 1px dashed #bbb; }}
+  .label.shrunk {{ outline: 2px solid #e8a000; }}
+  .label.overflow {{ outline: 3px solid #d00; }}
+}}
+@media print {{ .mmark {{ display: none; }} }}
+"""
+    return (
+        f"<!doctype html>\n<html lang='en'><head><meta charset='utf-8'><title>{esc_html(title)}</title>"
+        f"<style>{css}</style></head><body>{test_banner}{header_html}"
+        f"{''.join(labels)}<script>{_FIT_JS}</script></body></html>"
+    )
+
+
+def _render_flow_labels(records, profile, header_html, test_banner, title) -> str:
+    """Legacy/sheet layout for profiles without numeric geometry (e.g. the
+    generic A4 module): labels flow down the page, never split across pages."""
+    labels = []
+    for rec in records:
+        rows = "".join(f"<div class='aline'>{esc_html(line)}</div>" for line in rec["address"])
+        mark = " <span class='mmark'>⚭</span>" if rec["merged"] else ""
+        labels.append(f"<div class='label'><div class='name'>{esc_html(rec['name'])}{mark}</div>"
+                      f"<div class='addr'>{rows}</div></div>")
+    css = f"""
+@page {{ {profile['page_css']} }}
+* {{ box-sizing: border-box; margin: 0; padding: 0; }}
+body {{ font-family: Arial, Helvetica, sans-serif; background: white; color: #000; }}
+.label {{ {profile['label_css']} break-inside: avoid; page-break-inside: avoid; }}
+.name {{ font-size: {profile['name_size']}; font-weight: bold; margin-bottom: 1.5mm; }}
+.mmark {{ font-size: 7pt; color: #555; font-weight: normal; }}
+.test-banner {{ background: #ff0; text-align: center; font: 10pt sans-serif; padding: 4px; }}
+.screen-header {{ font: 11px monospace; color: #555; margin: 10px auto 16px; padding: 8px;
+                 max-width: 750px; border: 1px solid #ddd; }}
+.screen-header ol {{ margin: 6px 0 0 20px; }} .warn {{ color: #a60; }} #fit-report {{ display: none; }}
+@media screen {{ body {{ background: #eee; padding: 10px; }} .label {{ background: #fff; }} .screen-header {{ background: #fff; }} }}
+@media print {{ .screen-header, .test-banner, .mmark {{ display: none; }} }}
+"""
+    return (
+        f"<!doctype html>\n<html lang='en'><head><meta charset='utf-8'><title>{esc_html(title)}</title>"
+        f"<style>{css}</style></head><body>{test_banner}{header_html}{''.join(labels)}</body></html>"
+    )
+
+
 def generate_labels(cards, print_dir: Path, body: dict) -> dict:
     if not cards:
         return {"ok": False, "error": "No contacts loaded"}
@@ -421,61 +650,60 @@ def generate_labels(cards, print_dir: Path, body: dict) -> dict:
         profile = get_profile(printer_id, profile_id)
     if not profile:
         return {"ok": False, "error": "Could not resolve print profile"}
+    steps = next((m["print_steps"] for m in get_all_modules() if m["printer_id"] == printer_id), [])
 
     indices = body.get("indices")
     if indices is not None:
         indices = [int(i) for i in indices]
-    records = build_label_records(cards, category, style, include_country, indices)
-    if test_mode:
-        records = records[:3]
-
-    label_html = []
-    for r in records:
-        addr = "".join(f"<div class='aline'>{esc_html(line)}</div>" for line in r["address"])
-        mark = " <span class='mmark'>⚭</span>" if r["merged"] else ""
-        label_html.append(
-            f"<div class='label'><div class='name'>{esc_html(r['name'])}{mark}</div>"
-            f"<div class='addr'>{addr}</div></div>"
-        )
+    all_records = build_label_records(cards, category, style, include_country, indices)
+    records = _pick_test_records(all_records) if test_mode else all_records
 
     total = len(records)
     merged = sum(1 for r in records if r["merged"])
-    test_banner = (
-        "<div class='test-banner'>⚠ TEST MODE — first 3 labels only</div>"
-        if test_mode else ""
-    )
+    no_postcode = [r["name"] for r in records if r.get("missing_postcode") and r.get("uk", True)]
     generated = datetime.now().strftime("%Y-%m-%d %H:%M")
     cat_label = category or "all contacts"
-    html = f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Address Labels — {esc_html(cat_label)}</title>
-<style>
-@page {{ {profile['page_css']} }}
-* {{ box-sizing:border-box; margin:0; padding:0; }}
-body {{ font-family:Arial,Helvetica,sans-serif; background:white; }}
-.label {{ {profile['label_css']} display:flex; flex-direction:column; justify-content:center; page-break-after:always; break-after:page; padding:1mm; }}
-.name {{ font-size:{profile['name_size']}; font-weight:bold; color:#000; margin-bottom:1.5mm; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
-.addr {{ color:#111; }} .aline {{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
-.mmark {{ font-size:7pt; color:#555; font-weight:normal; }}
-.test-banner {{ background:#ff0; color:#000; text-align:center; font:10pt sans-serif; padding:4px; }}
-.screen-header {{ text-align:center; font:11px monospace; color:#555; margin:10px auto 16px; padding:8px; max-width:750px; background:#fff; border:1px solid #ddd; }}
-@media screen {{ body {{ background:#eee; padding:10px; }} .label {{ background:#fff; border:1px solid #bbb; border-radius:3px; margin:8px auto; box-shadow:0 1px 4px rgba(0,0,0,.15); padding:4mm 5mm; }} }}
-@media print {{ .screen-header,.test-banner {{ display:none; }} body {{ background:white; }} }}
-</style></head><body>{test_banner}
-<div class="screen-header"><strong>vCard Studio — Address Labels</strong><br>
-Category: <strong>{esc_html(cat_label)}</strong> · {total} label{'s' if total != 1 else ''} · {merged} couple{'s' if merged != 1 else ''} merged<br>
-Printer profile: <strong>{esc_html(printer_id)} / {esc_html(profile_id)}</strong> · Generated {generated}<br>
-<strong>Print:</strong> Ctrl+P / ⌘P · {esc_html(profile.get('hint', ''))}</div>
-{''.join(label_html)}</body></html>"""
+    roll = profile.get("layout") == "roll" and "page_w_mm" in profile
+
+    test_banner = (
+        "<div class='test-banner'>⚠ TEST — the 3 hardest labels "
+        f"(of {len(all_records)}): most lines, longest line, longest name</div>"
+        if test_mode else ""
+    )
+    size_line = (
+        f"Physical page: <strong>{profile['page_w_mm']} × {profile['page_h_mm']} mm</strong> · "
+        f"driver paper: <strong>{esc_html(profile.get('driver_paper', ''))}</strong><br>"
+        if roll else ""
+    )
+    warn_line = (
+        f"<span class='warn'>⚠ {len(no_postcode)} UK label(s) have no postcode: "
+        f"{esc_html(' · '.join(no_postcode))}</span><br>"
+        if no_postcode else ""
+    )
+    steps_html = "<ol>" + "".join(f"<li>{s}</li>" for s in steps) + "</ol>" if steps else ""
+    header_html = (
+        "<div class='screen-header'><strong>vCard Studio — Address Labels</strong><br>"
+        f"Category: <strong>{esc_html(cat_label)}</strong> · {total} label{'s' if total != 1 else ''}"
+        f" · {merged} couple{'s' if merged != 1 else ''} merged ⚭ (symbol not printed)<br>"
+        f"Profile: <strong>{esc_html(printer_id)} / {esc_html(profile_id)}</strong> · "
+        f"{esc_html(profile.get('name', ''))} · generated {generated}<br>"
+        f"{size_line}{warn_line}{steps_html}"
+        "<span id='fit-report'></span></div>"
+    )
+    title = f"Address Labels — {cat_label}"
+    render = _render_roll_labels if roll else _render_flow_labels
+    html = render(records, profile, header_html, test_banner, title)
 
     print_dir.mkdir(parents=True, exist_ok=True)
     safe_cat = re.sub(r"[^\w-]", "-", category or "all").strip("-") or "all"
     suffix = "-TEST" if test_mode else ""
     stamp = datetime.now().strftime("%Y-%m-%d-%H%M%S")
-    out = print_dir / f"labels-{safe_cat}-{stamp}{suffix}.html"
+    out = print_dir / f"labels-{safe_cat}-{profile_id}-{stamp}{suffix}.html"
     out.write_text(html, encoding="utf-8")
     return {
         "ok": True, "file": str(out), "filename": out.name,
         "total": total, "merged": merged, "test_mode": test_mode,
+        "missing_postcode": no_postcode,
     }
 
 
