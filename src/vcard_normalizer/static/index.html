@@ -6033,11 +6033,22 @@ async function doPreviewLabels() {
 
     panel.style.display = '';
 
-    // No-address warnings
+    // No-address and address-conflict warnings
     const warnEl = document.getElementById('lbl-preview-warnings');
     if (warnEl) {
       const missing = d.no_address || [];
-      if (missing.length) {
+      const conflicts = d.address_warnings || [];
+      const conflictHtml = conflicts.length
+        ? `<div style="font-size:10px;font-weight:700;color:var(--amber);margin:5px 0">
+             ⚠ ${conflicts.length} label${conflicts.length!==1?'s':''} with address warnings — check before printing:</div>` +
+          conflicts.map(c => `<div style="padding:3px 8px;border-bottom:1px solid rgba(232,160,0,.15);font-size:10px">
+             <span style="color:var(--amber);font-weight:700">${esc(c.name)}</span>
+             <span style="color:var(--dim)"> — ${(c.warnings||[]).map(esc).join(' · ')}</span></div>`).join('')
+        : '';
+      if (!missing.length && conflicts.length) {
+        warnEl.style.display = '';
+        warnEl.innerHTML = conflictHtml;
+      } else if (missing.length) {
         warnEl.style.display = '';
         warnEl.innerHTML = `<div style="font-size:10px;font-weight:700;color:var(--red);margin-bottom:5px">
           ⚠ ${missing.length} contact${missing.length!==1?'s':''} in this category have no address — excluded from labels:</div>` +
@@ -6050,7 +6061,7 @@ async function doPreviewLabels() {
               <span style="font-size:10px;color:var(--red);font-weight:700;flex:1">${esc(r.fn)}</span>
               <span style="font-size:9px;color:var(--dim)">no address — click to edit</span>
             </div>`
-          ).join('');
+          ).join('') + conflictHtml;
       } else {
         warnEl.style.display = 'none';
         warnEl.innerHTML = '';
