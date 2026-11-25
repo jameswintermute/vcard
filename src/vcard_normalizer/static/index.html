@@ -252,6 +252,8 @@ body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradi
 .ac-issue:hover { border-color: var(--mid); }
 .ac-issue.selected { border-color: var(--cyan); background: rgba(0,204,196,.06); }
 .ac-issue.unfixable { opacity:.7; cursor:default; }
+.ac-issue.unfixable.reviewable { opacity:1; cursor:pointer; }
+.ac-issue.unfixable.reviewable:hover { border-color: var(--amber); }
 .ac-issue-check { font-size:13px; margin-top:1px; flex-shrink:0; }
 .ac-issue-body { flex:1; min-width:0; }
 .ac-issue-label { font-size:10px; color:var(--text); line-height:1.4; }
@@ -5557,9 +5559,20 @@ async function runAutoClean() {
         updateAutoCleanApplyBtn();
       };
       }
+      if (!g.fixable && g.review) {
+        card.classList.add('reviewable');
+        card.title = g.review === 'name_fix'
+          ? 'Open the name-fix wizard for these contacts'
+          : 'Show these contacts in Cards';
+        card.onclick = () => acReview(key);
+      }
       const tag = g.fixable
         ? '<span class="ac-issue-tag ac-tag-fix">auto-fixable</span>'
-        : '<span class="ac-issue-tag ac-tag-review">review manually</span>';
+        : g.review === 'name_fix'
+          ? '<span class="ac-issue-tag ac-tag-review">fix one by one →</span>'
+          : g.review
+            ? '<span class="ac-issue-tag ac-tag-review">review in Cards →</span>'
+            : '<span class="ac-issue-tag ac-tag-review">review manually</span>';
       card.innerHTML = `
         <div class="ac-issue-check">${g.fixable ? '☑' : '⚑'}</div>
         <div class="ac-issue-body">
@@ -5581,6 +5594,23 @@ async function runAutoClean() {
     btn.disabled = false;
     btn.textContent = '⟳ scan for issues';
   }
+}
+
+// Review-only scan groups: open the matching fixer instead of a dead card.
+function acReview(key) {
+  const g = (_acScanData && _acScanData.groups && _acScanData.groups[key]) || null;
+  if (!g) return;
+  if (g.review === 'name_fix') { openNameFix(); return; }
+  if (g.review === 'no_category') { jumpQuality('no_category'); return; }
+  // Generic: pin Cards to exactly the contacts the scan flagged
+  revCat = ''; revKind = ''; revSearch = ''; revQuality = ''; revPage = 1;
+  ['rev-cat','rev-kind','rev-quality','rev-q'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  _revPinnedIds   = new Set(g.indices || []);
+  _revPinnedLabel = `Showing ${_revPinnedIds.size} contact(s): ${g.label}`;
+  show('cards');
+  loadRevCards(1);
 }
 
 function updateAutoCleanApplyBtn() {
@@ -5779,6 +5809,8 @@ function nameFixRender() {
     if (res) { res.textContent = `✓ Names assigned — contacts will now display correctly on Apple / iOS.`; res.style.display = ''; }
     toast('✓ Apple name fix complete');
     poll();
+    // Refresh the auto-clean scan so the fixed group disappears
+    if (_acScanData && document.getElementById('ac-results')?.style.display !== 'none') runAutoClean();
     return;
   }
   const card = _nfQueue[_nfIdx];

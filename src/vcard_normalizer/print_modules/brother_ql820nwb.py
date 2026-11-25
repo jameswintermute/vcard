@@ -46,7 +46,7 @@ PRINTER_DESC = "Brother QL-series label printer · DK rolls · 300 dpi · max 58
 
 
 def _profile(*, id, name, media, page_w_mm, page_h_mm, pad_mm, font_pt, name_pt,
-             line_height, driver_paper, hint_extra=""):
+             line_height, driver_paper, print_rotate=False, hint_extra=""):
     """Build a profile dict with both the new numeric keys and the legacy CSS keys."""
     t, r, b, l = pad_mm
     content_w = round(page_w_mm - l - r, 2)
@@ -66,8 +66,12 @@ def _profile(*, id, name, media, page_w_mm, page_h_mm, pad_mm, font_pt, name_pt,
         "name_pt":      name_pt,
         "line_height":  line_height,
         "driver_paper": driver_paper,
+        # Emit pages in the driver's portrait paper size with the label face
+        # rotated inside, so no browser/driver rotation or scaling is involved.
+        "print_rotate": print_rotate,
         # ── legacy keys (kept for backwards compatibility) ──
-        "page_css":     f"size: {page_w_mm}mm {page_h_mm}mm; margin: 0;",
+        "page_css":     (f"size: {page_h_mm}mm {page_w_mm}mm; margin: 0;" if print_rotate
+                         else f"size: {page_w_mm}mm {page_h_mm}mm; margin: 0;"),
         "label_css":    (f"width: {content_w}mm; height: {content_h}mm; "
                          f"font-size: {font_pt}pt; line-height: {line_height};"),
         "name_size":    f"{name_pt}pt",
@@ -83,50 +87,70 @@ def _profile(*, id, name, media, page_w_mm, page_h_mm, pad_mm, font_pt, name_pt,
 # (hardware 3.0 mm) and ≥1.7 mm on the long edges (hardware 1.5 mm).
 
 LABEL_PROFILES = [
-    _profile(
-        id="DK22205",
-        name="DK-22205 · 62 mm continuous paper → 62 × 38 mm labels",
-        media="continuous",
-        page_w_mm=62, page_h_mm=38,
-        pad_mm=[2.5, 3.0, 2.5, 3.0],          # content 56 × 33 mm (printable 58.9 mm)
-        font_pt=9, name_pt=10.5, line_height=1.3,
-        driver_paper="62 mm continuous, length 38 mm (custom size 62 × 38 mm)",
-    ),
+    # Continuous rolls. Brother's Linux driver has no free custom size in the
+    # print dialog; its stock continuous sizes (50X1 / 62X1) are ~100 mm long.
+    # A shorter length must be registered once with Brother's tool:
+    #   sudo brpapertoollpr_ql820nwb -P QL820NWB -n 50x75mm -w 50 -h 75
+    # Labels are read landscape (text along the tape) but sent as the driver's
+    # portrait paper with the face rotated inside (print_rotate).
     _profile(
         id="DK22223",
-        name="DK-22223 · 50 mm continuous paper → 50 × 36 mm labels",
+        name="DK-22223 · 50 mm continuous → 75 × 50 mm labels (custom size 50x75mm)",
         media="continuous",
-        page_w_mm=50, page_h_mm=36,
-        pad_mm=[2.5, 2.5, 2.5, 2.5],          # content 45 × 31 mm (printable 46.9 mm)
-        font_pt=8.5, name_pt=9.5, line_height=1.3,
-        driver_paper="50 mm continuous, length 36 mm (custom size 50 × 36 mm)",
+        page_w_mm=75, page_h_mm=50,
+        pad_mm=[1.8, 3.3, 1.8, 3.3],          # content 68.4 × 46.4 mm
+        font_pt=11.5, name_pt=13.5, line_height=1.28,
+        driver_paper="50x75mm (registered custom size) · Portrait · Scale 100%",
+        print_rotate=True,
+    ),
+    _profile(
+        id="DK22223_100",
+        name="DK-22223 · 50 mm continuous → 100 × 50 mm labels (stock size 50X1)",
+        media="continuous",
+        page_w_mm=100, page_h_mm=50,
+        pad_mm=[1.8, 3.3, 1.8, 3.3],          # content 93.4 × 46.4 mm
+        font_pt=12, name_pt=14, line_height=1.28,
+        driver_paper="50X1 · 50mm(1.9\") · Portrait · Scale 100%",
+        print_rotate=True,
+    ),
+    _profile(
+        id="DK22205",
+        name="DK-22205 · 62 mm continuous → 100 × 62 mm labels (stock size 62X1)",
+        media="continuous",
+        page_w_mm=100, page_h_mm=62,
+        pad_mm=[1.8, 3.3, 1.8, 3.3],          # content 93.4 × 58.4 mm
+        font_pt=12, name_pt=14, line_height=1.3,
+        driver_paper="62X1 · 62mm(2.4\") · Portrait · Scale 100%",
+        print_rotate=True,
     ),
     _profile(
         id="DK11208",
-        name="DK-11208 · 38 × 90 mm die-cut large address label",
+        name="DK-11208 · 38 × 90 mm die-cut large address label (driver 38x90)",
         media="die-cut",
-        page_w_mm=90, page_h_mm=38,           # landscape: text runs along the label
+        page_w_mm=90, page_h_mm=38,
         pad_mm=[1.8, 3.3, 1.8, 3.3],          # content 83.4 × 34.4 mm (printable 83.9 × 35.0)
         font_pt=10, name_pt=11.5, line_height=1.3,
-        driver_paper="38 mm × 90 mm, orientation Landscape",
+        driver_paper="38x90 · Portrait · Scale 100%",
+        print_rotate=True,
     ),
     _profile(
         id="DK11201",
-        name="DK-11201 · 29 × 90 mm die-cut standard address label",
+        name="DK-11201 · 29 × 90 mm die-cut standard address label (driver 29x90)",
         media="die-cut",
-        page_w_mm=90, page_h_mm=29,           # landscape: text runs along the label
+        page_w_mm=90, page_h_mm=29,
         pad_mm=[1.7, 3.3, 1.7, 3.3],          # content 83.4 × 25.6 mm (printable 83.9 × 25.9)
         font_pt=8, name_pt=9, line_height=1.2,
-        driver_paper="29 mm × 90 mm, orientation Landscape",
+        driver_paper="29x90 · Portrait · Scale 100%",
+        print_rotate=True,
     ),
     _profile(
         id="DK11209",
-        name="DK-11209 · 62 × 29 mm die-cut small address label",
+        name="DK-11209 · 62 × 29 mm die-cut small address label (driver 62x29)",
         media="die-cut",
-        page_w_mm=62, page_h_mm=29,           # 62 mm across the head, 29 mm along the feed
+        page_w_mm=62, page_h_mm=29,           # 62 mm across the head: no rotation needed
         pad_mm=[3.2, 1.8, 3.2, 1.8],          # content 58.4 × 22.6 mm (printable 58.9 × 22.9)
         font_pt=7.5, name_pt=8.5, line_height=1.18,
-        driver_paper="62 mm × 29 mm, orientation Portrait",
+        driver_paper="62x29 · Portrait · Scale 100%",
     ),
 ]
 
@@ -136,16 +160,17 @@ LABEL_PROFILES = [
 PRINT_STEPS = [
     "Check the printer's LCD shows the same roll as the label type you generated "
     "(a mismatch gives an <em>Incorrect media</em> error).",
-    "On the printer: <strong>Menu → Settings → Auto Cut → Auto Cut</strong> "
-    "(cuts after every label).",
-    "Open the generated file in <strong>Chrome</strong> (Safari may ignore the page size).",
     "Fix any label outlined <strong style='color:#c00'>red</strong> before printing.",
-    "Press <strong>Ctrl+P</strong> / <strong>⌘P</strong> and choose the Brother QL-820NWB(c).",
-    "Paper size: exactly the size shown in the header (custom size for continuous rolls).",
-    "Margins: <strong>None</strong> · Scale: <strong>100% / Actual size</strong> · "
-    "Headers and footers: <strong>off</strong>.",
+    "Ctrl+P / ⌘P → printer: the queue using Brother's driver "
+    "(on Linux: <strong>QL820NWB</strong>, not the auto-created Brother_QL_820NWB).",
+    "Paper size: exactly as shown in the header above · Orientation: <strong>Portrait</strong> "
+    "(the label is already turned to run along the tape).",
+    "Scale: <strong>100%</strong> (Firefox defaults to <em>Fit to page width</em>) · "
+    "Margins: <strong>None</strong> · Headers and footers: <strong>off</strong>. "
+    "The preview should show one page per label.",
+    "Driver cut options: <strong>Cut every 1</strong> label, Cut at end ON (Linux driver defaults).",
     "Print the <strong>TEST</strong> file first (3 hardest labels), check it, then print all.",
 ]
 
 # ── Optional: default profile to pre-select in the UI ─────────────────────────
-DEFAULT_PROFILE_ID = "DK22205"
+DEFAULT_PROFILE_ID = "DK22223"

@@ -90,6 +90,10 @@ Use the manufacturer's print-area table, not the label size. For Brother QL
 | 29 × 90 die-cut (DK-11201) | 29 mm | 25.9 × 83.9 mm | 1.5 mm edges, 3 mm ends |
 | 38 × 90 die-cut (DK-11208) | 38 mm | 35.0 × 83.9 mm | 1.5 mm edges, 3 mm ends |
 
+Brother's Linux driver (`brother_ql820nwb_printer_en.ppd`) has **no custom page
+sizes**: its continuous sizes `50X1` / `62X1` are ~100 mm long. Continuous
+profiles therefore print 100 × 50 / 100 × 62 mm labels in Landscape.
+
 For 29 × 90 and 38 × 90 labels the text must run *along* the label, so the
 browser page is landscape (90 × 29 / 90 × 38) and the driver orientation is
 Landscape. Otherwise each line is limited to ~25 mm.
@@ -99,11 +103,59 @@ Use the **test** button before a full run: it prints the 3 *hardest* labels
 
 ---
 
+## Linux setup: Brother QL-820NWB / QL-820NWBc (verified Nov 2026)
+
+Tested on Ubuntu with Brother's `ql820nwbpdrv` driver, a DK-22223 (50 mm
+continuous) roll and Firefox.
+
+1. **Use a queue with Brother's driver**, not the auto-created driverless one.
+   Ubuntu's discovery service (cups-browsed) creates `Brother_QL_820NWB`
+   (`implicitclass://`). It disappears when discovery drops out and has no
+   Brother cut options. Create a permanent queue instead:
+
+   ```bash
+   sudo lpadmin -p QL820NWB -E \
+     -v socket://Brother-Printer.local:9100 \
+     -m 'Brother/brother_ql820nwb_printer_en.ppd'
+   ```
+
+   Find the printer's mDNS name with
+   `avahi-browse -rpt _ipp._tcp | awk -F';' '$1=="=" && tolower($4) ~ /ql-820/ {print $7, $8}'`
+   (package `avahi-utils`). Raw port 9100 and LPD (`lpd://HOST/BINARY_P1`)
+   both work. The IPP address (`dnssd://…_ipp._tcp…`) gave *Wrong Roll Type*.
+
+2. **Make the loaded roll the queue default.** This was the fix for
+   *Wrong Roll Type*. The driver's default is `29x90` (die-cut). When the
+   browser's paper choice is not passed as a Brother size name, the driver
+   falls back to that default, and the printer rejects it for a continuous roll:
+
+   ```bash
+   sudo lpadmin -p QL820NWB -o PageSize=50X1     # 50 mm continuous
+   lpoptions  -p QL820NWB -o PageSize=50X1
+   ```
+
+   Use `62X1` for a 62 mm roll, or the die-cut name (e.g. `29x90`) for die-cut.
+
+3. **Firefox print dialog:** Destination *QL820NWB* · Paper size matching the
+   label header · Scale **100** (not *Fit to page width*) · Margins **None** ·
+   one sheet per label.
+
+4. **Custom continuous lengths** (`brpapertoollpr_ql820nwb -P QL820NWB -n NAME
+   -w WIDTH -h LENGTH`) register in the driver, but CUPS only offers them after
+   `sudo systemctl restart cups`. A 50 × 75 mm size printed *Wrong Roll Type*
+   before step 2 was applied and has not been re-tested since. The stock
+   100 mm profile (`DK22223_100`, size `50X1`) is the known-good option.
+
+The printer does not answer the raster status request (ESC i S) over the
+network, so the loaded roll can only be checked on its LCD.
+
+---
+
 ## Included Modules
 
 | File | Printer | Formats |
 |---|---|---|
-| `brother_ql820nwb.py` | Brother QL-820NWB / QL-820NWBc (and compatible QL series) | DK-22205 (62 mm), DK-22223 (50 mm), DK-11208 (38×90), DK-11201 (29×90), DK-11209 (62×29) |
+| `brother_ql820nwb.py` | Brother QL-820NWB / QL-820NWBc (and compatible QL series) | DK-22223 (50 mm → 100×50), DK-22205 (62 mm → 100×62), DK-11208 (38×90), DK-11201 (29×90), DK-11209 (62×29) |
 | `generic_a4.py` | Any office printer | A4 2-column grid, A4 list, US Letter 2-column grid |
 
 ---
