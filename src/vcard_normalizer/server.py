@@ -882,6 +882,7 @@ def _api_add_card(body: dict) -> dict:
 def _api_full_update_card(body: dict) -> dict:
     """Replace all fields on a card (used by the edit modal)."""
     from .model import Address, NameComponents, Related
+    from .countries import country_code_for
     import re
 
     cards = _state["cards"]
@@ -1025,7 +1026,14 @@ def _api_full_update_card(body: dict) -> dict:
             type=getattr(existing_first, "type", ""),
             label=getattr(existing_first, "label", ""),
             pref=bool(getattr(existing_first, "pref", False)),
-            apple_country_code=getattr(existing_first, "apple_country_code", ""),
+            # Keep the stored Apple country code only while the country name is
+            # unchanged; a corrected name gets its own code (or none if unknown).
+            apple_country_code=(
+                getattr(existing_first, "apple_country_code", "")
+                if (body.get("country", "").strip().casefold()
+                    == (getattr(existing_first, "country", "") or "").strip().casefold())
+                else country_code_for(body.get("country", ""))
+            ),
         )
         card.addresses = [adr] + list(card.addresses[1:])
 

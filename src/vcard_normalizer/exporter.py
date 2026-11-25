@@ -8,6 +8,7 @@ from pathlib import Path
 import vobject
 
 from .model import Address, Card, NameComponents
+from .countries import effective_apple_code
 
 PRODID = "-//vCard Studio//https://github.com/jameswintermute/vcard//EN"
 
@@ -348,7 +349,10 @@ def _serialise_one_apple(c: Card) -> str:
                     prop,
                     group_counter,
                     label=address.label,
-                    adr_code=address.apple_country_code,
+                    # Derive the code from the visible country name so a stale
+                    # stored code (e.g. "au" after the user corrected the name to
+                    # United States) can never reach the device.
+                    adr_code=effective_apple_code(address.country, address.apple_country_code),
                 )
 
         if c.categories:
