@@ -111,8 +111,8 @@ from vcard_normalizer.print_modules import brother_ql820nwb as ql
 from vcard_normalizer.printing import _format_address, _pick_test_records
 
 _HW = {  # id: (tape width across head mm, long-edge strip mm, end offset mm)
-    "DK22205": (62.0, 1.5, 0.0),
-    "DK22223": (50.0, 1.5, 0.0),
+    "DK22205": (62.0, 1.5, 3.0),   # continuous: 3 mm feed margin per Brother PPD
+    "DK22223": (50.0, 1.5, 3.0),
     "DK11208": (38.0, 1.5, 3.0),
     "DK11201": (29.0, 1.5, 3.0),
     "DK11209": (62.0, 1.5, 3.0),
@@ -127,7 +127,7 @@ def test_every_brother_profile_fits_the_hardware_print_area():
         t, r, b, l = p["pad_mm"]
         w, h = p["page_w_mm"], p["page_h_mm"]
         if w != across:                             # landscape: label ends are left/right
-            assert h == across and p["media"] == "die-cut", pid
+            assert h == across, pid
             assert min(t, b) >= edge and min(l, r) >= end, pid
         else:                                       # text runs across the tape
             assert w == across, pid
@@ -156,7 +156,9 @@ def test_roll_labels_never_truncate_and_hide_merge_mark_in_print(tmp_path: Path)
     out = generate_labels([j, r], tmp_path, {"printer_id": "brother_ql820nwb", "profile_id": "DK11201"})
     html = (tmp_path / out["filename"]).read_text(encoding="utf-8")
     assert "text-overflow" not in html and "ellipsis" not in html
-    assert "size: 90mm 29mm; margin: 0;" in html
+    assert "size: 29mm 90mm; margin: 0;" in html   # driver-native portrait
+    assert "rotate(90deg)" in html
+
     assert "@media print { .mmark { display: none; } }" in html
     assert ".sheet:last-of-type" in html
 
@@ -214,3 +216,16 @@ def test_couple_uses_most_recently_edited_card_and_warns_on_mismatch():
         assert rec["address"][-1] == "United States"
         assert any("mismatch" in w and "Australia" in w for w in rec["warnings"])
     assert preview_labels([tom, ann], {})["address_warnings"]
+
+
+def test_continuous_profiles_match_brother_linux_driver_sizes():
+    # brother_ql820nwb_printer_en.ppd has no custom sizes; 50X1/62X1 are ~100 mm long.
+    p = {x["id"]: x for x in ql.LABEL_PROFILES}
+    assert (p["DK22223"]["page_w_mm"], p["DK22223"]["page_h_mm"]) == (75, 50)
+    assert "50x75mm" in p["DK22223"]["driver_paper"]
+    assert (p["DK22223_100"]["page_w_mm"], p["DK22223_100"]["page_h_mm"]) == (100, 50)
+    assert (p["DK22205"]["page_w_mm"], p["DK22205"]["page_h_mm"]) == (100, 62)
+    # every landscape-read label is sent as the driver's portrait paper
+    for x in p.values():
+        if x["page_w_mm"] > x["page_h_mm"] and x["id"] != "DK11209":
+            assert x["print_rotate"] and "Portrait" in x["driver_paper"], x["id"]

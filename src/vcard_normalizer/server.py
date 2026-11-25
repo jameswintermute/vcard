@@ -12,6 +12,8 @@ import json
 import mimetypes
 import os
 import re
+import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -1590,26 +1592,38 @@ def _api_settings() -> dict:
         return {"ok": False, "error": str(exc)}
 
 
+def _needs_name_split(c) -> bool:
+    """Single rule shared by the auto-clean scan and the name-fix wizard.
+
+    A person-type card (not org/group/location) that has a display name (FN)
+    but neither a given nor a family name, and no X-IOS-GIVEN/X-IOS-FAMILY
+    override. The wizard resolves an issue by writing that override, so once
+    fixed a card drops out of both the scan and the wizard.
+    """
+    kind = (getattr(c, "kind", None) or "individual").lower()
+    if kind in ("org", "group", "location"):
+        return False
+    if not (getattr(c, "fn", None) or "").strip():
+        return False
+    name = getattr(c, "name", None)
+    given  = (getattr(name, "given", None)  or "").strip() if name else ""
+    family = (getattr(name, "family", None) or "").strip() if name else ""
+    if given or family:
+        return False
+    if getattr(c, "x_ios_given", None) or getattr(c, "x_ios_family", None):
+        return False
+    return True
+
+
 def _api_apple_name_unset(params: dict) -> dict:
-    """Return individuals with fn set but no given/family name AND no X-IOS override, for the quick-fix UI."""
+    """Return cards needing a first/last name split, for the quick-fix wizard."""
     cards = _state.get("cards", [])
     results = []
     for i, c in enumerate(cards):
-        kind = (c.kind or "individual").lower()
-        if kind == "org":
+        if not _needs_name_split(c):
             continue
-        fn = (c.fn or "").strip()
-        if not fn:
-            continue
-        name = c.name if hasattr(c, "name") else None
-        given  = (name.given  or "").strip() if name else ""
-        family = (name.family or "").strip() if name else ""
-        # Already fixed via X-IOS override — skip
-        if getattr(c, "x_ios_given", None) or getattr(c, "x_ios_family", None):
-            continue
-        if not given and not family:
-            prefix = (name.prefix or "").strip() if name else ""
-            results.append({"_idx": i, "fn": fn, "prefix": prefix})
+        prefix = (getattr(c.name, "prefix", None) or "").strip() if getattr(c, "name", None) else ""
+        results.append({"_idx": i, "fn": (c.fn or "").strip(), "prefix": prefix})
     return {"ok": True, "cards": results, "total": len(results)}
 
 
@@ -2026,9 +2040,9 @@ def _api_auto_clean_scan(params: dict) -> dict:
         "uids_nonstandard":    {"count": 0, "indices": [], "label": "Non-standard UIDs (vendor-issued)",          "fixable": True,  "action": "reissue_uids"},
         "gender_unset":        {"count": 0, "indices": [], "label": "Individuals with no gender set",             "fixable": True,  "action": "auto_gender"},
         "prefix_unset":        {"count": 0, "indices": [], "label": "Individuals with gender but no prefix",      "fixable": True,  "action": "auto_prefix"},
-        "no_name_components":  {"count": 0, "indices": [], "label": "Individuals with no first/last name split",  "fixable": False, "action": None},
-        "no_contact_info":     {"count": 0, "indices": [], "label": "Contacts with no email, phone, or address",  "fixable": False, "action": None},
-        "uncategorised":       {"count": 0, "indices": [], "label": "Contacts with no category assigned",         "fixable": False, "action": None},
+        "no_name_components":  {"count": 0, "indices": [], "label": "Individuals with no first/last name split",  "fixable": False, "action": None, "review": "name_fix"},
+        "no_contact_info":     {"count": 0, "indices": [], "label": "Contacts with no email, phone, or address",  "fixable": False, "action": None, "review": "cards"},
+        "uncategorised":       {"count": 0, "indices": [], "label": "Contacts with no category assigned",         "fixable": False, "action": None, "review": "no_category"},
         "country_variants":    {"count": 0, "indices": [], "label": "Non-standard country names",                 "fixable": True,  "action": "normalise_countries"},
     }
 
@@ -2066,13 +2080,10 @@ def _api_auto_clean_scan(params: dict) -> dict:
                 issues["prefix_unset"]["count"] += 1
                 issues["prefix_unset"]["indices"].append(idx)
 
-        # No name components (individuals)
-        if is_ind and (card.fn or "").strip():
-            given  = (card.name.given  if card.name else "").strip()
-            family = (card.name.family if card.name else "").strip()
-            if not given and not family:
-                issues["no_name_components"]["count"] += 1
-                issues["no_name_components"]["indices"].append(idx)
+        # No name components — same rule as the name-fix wizard
+        if _needs_name_split(card):
+            issues["no_name_components"]["count"] += 1
+            issues["no_name_components"]["indices"].append(idx)
 
         # No contact info at all
         has_info = bool(card.emails) or bool(card.tels) or bool(card.addresses)
@@ -2097,10 +2108,16 @@ def _api_auto_clean_scan(params: dict) -> dict:
     total_issues = sum(g["count"] for g in issues.values())
     fixable_count = sum(g["count"] for g in issues.values() if g["fixable"])
 
-    # Strip index lists from response (not needed by client, keep payload small)
-    summary = {k: {"count": v["count"], "label": v["label"],
-                   "fixable": v["fixable"], "action": v["action"]}
-               for k, v in issues.items()}
+    # Index lists are only sent for review-only groups, which the client uses
+    # to open exactly the flagged contacts; fixable groups stay compact.
+    summary = {}
+    for k, v in issues.items():
+        g = {"count": v["count"], "label": v["label"],
+             "fixable": v["fixable"], "action": v["action"]}
+        if v.get("review"):
+            g["review"] = v["review"]
+            g["indices"] = v["indices"]
+        summary[k] = g
 
     return {
         "ok": True,
@@ -2414,7 +2431,7 @@ def main():
     _probe.close()
     if _in_use:
         try:
-            import subprocess, signal
+            import signal
             result = subprocess.run(
                 ["lsof", "-ti", f"tcp:{PORT}"],
                 capture_output=True, text=True,
@@ -2440,7 +2457,19 @@ def main():
     # Open browser after short delay so server is ready
     def _open():
         time.sleep(0.6)
-        webbrowser.open(f"http://localhost:{PORT}")
+        url = f"http://localhost:{PORT}"
+        # On Linux, launch the browser detached with its output discarded:
+        # webbrowser.open() inherits this terminal, so browser chatter such as
+        # GTK's 'Not loading module "atk-bridge"' lands in the server console.
+        if sys.platform.startswith("linux") and shutil.which("xdg-open"):
+            try:
+                subprocess.Popen(["xdg-open", url], stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                 start_new_session=True)
+                return
+            except OSError:
+                pass
+        webbrowser.open(url)
     threading.Thread(target=_open, daemon=True).start()
 
     try:

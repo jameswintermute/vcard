@@ -534,7 +534,8 @@ _FIT_JS = r"""
   var MIN = 0.72, STEP = 0.96;
   function over(lbl) {
     var inner = lbl.firstElementChild;
-    if (inner.getBoundingClientRect().height > lbl.clientHeight + 0.5) return true;
+    // offsetHeight is layout size, unaffected by the print-time rotation
+    if (inner.offsetHeight > lbl.clientHeight + 0.5) return true;
     var rows = lbl.querySelectorAll('.name, .aline');
     for (var i = 0; i < rows.length; i++) {
       if (rows[i].scrollWidth > rows[i].clientWidth + 0.5) return true;
@@ -587,30 +588,49 @@ _FIT_JS = r"""
 
 def _render_roll_labels(records, profile, header_html, test_banner, title) -> str:
     """One label per page, page size = physical label, identical geometry on
-    screen and in print (so the on-screen check is the printed result)."""
+    screen and in print (so the on-screen check is the printed result).
+
+    print_rotate profiles: the label is read landscape (w × h) but the driver's
+    paper is portrait (h wide × w long, h = tape width). The printed page is
+    emitted in the driver's own portrait size with the label face rotated 90°
+    inside it, so neither the browser nor the driver has to rotate or scale
+    anything. The screen view stays upright for checking; fitting uses layout
+    sizes, which a CSS rotation does not change.
+    """
     t, r, b, l = profile["pad_mm"]
     w, h = profile["page_w_mm"], profile["page_h_mm"]
+    rotate = bool(profile.get("print_rotate"))
+    page_size = f"{h}mm {w}mm" if rotate else f"{w}mm {h}mm"
+    print_rot_css = (
+        f"@media print {{\n"
+        f"  .sheet {{ width: {h}mm; height: {w - 0.2:.2f}mm; }}\n"
+        f"  .face {{ position: absolute; top: 0; left: 0; transform-origin: 0 0;\n"
+        f"          transform: translateX({h - 0.2:.2f}mm) rotate(90deg); }}\n"
+        f"}}\n"
+        if rotate else ""
+    )
     lh = profile.get("line_height", 1.3)
     labels = []
     for rec in records:
         rows = "".join(f"<div class='aline'>{esc_html(line)}</div>" for line in rec["address"])
         mark = " <span class='mmark' title='couple merged'>⚭</span>" if rec["merged"] else ""
         labels.append(
-            f"<div class='sheet'><div class='label' data-name='{esc_html(rec['name'])}'>"
+            f"<div class='sheet'><div class='face'><div class='label' data-name='{esc_html(rec['name'])}'>"
             f"<div class='inner'><div class='name'>{esc_html(rec['name'])}{mark}</div>"
-            f"<div class='addr'>{rows}</div></div></div></div>"
+            f"<div class='addr'>{rows}</div></div></div></div></div>"
         )
 
     css = f"""
-@page {{ size: {w}mm {h}mm; margin: 0; }}
+@page {{ size: {page_size}; margin: 0; }}
 * {{ box-sizing: border-box; margin: 0; padding: 0; }}
 html, body {{ background: #fff; }}
 body {{ font-family: Arial, Helvetica, "Liberation Sans", sans-serif; color: #000;
        -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
 /* 0.2 mm under the page height guards against a rounding overflow that would
    otherwise push a blank page (= a wasted, separately cut label). */
-.sheet {{ width: {w}mm; height: {h - 0.2:.2f}mm; padding: {t}mm {r}mm {b}mm {l}mm;
-         overflow: hidden; break-after: page; page-break-after: always; position: relative; }}
+.sheet {{ width: {w}mm; height: {h - 0.2:.2f}mm; overflow: hidden; position: relative;
+         break-after: page; page-break-after: always; }}
+.face {{ width: {w}mm; height: {h - 0.2:.2f}mm; padding: {t}mm {r}mm {b}mm {l}mm; }}
 .sheet:last-of-type {{ break-after: auto; page-break-after: auto; }}
 .label {{ --k: 1; width: 100%; height: 100%; overflow: hidden;
          display: flex; flex-direction: column; justify-content: center;
@@ -643,7 +663,7 @@ body {{ font-family: Arial, Helvetica, "Liberation Sans", sans-serif; color: #00
   .label.overflow {{ outline: 3px solid #d00; }}
 }}
 @media print {{ .mmark {{ display: none; }} }}
-"""
+{print_rot_css}"""
     return (
         f"<!doctype html>\n<html lang='en'><head><meta charset='utf-8'><title>{esc_html(title)}</title>"
         f"<style>{css}</style></head><body>{test_banner}{header_html}"
