@@ -108,11 +108,20 @@ def _usable_addresses(card) -> list:
 
 
 def _place_key(a):
-    """Street + postcode, normalised: two ADRs with the same key are versions of
-    the same physical address (e.g. one with a historically corrupted country)."""
-    street = re.sub(r"\s+", " ", (getattr(a, "street", None) or "").strip().lower())
+    """Identity of a physical place, for spotting stale versions of one address
+    on the same card (e.g. a corrupted country, or a street mangled by an old
+    merge such as "Send Hill HouseSend Hill").
+
+    On one contact, a shared postcode is the strongest signal, so the postcode
+    alone decides when present; the street is used only when there is no
+    postcode. Two genuinely different homes of one person (e.g. UK and abroad)
+    have different postcodes and stay distinct.
+    """
     postcode = re.sub(r"\s+", "", (getattr(a, "postal_code", None) or "").strip().lower())
-    return (street, postcode) if street or postcode else None
+    if postcode:
+        return ("pc", postcode)
+    street = re.sub(r"\s+", " ", (getattr(a, "street", None) or "").strip().lower())
+    return ("st", street) if street else None
 
 
 def _preferred_address(card):
