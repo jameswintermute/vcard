@@ -229,3 +229,22 @@ def test_continuous_profiles_match_brother_linux_driver_sizes():
     for x in p.values():
         if x["page_w_mm"] > x["page_h_mm"] and x["id"] != "DK11209":
             assert x["print_rotate"] and "Portrait" in x["driver_paper"], x["id"]
+
+
+def test_mangled_hidden_duplicate_with_same_postcode_loses_to_edited_address():
+    # Hidden preferred copy whose street was concatenated by an old merge.
+    card = _card("Tom Smith", "Tom", "Smith", "t", address=Address(
+        street="Mill House", locality="Mill Lane, Send", region="Surrey",
+        postal_code="GU23 7ZZ", country="United Kingdom"))
+    card.addresses.append(Address(street="Mill HouseMill Lane", locality="Send",
+                                  region="Surrey", postal_code="gu237zz", pref=True))
+    rec = build_label_records([card], style="individual")[0]
+    assert rec["address"][:2] == ["Mill House", "Mill Lane, Send"]
+    assert not rec["warnings"]
+
+
+def test_different_postcode_preferred_address_still_wins():
+    card = _card("Tom Smith", "Tom", "Smith", "t", address=Address(street="1 Work Rd", postal_code="W1 1AA"))
+    card.addresses.append(Address(street="1 Work Rd", postal_code="H1 1AA", pref=True))
+    rec = build_label_records([card], style="individual")[0]
+    assert rec["address"][-1] == "H1 1AA"
